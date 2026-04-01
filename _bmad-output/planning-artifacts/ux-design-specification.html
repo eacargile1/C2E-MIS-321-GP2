@@ -1,0 +1,1378 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>ux-design-specification.md</title>
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+
+<style>
+/* https://github.com/microsoft/vscode/blob/master/extensions/markdown-language-features/media/markdown.css */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+body {
+	font-family: var(--vscode-markdown-font-family, -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif);
+	font-size: var(--vscode-markdown-font-size, 14px);
+	padding: 0 26px;
+	line-height: var(--vscode-markdown-line-height, 22px);
+	word-wrap: break-word;
+}
+
+#code-csp-warning {
+	position: fixed;
+	top: 0;
+	right: 0;
+	color: white;
+	margin: 16px;
+	text-align: center;
+	font-size: 12px;
+	font-family: sans-serif;
+	background-color:#444444;
+	cursor: pointer;
+	padding: 6px;
+	box-shadow: 1px 1px 1px rgba(0,0,0,.25);
+}
+
+#code-csp-warning:hover {
+	text-decoration: none;
+	background-color:#007acc;
+	box-shadow: 2px 2px 2px rgba(0,0,0,.25);
+}
+
+body.scrollBeyondLastLine {
+	margin-bottom: calc(100vh - 22px);
+}
+
+body.showEditorSelection .code-line {
+	position: relative;
+}
+
+body.showEditorSelection .code-active-line:before,
+body.showEditorSelection .code-line:hover:before {
+	content: "";
+	display: block;
+	position: absolute;
+	top: 0;
+	left: -12px;
+	height: 100%;
+}
+
+body.showEditorSelection li.code-active-line:before,
+body.showEditorSelection li.code-line:hover:before {
+	left: -30px;
+}
+
+.vscode-light.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.15);
+}
+
+.vscode-light.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.40);
+}
+
+.vscode-light.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-dark.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.4);
+}
+
+.vscode-dark.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.60);
+}
+
+.vscode-dark.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-high-contrast.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 160, 0, 0.7);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 160, 0, 1);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+img {
+	max-width: 100%;
+	max-height: 100%;
+}
+
+a {
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+a:focus,
+input:focus,
+select:focus,
+textarea:focus {
+	outline: 1px solid -webkit-focus-ring-color;
+	outline-offset: -1px;
+}
+
+hr {
+	border: 0;
+	height: 2px;
+	border-bottom: 2px solid;
+}
+
+h1 {
+	padding-bottom: 0.3em;
+	line-height: 1.2;
+	border-bottom-width: 1px;
+	border-bottom-style: solid;
+}
+
+h1, h2, h3 {
+	font-weight: normal;
+}
+
+table {
+	border-collapse: collapse;
+}
+
+table > thead > tr > th {
+	text-align: left;
+	border-bottom: 1px solid;
+}
+
+table > thead > tr > th,
+table > thead > tr > td,
+table > tbody > tr > th,
+table > tbody > tr > td {
+	padding: 5px 10px;
+}
+
+table > tbody > tr + tr > td {
+	border-top: 1px solid;
+}
+
+blockquote {
+	margin: 0 7px 0 5px;
+	padding: 0 16px 0 10px;
+	border-left-width: 5px;
+	border-left-style: solid;
+}
+
+code {
+	font-family: Menlo, Monaco, Consolas, "Droid Sans Mono", "Courier New", monospace, "Droid Sans Fallback";
+	font-size: 1em;
+	line-height: 1.357em;
+}
+
+body.wordWrap pre {
+	white-space: pre-wrap;
+}
+
+pre:not(.hljs),
+pre.hljs code > div {
+	padding: 16px;
+	border-radius: 3px;
+	overflow: auto;
+}
+
+pre code {
+	color: var(--vscode-editor-foreground);
+	tab-size: 4;
+}
+
+/** Theming */
+
+.vscode-light pre {
+	background-color: rgba(220, 220, 220, 0.4);
+}
+
+.vscode-dark pre {
+	background-color: rgba(10, 10, 10, 0.4);
+}
+
+.vscode-high-contrast pre {
+	background-color: rgb(0, 0, 0);
+}
+
+.vscode-high-contrast h1 {
+	border-color: rgb(0, 0, 0);
+}
+
+.vscode-light table > thead > tr > th {
+	border-color: rgba(0, 0, 0, 0.69);
+}
+
+.vscode-dark table > thead > tr > th {
+	border-color: rgba(255, 255, 255, 0.69);
+}
+
+.vscode-light h1,
+.vscode-light hr,
+.vscode-light table > tbody > tr + tr > td {
+	border-color: rgba(0, 0, 0, 0.18);
+}
+
+.vscode-dark h1,
+.vscode-dark hr,
+.vscode-dark table > tbody > tr + tr > td {
+	border-color: rgba(255, 255, 255, 0.18);
+}
+
+</style>
+
+<style>
+/* Tomorrow Theme */
+/* http://jmblog.github.com/color-themes-for-google-code-highlightjs */
+/* Original theme - https://github.com/chriskempson/tomorrow-theme */
+
+/* Tomorrow Comment */
+.hljs-comment,
+.hljs-quote {
+	color: #8e908c;
+}
+
+/* Tomorrow Red */
+.hljs-variable,
+.hljs-template-variable,
+.hljs-tag,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-regexp,
+.hljs-deletion {
+	color: #c82829;
+}
+
+/* Tomorrow Orange */
+.hljs-number,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-literal,
+.hljs-type,
+.hljs-params,
+.hljs-meta,
+.hljs-link {
+	color: #f5871f;
+}
+
+/* Tomorrow Yellow */
+.hljs-attribute {
+	color: #eab700;
+}
+
+/* Tomorrow Green */
+.hljs-string,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+	color: #718c00;
+}
+
+/* Tomorrow Blue */
+.hljs-title,
+.hljs-section {
+	color: #4271ae;
+}
+
+/* Tomorrow Purple */
+.hljs-keyword,
+.hljs-selector-tag {
+	color: #8959a8;
+}
+
+.hljs {
+	display: block;
+	overflow-x: auto;
+	color: #4d4d4c;
+	padding: 0.5em;
+}
+
+.hljs-emphasis {
+	font-style: italic;
+}
+
+.hljs-strong {
+	font-weight: bold;
+}
+</style>
+
+<style>
+/*
+ * Markdown PDF CSS
+ */
+
+ body {
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "Meiryo";
+	padding: 0 12px;
+}
+
+pre {
+	background-color: #f8f8f8;
+	border: 1px solid #cccccc;
+	border-radius: 3px;
+	overflow-x: auto;
+	white-space: pre-wrap;
+	overflow-wrap: break-word;
+}
+
+pre:not(.hljs) {
+	padding: 23px;
+	line-height: 19px;
+}
+
+blockquote {
+	background: rgba(127, 127, 127, 0.1);
+	border-color: rgba(0, 122, 204, 0.5);
+}
+
+.emoji {
+	height: 1.4em;
+}
+
+code {
+	font-size: 14px;
+	line-height: 19px;
+}
+
+/* for inline code */
+:not(pre):not(.hljs) > code {
+	color: #C9AE75; /* Change the old color so it seems less like an error */
+	font-size: inherit;
+}
+
+/* Page Break : use <div class="page"/> to insert page break
+-------------------------------------------------------- */
+.page {
+	page-break-after: always;
+}
+
+</style>
+
+<script src="https://unpkg.com/mermaid/dist/mermaid.min.js"></script>
+</head>
+<body>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: document.body.classList.contains('vscode-dark') || document.body.classList.contains('vscode-high-contrast')
+          ? 'dark'
+          : 'default'
+    });
+  </script>
+<h1 id="ux-design-specification--mis321-gp2">UX Design Specification — MIS321-GP2</h1>
+<p><strong>Author:</strong> Evanc
+<strong>Date:</strong> 2026-03-05</p>
+<hr>
+<!-- UX design content will be appended sequentially through collaborative workflow steps -->
+<h2 id="executive-summary">Executive Summary</h2>
+<h3 id="project-vision">Project Vision</h3>
+<p>A unified internal business operations platform that replaces two disconnected tools (a Harvest-style system and an Excel Resource Tracker) with a single source of truth. The defining UX promise: operational data stays accurate by default — staffing, availability, timesheets, and forecasting update automatically when real events happen, eliminating manual cross-referencing.</p>
+<h3 id="target-users">Target Users</h3>
+<p><strong>Individual Contributor (IC):</strong> Primary task is weekly timesheet and expense entry. Needs a fast, low-friction entry experience with clear visibility into their assigned projects. Key delight moment: pre-populated timesheet entries from project assignments.</p>
+<p><strong>Manager:</strong> Primary task is staffing projects and monitoring team utilization. Needs the availability calendar and staffing needs board as their command center. Key delight moment: AI-ranked candidate recommendations surfaced at the moment of need.</p>
+<p><strong>Finance:</strong> Primary task is generating and exporting accurate client invoices. Needs confidence that billable hours are reconciled before invoice generation. Key delight moment: one-click invoice generation from a clean, verified dataset.</p>
+<p><strong>Admin:</strong> Full platform oversight — user management, system configuration, data migration. Needs power-user efficiency and clear visibility into system health (event propagation status, migration results).</p>
+<h3 id="key-design-challenges">Key Design Challenges</h3>
+<ol>
+<li>
+<p><strong>Availability calendar at scale</strong> — rendering 70–100 employees with color-coded statuses in a scannable, filterable grid without visual overload</p>
+</li>
+<li>
+<p><strong>Seamless multi-step staffing flow</strong> — staffing need creation → AI recommendations → assignment → calendar update must feel like one flow across what are technically multiple modules</p>
+</li>
+<li>
+<p><strong>Role-differentiated navigation</strong> — four distinct primary workflows sharing one application; default views, navigation hierarchy, and feature prominence must adapt to role without fragmenting the experience</p>
+</li>
+<li>
+<p><strong>Event feedback UX</strong> — communicating automatic state changes (availability updated, timesheet pre-populated, conflict detected) gracefully without disruptive interruptions or silent surprises</p>
+</li>
+</ol>
+<h3 id="design-opportunities">Design Opportunities</h3>
+<ol>
+<li>
+<p><strong>Role-aware dashboard as the Monday morning screen</strong> — a homepage that surfaces forecasting data, client/project status, and team contributions relevant to the logged-in role; eliminates morning context-switching</p>
+</li>
+<li>
+<p><strong>Staffing board as the showcase feature</strong> — the availability calendar and staffing needs board is the platform's killer feature; investing in its clarity and interactivity is the highest-ROI design decision</p>
+</li>
+<li>
+<p><strong>Timesheet auto-population as the delight moment</strong> — visually distinguishing pre-populated entries from manual ones and making editing effortless turns a platform capability into a felt experience</p>
+</li>
+</ol>
+<hr>
+<h2 id="core-user-experience">Core User Experience</h2>
+<h3 id="defining-experience">Defining Experience</h3>
+<p>Weekly timesheet entry is the highest-frequency action across all roles and must be the fastest, lowest-friction interaction in the platform. The Manager staffing flow — creating a need, reviewing AI recommendations, and assigning an employee — is the platform's showcase interaction and the primary driver of business value. Both must be flawless.</p>
+<h3 id="platform-strategy">Platform Strategy</h3>
+<ul>
+<li><strong>Target platform:</strong> Desktop web exclusively at MVP (Phase 3 introduces mobile)</li>
+<li><strong>Input modality:</strong> Mouse and keyboard primary; no touch optimization required at launch</li>
+<li><strong>Layout approach:</strong> Information-dense — multi-column layouts, data tables, calendar grids are appropriate and preferred over mobile-first single-column patterns</li>
+<li><strong>Offline capability:</strong> Not required — internal tool used during business hours on corporate network</li>
+</ul>
+<h3 id="effortless-interactions">Effortless Interactions</h3>
+<ul>
+<li><strong>Timesheet entry:</strong> Pre-populated rows from project assignments should be the default; users edit and confirm rather than create from scratch</li>
+<li><strong>Availability check in staffing flow:</strong> Never requires leaving the staffing context — availability status visible inline during assignment creation</li>
+<li><strong>Invoice generation:</strong> Single action once billable hours are confirmed; no multi-step wizard</li>
+<li><strong>Expense submission:</strong> Minimal required fields; receipt upload is a single file-attach action, not a separate step</li>
+</ul>
+<h3 id="critical-success-moments">Critical Success Moments</h3>
+<ol>
+<li><strong>IC Monday moment:</strong> Employee opens their timesheet and project entries are already populated — the system knew before they had to tell it</li>
+<li><strong>Manager staffing moment:</strong> Staffing need is created and ranked AI recommendations appear immediately — Excel is open in another window and never consulted</li>
+<li><strong>Finance invoice moment:</strong> Billable hours are clean and verified; invoice generation requires one action and one confirmation</li>
+<li><strong>Accuracy moment:</strong> The availability calendar is correct on Monday morning without anyone having manually updated it over the weekend</li>
+</ol>
+<h3 id="experience-principles">Experience Principles</h3>
+<ol>
+<li>
+<p><strong>Accuracy by default</strong> — the system maintains correct data automatically through event-driven updates; users should never need to keep things in sync manually</p>
+</li>
+<li>
+<p><strong>Role-first hierarchy</strong> — every user's primary action is reachable in one click from their landing view; the app reorganizes itself around the logged-in role</p>
+</li>
+<li>
+<p><strong>Confirm, don't interrupt</strong> — automated state changes (pre-populated timesheets, availability updates, conflict alerts) surface as reviewable notifications, never as blocking interruptions that halt the user's flow</p>
+</li>
+<li>
+<p><strong>Trust through traceability</strong> — users can always see where data came from (auto-populated vs. manually entered, which event triggered which change); transparency builds confidence in a system they're being asked to trust completely</p>
+</li>
+</ol>
+<hr>
+<h2 id="desired-emotional-response">Desired Emotional Response</h2>
+<h3 id="primary-emotional-goals">Primary Emotional Goals</h3>
+<p><strong>Confidence</strong> is the primary emotional target. Users are being asked to trust a new system with data that directly affects payroll, invoicing, and staffing decisions. Every interaction must reinforce accuracy and reliability. Secondary goals are <strong>efficiency</strong> (tasks should feel fast and low-friction) and <strong>delight</strong> at automation moments where the system acts before the user has to.</p>
+<h3 id="emotional-journey-mapping">Emotional Journey Mapping</h3>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Target Emotion</th>
+<th>Design Implication</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>First login</td>
+<td>Cautiously curious</td>
+<td>Familiar patterns; no learning curve on day one</td>
+</tr>
+<tr>
+<td>During core task</td>
+<td>Focused, in control</td>
+<td>Clear hierarchy; no visual noise competing for attention</td>
+</tr>
+<tr>
+<td>Task completion</td>
+<td>Relieved, accomplished</td>
+<td>Immediate confirmation; clear success state</td>
+</tr>
+<tr>
+<td>Automation fires</td>
+<td>Delighted, surprised</td>
+<td>Subtle animation on auto-populated entries; toasts not alerts</td>
+</tr>
+<tr>
+<td>Something goes wrong</td>
+<td>Informed, capable</td>
+<td>Plain-language error with a clear next action</td>
+</tr>
+<tr>
+<td>Daily return</td>
+<td>Habitual trust</td>
+<td>Platform is accurate without verification; routine reinforced</td>
+</tr>
+</tbody>
+</table>
+<h3 id="micro-emotions">Micro-Emotions</h3>
+<p><strong>Trust over skepticism:</strong> Users migrating from Excel will be skeptical. Design must show the source of every data point — who entered it, when, and whether it was auto-populated or manual. Skepticism dissolves when the audit trail is accessible.</p>
+<p><strong>Efficiency over frustration:</strong> Timesheet entry is weekly mandatory work. If it feels like a chore, the platform loses. Pre-population, keyboard navigation, and minimal required clicks are non-negotiable.</p>
+<p><strong>Delight over mere satisfaction:</strong> Automation moments (pre-populated timesheet, calendar status updating instantly after assignment) should have a felt quality — a subtle transition or micro-animation that says &quot;the platform did that for you.&quot; Not flashy; just present.</p>
+<h3 id="emotions-to-avoid">Emotions to Avoid</h3>
+<ul>
+<li><strong>Anxiety about accuracy</strong> — &quot;Did that save? Did the calendar update?&quot; Solved by immediate confirmation feedback on every state-changing action</li>
+<li><strong>Overwhelm</strong> — The availability calendar at 70–100 employees can become a wall of color. Solved by smart defaults (filter to own team), progressive disclosure, and clear visual hierarchy</li>
+<li><strong>Distrust from silent failures</strong> — If an event propagation fails with no feedback, users lose confidence in the whole system. Solved by the admin visibility requirement (ADR-01) and user-facing notification toasts for relevant state changes</li>
+</ul>
+<h3 id="emotional-design-principles">Emotional Design Principles</h3>
+<ol>
+<li>
+<p><strong>Confirm everything, silently fail nothing</strong> — every state change produces visible feedback, even if just a brief toast; silent operations erode trust</p>
+</li>
+<li>
+<p><strong>Show the source</strong> — auto-populated data is visually distinguished from manually entered data; users always know why something looks the way it does</p>
+</li>
+<li>
+<p><strong>Reward the routine</strong> — weekly timesheet submission and daily availability checks should feel progressively faster as users build habits; familiarity should feel like mastery</p>
+</li>
+<li>
+<p><strong>Reserve delight for automation</strong> — micro-animations and delight moments are used sparingly and only when the system does something the user didn't have to do themselves; overuse makes them invisible</p>
+</li>
+</ol>
+<hr>
+<h2 id="ux-pattern-analysis--inspiration">UX Pattern Analysis &amp; Inspiration</h2>
+<h3 id="inspiring-products-analysis">Inspiring Products Analysis</h3>
+<p><strong>Harvest (the system being replaced)</strong>
+Harvest's timesheet UX is the known baseline — weekly grid, project/task rows, fast entry. Users are already trained on this mental model. The gap is isolation: nothing connects to staffing, assignments, or forecasting.</p>
+<ul>
+<li>Strength: Low-friction time entry; familiar weekly structure</li>
+<li>Gap: Siloed from every other operational data source</li>
+</ul>
+<p><strong>Linear (project/issue tracking)</strong>
+Linear sets the bar for keyboard-first, fast, intentional B2B UX. Status transitions feel earned, not bureaucratic. Empty states are informative, not empty. Micro-animations reward completion without demanding attention.</p>
+<ul>
+<li>Strength: Speed, keyboard navigation, status clarity, micro-animation quality</li>
+<li>Applicable pattern: Keyboard-navigable timesheet rows; subtle entry confirmation animations; clean status badges</li>
+</ul>
+<p><strong>Monday.com / Airtable (board/calendar views)</strong>
+Color-coded board and calendar views at scale. Multi-view toggle (table/calendar/board) lets different roles see the same data differently.</p>
+<ul>
+<li>Strength: Color-coded status readable at a glance; inline editing; view flexibility</li>
+<li>Weakness: Visual noise at scale; too many surface-level options competing</li>
+<li>Applicable pattern: Color-coded availability cells; inline staffing need editing; table/calendar view toggle on the availability page</li>
+</ul>
+<p><strong>Notion (information-dense navigation)</strong>
+Sidebar hierarchy with icon + label navigation scales across many sections without confusion. Role-aware default pages via bookmarks/favorites.</p>
+<ul>
+<li>Applicable pattern: Collapsible icon sidebar with module labels; pinned role-default view on login</li>
+</ul>
+<h3 id="transferable-ux-patterns">Transferable UX Patterns</h3>
+<p><strong>Navigation:</strong></p>
+<ul>
+<li>Collapsible left sidebar with icon + label (Notion-style) — scales to 11 modules without overwhelming new users; icons allow collapsed mode for power users</li>
+<li>Role-aware default route on login — IC lands on Timesheet, Manager on Staffing, Finance on Invoices, Admin on Dashboard</li>
+</ul>
+<p><strong>Interaction:</strong></p>
+<ul>
+<li>Keyboard-navigable timesheet entry (Linear-style) — Tab between cells, Enter to save row, arrow keys to navigate weeks; mouse optional not required</li>
+<li>Inline editing on staffing needs board — click a cell to edit sales stage, assigned employee, dates without opening a separate form</li>
+<li>Command palette (optional power feature) — jump to any module, search employees/clients/projects instantly</li>
+</ul>
+<p><strong>Visual:</strong></p>
+<ul>
+<li>Color-coded availability status cells (Monday.com-style) using the 4-color system from the PRD: Blue=Fully Booked, Green=Soft Booked, Red=Available, Yellow=PTO — consistent with what users already know from Excel</li>
+<li>Status badges with intentional color + label (not color-only) for accessibility compliance</li>
+<li>Skeleton loaders matching the shape of the content they're replacing — no generic spinners</li>
+</ul>
+<h3 id="anti-patterns-to-avoid">Anti-Patterns to Avoid</h3>
+<ul>
+<li><strong>Feature sprawl on hover</strong> (Monday.com failure mode) — every cell having 5+ hover actions creates anxiety; surface only the primary action inline, put secondary actions in a context menu</li>
+<li><strong>Modal-heavy flows</strong> — opening a full modal for every timesheet entry edit adds friction; prefer inline editing with a save-on-blur pattern</li>
+<li><strong>Confirmation dialogs for low-stakes actions</strong> — &quot;Are you sure you want to save this timesheet entry?&quot; creates unnecessary friction; reserve confirms for irreversible actions (invoice generation, account deactivation)</li>
+<li><strong>Color-only status indicators</strong> — fails WCAG 2.2 AA; every color status must have a text label or icon companion</li>
+</ul>
+<h3 id="design-inspiration-strategy">Design Inspiration Strategy</h3>
+<p><strong>Adopt directly:</strong></p>
+<ul>
+<li>Harvest's weekly timesheet grid layout — familiar to existing users, fast</li>
+<li>Linear's keyboard navigation model for data entry</li>
+<li>Notion's collapsible sidebar navigation pattern</li>
+</ul>
+<p><strong>Adapt for this context:</strong></p>
+<ul>
+<li>Monday.com's color board → simplified to 4 statuses only, no custom colors, with text labels for accessibility</li>
+<li>Linear's micro-animations → subtler; this is a business tool not a consumer app; restraint is the correct tone</li>
+</ul>
+<p><strong>Avoid:</strong></p>
+<ul>
+<li>Modal-heavy editing flows common in legacy enterprise tools</li>
+<li>Confirmation dialogs on routine actions</li>
+<li>Color-only status communication</li>
+</ul>
+<hr>
+<h2 id="design-system-foundation">Design System Foundation</h2>
+<h3 id="design-system-choice">Design System Choice</h3>
+<p><strong>TailwindCSS + shadcn/ui</strong> (pre-committed in architecture)</p>
+<p>shadcn/ui provides owned, copy-paste components built on Radix UI accessibility primitives. Components live in <code>src/components/ui/</code> and are fully customizable via Tailwind CSS variables. No external component library dependency to manage.</p>
+<h3 id="rationale-for-selection">Rationale for Selection</h3>
+<ul>
+<li><strong>Accessibility baseline:</strong> Radix UI primitives handle WCAG 2.2 AA focus management, keyboard navigation, and ARIA attributes — no custom a11y work required for standard components</li>
+<li><strong>Ownership model:</strong> Components are in the codebase, not a black-box dependency; they can be modified without forking a library</li>
+<li><strong>Information density:</strong> Tailwind's utility classes make compact table/grid variants straightforward; no fighting an opinionated design system</li>
+<li><strong>Speed:</strong> shadcn/ui's CLI adds pre-built components in seconds; standard components (Table, Dialog, Form, Select, Badge, Popover, Toast) cover ~80% of the UI surface area</li>
+</ul>
+<h3 id="implementation-approach">Implementation Approach</h3>
+<ul>
+<li>Initialize via shadcn/ui CLI: <code>npx shadcn@latest init</code></li>
+<li>Add components as needed: <code>npx shadcn@latest add table dialog form select badge toast</code></li>
+<li>All components land in <code>src/components/ui/</code> — owned, editable</li>
+<li>Global styles in <code>src/index.css</code> via CSS variable design tokens</li>
+<li>Tailwind config extends base theme with project-specific tokens</li>
+</ul>
+<h3 id="customization-strategy">Customization Strategy</h3>
+<p><strong>Color Tokens (CSS variables in <code>index.css</code>):</strong></p>
+<pre class="hljs"><code><div><span class="hljs-comment">/* Neutral base */</span>
+<span class="hljs-selector-tag">--background</span>, <span class="hljs-selector-tag">--foreground</span>, <span class="hljs-selector-tag">--muted</span>, <span class="hljs-selector-tag">--border</span>, <span class="hljs-selector-tag">--card</span>
+
+<span class="hljs-comment">/* Brand accent (single color — TBD with stakeholder) */</span>
+<span class="hljs-selector-tag">--primary</span>, <span class="hljs-selector-tag">--primary-foreground</span>
+
+<span class="hljs-comment">/* Availability status (fixed by PRD spec) */</span>
+<span class="hljs-selector-tag">--status-fully-booked</span>: <span class="hljs-selector-id">#3B82F6</span>;   <span class="hljs-comment">/* blue-500 */</span>
+<span class="hljs-selector-tag">--status-soft-booked</span>:  <span class="hljs-selector-id">#22C55E</span>;   <span class="hljs-comment">/* green-500 */</span>
+<span class="hljs-selector-tag">--status-available</span>:    <span class="hljs-selector-id">#EF4444</span>;   <span class="hljs-comment">/* red-500 */</span>
+<span class="hljs-selector-tag">--status-pto</span>:          <span class="hljs-selector-id">#EAB308</span>;   <span class="hljs-comment">/* yellow-500 */</span>
+
+<span class="hljs-comment">/* Semantic */</span>
+<span class="hljs-selector-tag">--destructive</span> (<span class="hljs-selector-tag">errors</span>), <span class="hljs-selector-tag">--success</span> (<span class="hljs-selector-tag">confirmations</span>)
+</div></code></pre>
+<p><strong>Typography:</strong></p>
+<ul>
+<li>Font: <code>Inter</code> (Google Fonts) or <code>system-ui</code> fallback</li>
+<li>Scale: Tailwind default (text-sm for table data, text-base for body, text-lg for section headers)</li>
+<li>Tabular numbers enabled for all numeric columns (<code>font-variant-numeric: tabular-nums</code>)</li>
+</ul>
+<p><strong>Density:</strong></p>
+<ul>
+<li>Table/grid views default to compact row height (<code>h-9</code> rows vs. default <code>h-12</code>)</li>
+<li>Forms and modals use standard spacing</li>
+<li>Sidebar uses compact icon+label layout</li>
+</ul>
+<p><strong>Dark Mode:</strong> Deferred to Phase 2 — shadcn/ui supports via CSS variables but adds MVP scope without clear user demand.</p>
+<hr>
+<h2 id="defining-core-experience">Defining Core Experience</h2>
+<h3 id="defining-experience">Defining Experience</h3>
+<p><strong>&quot;Assign someone to a project need and watch the platform update itself.&quot;</strong></p>
+<p>The Manager staffing flow is the platform's defining interaction — the moment that proves the integrated system works. When a Manager assigns an employee to a staffing need and their availability status updates automatically, the promise of replacing Excel becomes real and felt.</p>
+<p>The IC timesheet submission is equally important for daily adoption: opening the timesheet and finding it pre-populated is the daily proof point for individual contributors that the platform is worth trusting.</p>
+<h3 id="user-mental-model">User Mental Model</h3>
+<p><strong>Current (broken) mental model:</strong>
+Managers maintain two parallel workflows — check Excel for availability, check Harvest for active assignments, cross-reference manually, update Excel, hope others see the change. The mental model is &quot;I manage the sync between systems.&quot;</p>
+<p><strong>New mental model being introduced:</strong>
+&quot;I tell the system what I decided. It handles the downstream updates.&quot; This is a mental model shift, not just a UI change — users must learn that they don't need to update the calendar separately because the assignment already did it. Design must reinforce this shift every time it happens (explicit confirmation, visible status change, no second step required).</p>
+<p><strong>IC mental model:</strong>
+Current: &quot;I fill in my timesheet from scratch every Monday.&quot;
+New: &quot;I review what the system already knows and confirm or adjust.&quot;
+The pre-populated timesheet must be visually distinct from blank — users need to immediately understand &quot;this was auto-filled, not empty.&quot;</p>
+<h3 id="success-criteria">Success Criteria</h3>
+<p><strong>Manager staffing flow:</strong></p>
+<ul>
+<li>Assign an employee to a staffing need in ≤3 clicks from the staffing board</li>
+<li>AI-ranked candidates visible before any manual search is required</li>
+<li>Calendar status change visible within the TanStack Query polling window (≤10s) without a manual page refresh</li>
+<li>No second step required to update the calendar — assignment IS the update</li>
+</ul>
+<p><strong>IC timesheet flow:</strong></p>
+<ul>
+<li>Pre-populated timesheet entries distinguishable from blank entries at a glance</li>
+<li>Edit or confirm a pre-populated week in ≤60 seconds</li>
+<li>Tab-key navigation through all entry fields without touching the mouse</li>
+<li>Submit confirmation visible immediately; no ambiguity about save state</li>
+</ul>
+<h3 id="novel-vs-established-patterns">Novel vs. Established Patterns</h3>
+<p><strong>Established (adopt directly):</strong></p>
+<ul>
+<li>Weekly timesheet grid (Harvest mental model) — familiar, don't change the shape</li>
+<li>Board/list view for staffing needs (kanban-familiar)</li>
+<li>Form-based PTO requests, expense submission</li>
+</ul>
+<p><strong>Novel (requires clear UX communication):</strong></p>
+<ul>
+<li>Availability calendar that updates automatically — users must be shown that the update happened (toast + visual state change); they cannot assume it</li>
+<li>Pre-populated timesheet entries — visual distinction (e.g., subtle background tint + &quot;Auto-filled&quot; badge) communicates origin without requiring explanation</li>
+<li>AI candidate recommendations inline during assignment — frame as &quot;suggested,&quot; not prescriptive; manager always makes the final call</li>
+</ul>
+<h3 id="experience-mechanics">Experience Mechanics</h3>
+<p><strong>Manager Staffing Flow:</strong></p>
+<ol>
+<li>
+<p><strong>Initiation:</strong> Manager navigates to Staffing → Needs board. Clicks &quot;Add Need&quot; or opens an existing OPEN/TBD need.</p>
+</li>
+<li>
+<p><strong>Interaction:</strong> Fills client, role level, start/end dates, required skills. System immediately renders ranked candidate panel alongside the form — candidates sorted by: skill match → current availability → historical utilization. Manager reviews recommendations, selects a candidate.</p>
+</li>
+<li>
+<p><strong>Feedback:</strong> Inline — selected candidate's availability badge updates to &quot;Soft Booked&quot; in the candidate panel. Toast: &quot;Alex Johnson assigned — availability updated.&quot; Calendar polling picks up the change within 10s.</p>
+</li>
+<li>
+<p><strong>Completion:</strong> Staffing need row shows employee name and &quot;Soft Booked&quot; status. No second action needed. Manager can immediately move to the next need.</p>
+</li>
+</ol>
+<hr>
+<p><strong>IC Timesheet Flow:</strong></p>
+<ol>
+<li>
+<p><strong>Initiation:</strong> IC navigates to Timesheet. Current week loads with pre-populated rows (auto-filled from active project assignments) shown with a subtle tint and &quot;Auto-filled&quot; label.</p>
+</li>
+<li>
+<p><strong>Interaction:</strong> IC reviews pre-populated entries. Tabs through hours fields — adjusts any that don't match actual work. Adds manual rows for work not covered by assignments. All entry via keyboard; mouse optional.</p>
+</li>
+<li>
+<p><strong>Feedback:</strong> Row saves on blur (no explicit save button per row). Hours total updates live in the week summary panel. Unsaved changes indicated by a dot on the row.</p>
+</li>
+<li>
+<p><strong>Completion:</strong> &quot;Submit Week&quot; button at bottom of grid. Confirmation toast: &quot;Week of Mar 3 submitted.&quot; Submitted rows become read-only with a lock indicator. Edit requires explicit &quot;Request Edit&quot; action.</p>
+</li>
+</ol>
+<hr>
+<h2 id="visual-design-foundation">Visual Design Foundation</h2>
+<h3 id="color-system">Color System</h3>
+<p><strong>Primary Brand Color:</strong> Violet (<code>#7C3AED</code> / <code>violet-600</code>)
+Chosen for: strong contrast against the neutral slate base, visually distinct from all 4 availability status colors, professional without being generic blue.</p>
+<p><strong>Full Palette (Tailwind CSS variables):</strong></p>
+<pre class="hljs"><code><div><span class="hljs-comment">/* App shell */</span>
+<span class="hljs-selector-tag">--sidebar-bg</span>:       <span class="hljs-selector-id">#0F172A</span>;  <span class="hljs-comment">/* slate-900  — dark sidebar */</span>
+<span class="hljs-selector-tag">--sidebar-fg</span>:       <span class="hljs-selector-id">#F8FAFC</span>;  <span class="hljs-comment">/* slate-50   — sidebar text */</span>
+<span class="hljs-selector-tag">--sidebar-muted</span>:    <span class="hljs-selector-id">#94A3B8</span>;  <span class="hljs-comment">/* slate-400  — inactive nav items */</span>
+<span class="hljs-selector-tag">--sidebar-active</span>:   <span class="hljs-selector-id">#7C3AED</span>;  <span class="hljs-comment">/* violet-600 — active nav indicator */</span>
+
+<span class="hljs-comment">/* Content area */</span>
+<span class="hljs-selector-tag">--background</span>:       <span class="hljs-selector-id">#FFFFFF</span>;
+<span class="hljs-selector-tag">--surface</span>:          <span class="hljs-selector-id">#F8FAFC</span>;  <span class="hljs-comment">/* slate-50   — card/panel backgrounds */</span>
+<span class="hljs-selector-tag">--border</span>:           <span class="hljs-selector-id">#E2E8F0</span>;  <span class="hljs-comment">/* slate-200 */</span>
+
+<span class="hljs-comment">/* Text */</span>
+<span class="hljs-selector-tag">--foreground</span>:       <span class="hljs-selector-id">#0F172A</span>;  <span class="hljs-comment">/* slate-900 */</span>
+<span class="hljs-selector-tag">--muted-foreground</span>: <span class="hljs-selector-id">#64748B</span>;  <span class="hljs-comment">/* slate-500 */</span>
+
+<span class="hljs-comment">/* Brand */</span>
+<span class="hljs-selector-tag">--primary</span>:          <span class="hljs-selector-id">#7C3AED</span>;  <span class="hljs-comment">/* violet-600 */</span>
+<span class="hljs-selector-tag">--primary-hover</span>:    <span class="hljs-selector-id">#6D28D9</span>;  <span class="hljs-comment">/* violet-700 */</span>
+<span class="hljs-selector-tag">--primary-fg</span>:       <span class="hljs-selector-id">#FFFFFF</span>;
+
+<span class="hljs-comment">/* Semantic */</span>
+<span class="hljs-selector-tag">--success</span>:          <span class="hljs-selector-id">#16A34A</span>;  <span class="hljs-comment">/* green-600 */</span>
+<span class="hljs-selector-tag">--destructive</span>:      <span class="hljs-selector-id">#DC2626</span>;  <span class="hljs-comment">/* red-600 */</span>
+<span class="hljs-selector-tag">--warning</span>:          <span class="hljs-selector-id">#D97706</span>;  <span class="hljs-comment">/* amber-600 */</span>
+
+<span class="hljs-comment">/* Availability status (fixed) */</span>
+<span class="hljs-selector-tag">--status-fully-booked</span>: <span class="hljs-selector-id">#3B82F6</span>;  <span class="hljs-comment">/* blue-500  */</span>
+<span class="hljs-selector-tag">--status-soft-booked</span>:  <span class="hljs-selector-id">#22C55E</span>;  <span class="hljs-comment">/* green-500 */</span>
+<span class="hljs-selector-tag">--status-available</span>:    <span class="hljs-selector-id">#EF4444</span>;  <span class="hljs-comment">/* red-500   */</span>
+<span class="hljs-selector-tag">--status-pto</span>:          <span class="hljs-selector-id">#EAB308</span>;  <span class="hljs-comment">/* yellow-500 */</span>
+</div></code></pre>
+<p><strong>Contrast compliance (WCAG 2.2 AA):</strong></p>
+<ul>
+<li><code>--foreground</code> on <code>--background</code>: 16.7:1 ✓</li>
+<li><code>--primary</code> on <code>--background</code>: 5.8:1 ✓</li>
+<li><code>--sidebar-fg</code> on <code>--sidebar-bg</code>: 15.3:1 ✓</li>
+<li>All status colors paired with white text labels for color-blind accessibility</li>
+</ul>
+<h3 id="typography-system">Typography System</h3>
+<p><strong>Font:</strong> <code>Inter</code> — loaded via Google Fonts; <code>system-ui</code> fallback</p>
+<table>
+<thead>
+<tr>
+<th>Role</th>
+<th>Class</th>
+<th>Size</th>
+<th>Weight</th>
+<th>Usage</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Page title</td>
+<td><code>text-2xl font-semibold</code></td>
+<td>24px</td>
+<td>600</td>
+<td>Module headers</td>
+</tr>
+<tr>
+<td>Section header</td>
+<td><code>text-lg font-medium</code></td>
+<td>18px</td>
+<td>500</td>
+<td>Card/panel titles</td>
+</tr>
+<tr>
+<td>Body</td>
+<td><code>text-sm</code></td>
+<td>14px</td>
+<td>400</td>
+<td>Table data, form labels</td>
+</tr>
+<tr>
+<td>Caption</td>
+<td><code>text-xs text-muted-foreground</code></td>
+<td>12px</td>
+<td>400</td>
+<td>Helper text, timestamps</td>
+</tr>
+<tr>
+<td>Badge</td>
+<td><code>text-xs font-medium</code></td>
+<td>12px</td>
+<td>500</td>
+<td>Status badges</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Numeric columns:</strong> <code>font-variant-numeric: tabular-nums</code> on all hours, amounts, and date columns.</p>
+<h3 id="spacing--layout-foundation">Spacing &amp; Layout Foundation</h3>
+<p><strong>Base unit:</strong> 4px (Tailwind default).</p>
+<p><strong>App shell:</strong></p>
+<pre class="hljs"><code><div>┌─────────────────────────────────────────────┐
+│  Sidebar (240px / collapsed: 56px)  │ Main  │
+│  slate-900 background               │ area  │
+│  ─────────────────────────────────  │ ───── │
+│  [icon] Timesheet                   │       │
+│  [icon] Expenses                    │ Page  │
+│  [icon] Projects                    │ cont- │
+│  [icon] Staffing      ← active      │ ent   │
+│  [icon] PTO                         │       │
+│  [icon] Clients                     │       │
+│  [icon] Reporting                   │       │
+│  [icon] Invoices                    │       │
+│  ─────────────────────────────────  │       │
+│  [icon] Admin (Admin role only)     │       │
+│  ─────────────────────────────────  │       │
+│  [avatar] User name / role          │       │
+└─────────────────────────────────────────────┘
+</div></code></pre>
+<ul>
+<li>Max content width: <code>max-w-7xl</code> (1280px) centered</li>
+<li>Page padding: <code>px-6 py-6</code></li>
+<li>Table row height: <code>h-9</code> (36px) — compact data tables</li>
+<li>Form input height: <code>h-10</code> (40px)</li>
+</ul>
+<h3 id="accessibility-considerations">Accessibility Considerations</h3>
+<ul>
+<li>All status colors paired with text labels — never color-only</li>
+<li>Focus rings: <code>ring-2 ring-violet-500 ring-offset-2</code> on all interactive elements</li>
+<li>Minimum click target: 36px height</li>
+<li>Skip navigation link at app shell top for keyboard users</li>
+<li><code>aria-current=&quot;page&quot;</code> on active sidebar item</li>
+<li><code>role=&quot;status&quot;</code> on toast notifications</li>
+<li>WCAG 2.2 AA verified on all text/background combinations</li>
+</ul>
+<hr>
+<h2 id="design-direction-decision">Design Direction Decision</h2>
+<h3 id="design-directions-explored">Design Directions Explored</h3>
+<p>Three directions were evaluated from the established visual foundation (violet primary, slate-900 sidebar, Inter, shadcn/ui):</p>
+<ul>
+<li><strong>A — Command Center:</strong> Dense full-width tables, keyboard-first, no dashboard layer</li>
+<li><strong>B — Dashboard First:</strong> Role-aware landing page with metrics, conflicts, activity feed; timesheet with auto-fill pattern</li>
+<li><strong>C — Split Panel:</strong> Needs board + AI recommendations side by side</li>
+</ul>
+<h3 id="chosen-direction">Chosen Direction</h3>
+<p><strong>Direction B (Dashboard First) + Direction A's Availability Calendar</strong></p>
+<p>Direction B provides the overall application pattern. Direction A's full-width color-coded availability calendar grid replaces Direction B's calendar treatment — it closely mirrors the existing Excel Resource Tracker layout, minimizing the mental model shift for users on day one.</p>
+<h3 id="design-rationale">Design Rationale</h3>
+<ul>
+<li>Dashboard-first landing gives Managers the Monday morning briefing view identified as a critical success moment — metrics, conflicts, and activity feed surfaced immediately on login</li>
+<li>Role-aware homepage means IC lands on Timesheet, Manager on Dashboard, Finance on Invoices — each role sees their primary task first</li>
+<li>The Excel-adjacent availability calendar (same 4-color system, same grid orientation) reduces adoption friction for the most-used view in the existing workflow</li>
+<li>Timesheet auto-fill pattern (purple tint + &quot;Auto-filled&quot; label) visually communicates pre-population without instruction</li>
+</ul>
+<h3 id="implementation-approach">Implementation Approach</h3>
+<ul>
+<li>Root route (<code>/</code>) renders role-aware dashboard component from <code>stores/authStore</code></li>
+<li>Availability calendar (<code>/staffing</code>) uses Direction A's full-width grid layout with <code>useAvailability</code> TanStack Query hook polling at ≤10s interval</li>
+<li>Timesheet (<code>/timesheet</code>) renders auto-filled rows with <code>bg-violet-50</code> tint and &quot;Auto-filled&quot; badge; manually added rows use standard white background</li>
+<li>All module views follow Direction B's topbar + content area layout pattern</li>
+</ul>
+<hr>
+<h2 id="user-journey-flows">User Journey Flows</h2>
+<h3 id="journey-1--ic-weekly-timesheet-submission">Journey 1 — IC Weekly Timesheet Submission</h3>
+<p><strong>Entry point:</strong> Login → role-aware redirect to <code>/timesheet</code> (IC default)</p>
+<pre><code class="language-mermaid"><div class="mermaid">flowchart TD
+    A([Login via SSO]) --> B[Role detected: IC]
+    B --> C[Redirect to /timesheet]
+    C --> D{Pre-populated entries\nexist for this week?}
+    D -- Yes --> E[Render week grid\nAuto-filled rows: violet tint + badge\nManual rows: white]
+    D -- No --> F[Render empty week grid\nProject rows from active assignments]
+    E --> G[IC reviews auto-filled hours]
+    F --> G
+    G --> H{Hours correct?}
+    H -- Yes, no changes --> I[Click Submit Week]
+    H -- Needs adjustment --> J[Tab through cells\nEdit hours inline\nRow saves on blur]
+    J --> K{Add non-assignment work?}
+    K -- Yes --> L[Click + Add Row\nSelect project / task\nEnter hours]
+    K -- No --> I
+    L --> I
+    I --> M{All required fields\ncomplete?}
+    M -- No --> N[Inline validation\nhighlights missing fields]
+    N --> G
+    M -- Yes --> O[Week submitted\nRows become read-only\nLock indicator shown]
+    O --> P([Toast: Week of Mar 3 submitted ✓])
+</div></code></pre>
+<p><strong>Key UX decisions:</strong></p>
+<ul>
+<li>IC never starts from blank — rows pre-populated from assignments reduce Monday effort</li>
+<li>Save-on-blur per row; no explicit per-row save button</li>
+<li>Submit is the only irreversible action; no confirmation dialog on per-row edits</li>
+<li>Post-submit edit requires &quot;Request Edit&quot; (triggers audit log entry)</li>
+</ul>
+<hr>
+<h3 id="journey-2--manager-staffing--ai-assignment-flow">Journey 2 — Manager Staffing &amp; AI Assignment Flow</h3>
+<p><strong>Entry point:</strong> Login → role-aware redirect to <code>/</code> Dashboard (Manager default)</p>
+<pre><code class="language-mermaid"><div class="mermaid">flowchart TD
+    A([Login via SSO]) --> B[Role detected: Manager]
+    B --> C[Redirect to Dashboard]
+    C --> D[Dashboard loads:\nOpen needs count\nAvailable staff count\nConflict alerts\nRecent activity feed]
+    D --> E{Action needed?}
+    E -- Review conflict --> F[Click conflict alert\nNavigate to affected employee\nAvailability calendar context]
+    E -- Staff a need --> G[Navigate to /staffing/needs]
+    G --> H[Needs board loads\nRows: client · role · stage · assigned]
+    H --> I{New need or existing?}
+    I -- New --> J[Click + Add Need\nFill: client, role level,\ndates, required skills,\nsales stage]
+    I -- Existing OPEN/TBD --> K[Click need row\nOpen detail panel]
+    J --> L[System renders AI\nRecommendations panel]
+    K --> L
+    L --> M[Candidates ranked:\n1. Skill match\n2. Availability status\n3. Historical utilization]
+    M --> N{Sufficient history\nfor AI scoring?}
+    N -- Yes --> O[Full ranked list\nwith skill + utilization scores]
+    N -- No fewer than 3 assignments --> P[Availability-only ranking\nFallback label shown]
+    O --> Q[Manager selects candidate]
+    P --> Q
+    Q --> R[Confirm assignment\nOne-click action]
+    R --> S[EmployeeAssigned event\nwritten to OutboxMessages]
+    S --> T[Hangfire worker dispatches\nevent within 5s]
+    T --> U[AvailabilityStatus updated:\nAvailable to Soft Booked]
+    U --> V[Frontend polls\nupdates within 10s]
+    V --> W([Toast: Name assigned —\navailability updated\nCalendar reflects new status])
+</div></code></pre>
+<p><strong>Key UX decisions:</strong></p>
+<ul>
+<li>AI panel renders alongside the need form/detail — no navigation away to find candidates</li>
+<li>Fallback to availability-only is labeled transparently (&quot;Limited history — showing availability only&quot;)</li>
+<li>Assignment is one action; calendar update is automatic and confirmed via toast</li>
+<li>Manager never touches the availability calendar to reflect an assignment</li>
+</ul>
+<hr>
+<h3 id="journey-3--finance-invoice-generation">Journey 3 — Finance Invoice Generation</h3>
+<p><strong>Entry point:</strong> Navigate to <code>/invoices</code></p>
+<pre><code class="language-mermaid"><div class="mermaid">flowchart TD
+    A([Navigate to /invoices]) --> B[Invoice list loads\nPast invoices: immutable]
+    B --> C[Click Generate Invoice]
+    C --> D[Select client\nSelect billing period]
+    D --> E[System aggregates:\nBillable timesheet entries\nReimbursable expenses\nFor selected client + period]
+    E --> F[Preview renders:\nLine items per employee\nHours x rate\nExpense line items\nTotal]
+    F --> G{Discrepancies\nnoticed?}
+    G -- Yes --> H[Navigate to Reporting\nReview billable hours detail\nIdentify timesheet source]
+    H --> F
+    G -- No, looks correct --> I[Click Generate]
+    I --> J[Invoice created\nStatus: Immutable\nAudit entry written]
+    J --> K{Export needed?}
+    K -- PDF --> L[Download PDF]
+    K -- CSV --> M[Download CSV]
+    L & M --> N([Invoice line items\ntraceable to source\ntimesheet entries])
+</div></code></pre>
+<p><strong>Key UX decisions:</strong></p>
+<ul>
+<li>No multi-step wizard — single form → preview → generate</li>
+<li>Preview shows source data before committing; Finance can verify before generating</li>
+<li>Once generated, invoice is immutable — &quot;Generate New&quot; is the correction path</li>
+<li>Export is available immediately post-generation</li>
+</ul>
+<hr>
+<h3 id="journey-4--pto-request-to-event-propagation">Journey 4 — PTO Request to Event Propagation</h3>
+<p><strong>Entry point:</strong> IC navigates to <code>/pto</code></p>
+<pre><code class="language-mermaid"><div class="mermaid">flowchart TD
+    A([Navigate to /pto]) --> B[PTO request list\nPast requests + statuses]
+    B --> C[Click + Request PTO]
+    C --> D[Fill: start date, end date, reason]
+    D --> E[Submit request]
+    E --> F[Request status: Pending\nManager notified]
+    F --> G{Manager decision}
+    G -- Reject --> H[IC notified: Rejected\nNo calendar change]
+    G -- Approve --> I[PtoApproved event\nwritten to OutboxMessages]
+    I --> J[Hangfire worker dispatches]
+    J --> K[Calendar days marked: PTO yellow]
+    J --> L[Conflict detection runs:\nDoes PTO overlap active assignment?]
+    L -- No conflict --> M[Calendar updated\nNo further action]
+    L -- Conflict detected --> N[Conflict notification\nto Manager with details]
+    K & M & N --> O([IC sees PTO days in calendar\nNo manual update needed])
+</div></code></pre>
+<p><strong>Key UX decisions:</strong></p>
+<ul>
+<li>PTO approval is the only trigger for calendar update — no manual calendar editing</li>
+<li>Conflict detection surfaces to Manager, not IC</li>
+<li>Both Manager and IC receive confirmation of state change</li>
+</ul>
+<hr>
+<h3 id="journey-patterns">Journey Patterns</h3>
+<p><strong>Entry patterns:</strong></p>
+<ul>
+<li>Role-aware redirect on login: IC → <code>/timesheet</code>, Manager → <code>/</code>, Finance → <code>/invoices</code>, Admin → <code>/admin/users</code></li>
+<li>All modules accessible from sidebar at any time regardless of default landing</li>
+</ul>
+<p><strong>Confirmation patterns:</strong></p>
+<ul>
+<li>Every state-changing action produces a toast (bottom-right, 4s auto-dismiss)</li>
+<li>Irreversible actions (invoice generation, account deactivation) use a single inline confirmation prompt — not a blocking modal</li>
+<li>Routine saves (timesheet row edit, expense form) save on blur with no explicit confirmation</li>
+</ul>
+<p><strong>Error patterns:</strong></p>
+<ul>
+<li>Inline field validation on blur; never block submission until all errors shown</li>
+<li>API errors surface as destructive toast with plain-language message + action link where applicable</li>
+<li>Event propagation failures surface in Admin notification queue; user actions are never blocked waiting for propagation</li>
+</ul>
+<p><strong>Navigation patterns:</strong></p>
+<ul>
+<li>Breadcrumb in topbar for nested views (Client → Project → Timesheet entries)</li>
+<li>Back navigation always available; no dead ends</li>
+<li>Sidebar active state updates immediately on navigation</li>
+</ul>
+<h3 id="flow-optimization-principles">Flow Optimization Principles</h3>
+<ol>
+<li><strong>Minimum clicks to value</strong> — the defining flows (timesheet submit, staffing assign) require ≤3 user decisions from entry to completion</li>
+<li><strong>Progressive disclosure</strong> — complex forms reveal AI panel only after initial fields are filled</li>
+<li><strong>Never block on automation</strong> — event propagation happens after user action is confirmed; UI does not wait for propagation before returning control</li>
+<li><strong>Error recovery is non-destructive</strong> — all editable states are recoverable; only generation and approval actions are irreversible</li>
+</ol>
+<hr>
+<h2 id="component-strategy">Component Strategy</h2>
+<h3 id="design-system-components-shadcnui--use-as-is">Design System Components (shadcn/ui — use as-is)</h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Used for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Button</code></td>
+<td>All CTAs, form submissions, inline actions</td>
+</tr>
+<tr>
+<td><code>Input</code> / <code>Textarea</code></td>
+<td>Form fields throughout</td>
+</tr>
+<tr>
+<td><code>Select</code></td>
+<td>Dropdowns (client, project, role, sales stage)</td>
+</tr>
+<tr>
+<td><code>Form</code> + <code>Label</code></td>
+<td>All form layouts with validation</td>
+</tr>
+<tr>
+<td><code>Table</code></td>
+<td>Reports, invoice line items, client list</td>
+</tr>
+<tr>
+<td><code>Badge</code></td>
+<td>Status labels, billable/non-billable flags</td>
+</tr>
+<tr>
+<td><code>Avatar</code></td>
+<td>Employee avatars in calendar, candidate panel</td>
+</tr>
+<tr>
+<td><code>Dialog</code></td>
+<td>Confirmation prompts for irreversible actions</td>
+</tr>
+<tr>
+<td><code>Sheet</code></td>
+<td>Side panels for detail views (client detail, project detail)</td>
+</tr>
+<tr>
+<td><code>Popover</code></td>
+<td>Date range pickers, filter panels</td>
+</tr>
+<tr>
+<td><code>Toast</code> (Sonner)</td>
+<td>Per-action confirmations (4s auto-dismiss)</td>
+</tr>
+<tr>
+<td><code>Skeleton</code></td>
+<td>Loading states for all data-fetching surfaces</td>
+</tr>
+<tr>
+<td><code>Tabs</code></td>
+<td>Module sub-navigation (Availability / Needs Board)</td>
+</tr>
+<tr>
+<td><code>Card</code></td>
+<td>Dashboard metric panels</td>
+</tr>
+<tr>
+<td><code>Calendar</code></td>
+<td>Date picker for PTO requests, invoice date range</td>
+</tr>
+<tr>
+<td><code>Progress</code></td>
+<td>Utilization bars on dashboard</td>
+</tr>
+</tbody>
+</table>
+<h3 id="custom-components">Custom Components</h3>
+<h4 id="availabilitycalendargrid"><code>AvailabilityCalendarGrid</code></h4>
+<p><strong>Purpose:</strong> Renders all employees as rows × date columns × color-coded status cells. The platform's most complex UI surface.
+<strong>Anatomy:</strong> Filter bar → Employee rows (avatar + name + title) → Date header row → Status cells
+<strong>States:</strong> Cell states: <code>fully-booked</code> (blue) / <code>soft-booked</code> (green) / <code>available</code> (red) / <code>pto</code> (yellow). Row hover: subtle highlight. Cell click: opens employee detail sheet.
+<strong>Variants:</strong> Full org view (default) / My team filter / Date range (2-week / 4-week / 8-week)
+<strong>Accessibility:</strong> <code>role=&quot;grid&quot;</code>, <code>aria-label</code> per cell (&quot;Alex Johnson, March 5: Fully Booked&quot;), keyboard navigation across cells
+<strong>Location:</strong> <code>src/features/staffing/AvailabilityCalendar.tsx</code></p>
+<hr>
+<h4 id="timesheetweekgrid"><code>TimesheetWeekGrid</code></h4>
+<p><strong>Purpose:</strong> Editable weekly timesheet table with auto-fill tinting, tab navigation, live hour totals, and submit flow.
+<strong>Anatomy:</strong> Week navigator → Column headers (Mon–Fri) → Entry rows → Total row → Submit button
+<strong>States per row:</strong> <code>auto-filled</code> (violet-50 bg + &quot;Auto-filled&quot; badge) / <code>manual</code> (white bg) / <code>unsaved</code> (dot indicator) / <code>submitted</code> (read-only + lock icon) / <code>edit-requested</code> (unlocked pending approval)
+<strong>Interaction:</strong> Tab through hour cells; Enter confirms row; blur saves row
+<strong>Accessibility:</strong> <code>role=&quot;grid&quot;</code>, column headers with <code>scope=&quot;col&quot;</code>, <code>aria-label</code> on each input (&quot;Hours for DataPlatform v2, Monday&quot;)
+<strong>Location:</strong> <code>src/features/timesheet/TimesheetWeekGrid.tsx</code></p>
+<hr>
+<h4 id="candidaterankingpanel"><code>CandidateRankingPanel</code></h4>
+<p><strong>Purpose:</strong> Renders AI-ranked employee recommendations alongside the staffing need form/detail.
+<strong>Anatomy:</strong> Panel header (spark icon + &quot;AI Recommendations&quot; + need context) → Candidate rows (rank badge + name + role + availability + score pills + assign button) → Assign CTA
+<strong>States:</strong> <code>ranked</code> (full AI scoring) / <code>availability-only</code> (fallback, labeled &quot;Limited history — showing availability only&quot;) / <code>loading</code> (skeleton rows) / <code>empty</code> (no candidates match criteria)
+<strong>Candidate row states:</strong> Default / Hover (highlight) / Selected (violet border)
+<strong>Accessibility:</strong> <code>aria-label=&quot;Candidate recommendations for [need name]&quot;</code>, rank communicated via text not position
+<strong>Location:</strong> <code>src/features/ai-staffing/CandidateRankingPanel.tsx</code></p>
+<hr>
+<h4 id="staffingneedsboard"><code>StaffingNeedsBoard</code></h4>
+<p><strong>Purpose:</strong> Inline-editable table of staffing needs with sales stage badges and assignment status.
+<strong>Anatomy:</strong> Filter/search bar → Need rows (client + role + dates + skills + stage badge + assignment)
+<strong>States per row:</strong> <code>open</code> / <code>tbd</code> / <code>assigned</code> (shows employee name + availability badge) / <code>reviewing</code> (AI panel open)
+<strong>Inline editing:</strong> Sales stage chip is clickable → dropdown in place. Assigned employee is clickable → opens CandidateRankingPanel.
+<strong>Location:</strong> <code>src/features/staffing/StaffingNeedsBoard.tsx</code></p>
+<hr>
+<h4 id="appshell"><code>AppShell</code></h4>
+<p><strong>Purpose:</strong> Root layout component — dark sidebar + topbar + content area. Handles role-aware nav highlighting and sidebar collapse.
+<strong>Anatomy:</strong> <code>&lt;Sidebar&gt;</code> (slate-900, 220px / collapsed 56px) + <code>&lt;TopBar&gt;</code> (52px) + <code>&lt;main&gt;</code> (flex-1 overflow-auto)
+<strong>States:</strong> Sidebar expanded (icon + label) / collapsed (icon only, tooltip on hover)
+<strong>Role logic:</strong> Admin nav item visible only to Admin role; sidebar reads from <code>useAuthStore</code>
+<strong>Location:</strong> <code>src/components/layout/AppShell.tsx</code></p>
+<hr>
+<h4 id="notificationqueue"><code>NotificationQueue</code></h4>
+<p><strong>Purpose:</strong> Persistent notification surface for async system events (event propagation results, conflict detections). Distinct from per-action Toast — these are system events, not responses to user actions.
+<strong>Anatomy:</strong> Fixed bottom-right stack. Each item: icon + message + timestamp + dismiss. Max 3 visible; older items collapsible.
+<strong>States:</strong> <code>success</code> (green border) / <code>warning</code> (amber border — conflicts) / <code>error</code> (red border — propagation failures)
+<strong>Driven by:</strong> <code>useNotificationStore</code> Zustand store; events pushed by TanStack Query background refetch detecting new notifications
+<strong>Location:</strong> <code>src/components/NotificationQueue.tsx</code></p>
+<hr>
+<h4 id="availabilitystatusbadge"><code>AvailabilityStatusBadge</code></h4>
+<p><strong>Purpose:</strong> Reusable inline status indicator used outside the calendar grid (candidate panel, staffing needs board, employee search results).
+<strong>Anatomy:</strong> Colored dot + text label
+<strong>Variants:</strong> <code>fully-booked</code> / <code>soft-booked</code> / <code>available</code> / <code>pto</code> — matches calendar cell colors exactly
+<strong>Note:</strong> Never color-only; always includes text label for WCAG 2.2 AA compliance
+<strong>Location:</strong> <code>src/components/ui/AvailabilityStatusBadge.tsx</code></p>
+<hr>
+<h4 id="weeknavigator"><code>WeekNavigator</code></h4>
+<p><strong>Purpose:</strong> Reusable prev/next week control with current week display. Used in Timesheet and Reporting views.
+<strong>Anatomy:</strong> <code>‹</code> button + &quot;Week of [date] – [date]&quot; label + <code>›</code> button + optional &quot;Today&quot; jump link
+<strong>Location:</strong> <code>src/components/ui/WeekNavigator.tsx</code></p>
+<hr>
+<h3 id="component-implementation-roadmap">Component Implementation Roadmap</h3>
+<p><strong>Phase 1 — Core (required for MVP launch):</strong></p>
+<ul>
+<li><code>AppShell</code> — everything else renders inside it</li>
+<li><code>TimesheetWeekGrid</code> — highest-frequency user interaction</li>
+<li><code>AvailabilityCalendarGrid</code> — platform showcase feature</li>
+<li><code>CandidateRankingPanel</code> — Manager staffing flow</li>
+<li><code>AvailabilityStatusBadge</code> — used across multiple modules</li>
+</ul>
+<p><strong>Phase 2 — Supporting (required for full module coverage):</strong></p>
+<ul>
+<li><code>StaffingNeedsBoard</code> — completes staffing module</li>
+<li><code>NotificationQueue</code> — event propagation feedback</li>
+<li><code>WeekNavigator</code> — reused in Timesheet + Reporting</li>
+</ul>
+<p><strong>Phase 3 — Enhancement (post-launch iteration):</strong></p>
+<ul>
+<li>Availability calendar view toggle (2-week / 4-week / 8-week)</li>
+<li>Timesheet keyboard shortcut hints overlay</li>
+<li>Dashboard widget customization per role</li>
+</ul>
+<hr>
+<h2 id="ux-consistency-patterns">UX Consistency Patterns</h2>
+<h3 id="button-hierarchy">Button Hierarchy</h3>
+<p><strong>Rule:</strong> One primary action per surface. All others secondary or ghost.</p>
+<table>
+<thead>
+<tr>
+<th>Variant</th>
+<th>Usage</th>
+<th>shadcn variant</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Primary (violet)</td>
+<td>Single dominant CTA: Submit Timesheet, Assign Employee, Generate Invoice</td>
+<td><code>variant=&quot;default&quot;</code></td>
+</tr>
+<tr>
+<td>Secondary</td>
+<td>Supporting actions: Save Draft, Export</td>
+<td><code>variant=&quot;secondary&quot;</code></td>
+</tr>
+<tr>
+<td>Ghost</td>
+<td>Inline/low-stakes: Edit, View, Cancel</td>
+<td><code>variant=&quot;ghost&quot;</code></td>
+</tr>
+<tr>
+<td>Destructive</td>
+<td>Irreversible actions only: Delete Client, Void Invoice</td>
+<td><code>variant=&quot;destructive&quot;</code></td>
+</tr>
+<tr>
+<td>Icon-only</td>
+<td>Toolbar actions with tooltips required: prev/next week, collapse sidebar</td>
+<td><code>variant=&quot;ghost&quot; size=&quot;icon&quot;</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Rule:</strong> Destructive actions always require a <code>Dialog</code> confirmation. No other action does.</p>
+<hr>
+<h3 id="feedback-patterns">Feedback Patterns</h3>
+<p>Two distinct feedback channels — responsibilities never overlap:</p>
+<p><strong>Toast (Sonner) — user-triggered action results:</strong></p>
+<ul>
+<li>Success: &quot;Timesheet submitted&quot;, &quot;Employee assigned&quot;</li>
+<li>Error: &quot;Failed to save — please retry&quot;</li>
+<li>Duration: 4 seconds, bottom-right, auto-dismiss</li>
+<li>Never used for async/background events</li>
+</ul>
+<p><strong>NotificationQueue — system/async events:</strong></p>
+<ul>
+<li>Event propagation results: &quot;Availability updated for 3 employees&quot;</li>
+<li>Conflict detection: &quot;Alex Johnson has a PTO conflict on April 2&quot;</li>
+<li>Propagation failures: &quot;Timesheet auto-fill failed — manual entry required&quot;</li>
+<li>Persists until dismissed; max 3 visible</li>
+</ul>
+<p><strong>Validation errors</strong> appear inline below the relevant field, not as Toast. Use <code>text-destructive text-sm</code> with red field border.</p>
+<hr>
+<h3 id="form-patterns">Form Patterns</h3>
+<p><strong>Layout:</strong> Single-column for modals/sheets; two-column max for full-page forms.
+<strong>Labels:</strong> Always above the field (<code>Label</code> component), never placeholder-only.
+<strong>Validation:</strong> On blur for individual fields; full validation on submit attempt.
+<strong>Required fields:</strong> Asterisk (*) in label, never hidden until submit.</p>
+<p><strong>Submission states:</strong></p>
+<ul>
+<li>Button shows spinner + disabled during in-flight request</li>
+<li>On success: close modal/sheet + Toast</li>
+<li>On error: keep modal open, show inline field errors, re-enable button</li>
+</ul>
+<p><strong>Inline editing (tables/boards):</strong> Click cell/chip → transitions to <code>Input</code> or <code>Select</code> in place. Blur or Enter saves. Escape cancels. No save button for single-field inline edits.</p>
+<hr>
+<h3 id="navigation-patterns">Navigation Patterns</h3>
+<p><strong>Primary nav:</strong> Sidebar (AppShell). Active item: violet-600 text + violet-100 bg pill.</p>
+<p><strong>Role-aware default routes on login:</strong></p>
+<ul>
+<li>IC → <code>/timesheet</code></li>
+<li>Manager → <code>/staffing</code></li>
+<li>Finance → <code>/invoices</code></li>
+<li>Admin → <code>/admin</code></li>
+</ul>
+<p><strong>Breadcrumbs:</strong> Not used for top-level nav. Used only for drill-down views (Client → Project → Detail).
+<strong>Back navigation:</strong> Browser back is sufficient; no custom back buttons except in full-screen modals.
+<strong>Module sub-navigation:</strong> <code>Tabs</code> directly below page header. Max 4 tabs per module.
+<strong>External links:</strong> <code>target=&quot;_blank&quot; rel=&quot;noreferrer&quot;</code> with external link icon.</p>
+<hr>
+<h3 id="empty-states--loading-states">Empty States &amp; Loading States</h3>
+<p><strong>Loading:</strong> <code>Skeleton</code> matching the shape of the content it replaces (table rows, cards, calendar cells). Never a full-page spinner.</p>
+<p><strong>Empty state — no data yet:</strong> Centered icon + heading + single CTA. Example: &quot;No staffing needs yet — Add your first need.&quot;
+<strong>Empty state — filters active:</strong> &quot;No results match your filters&quot; + &quot;Clear filters&quot; link. No CTA.
+<strong>Empty state — no permission:</strong> &quot;You don't have access to this section.&quot; No CTA.</p>
+<hr>
+<h3 id="table--data-grid-patterns">Table &amp; Data Grid Patterns</h3>
+<p><strong>Row density:</strong> Compact — 36px row height, <code>py-2 px-3</code> cells.
+<strong>Sortable columns:</strong> Chevron icon on hover; active sort shows solid chevron + column highlight.
+<strong>Row hover:</strong> <code>bg-muted/40</code>; no row click unless drill-down target exists.
+<strong>Action column:</strong> Rightmost, always. Ghost icon buttons, visible on row hover only.
+<strong>Sticky header:</strong> Tables with &gt;10 rows use <code>sticky top-0 bg-background z-10</code> header.
+<strong>Pagination:</strong> Used for reports/invoices (finite, exportable data). Availability calendar shows all rows without pagination.
+<strong>Color-coded cells:</strong> Availability palette with text label. Never color alone.</p>
+<hr>
+<h3 id="modal--overlay-patterns">Modal &amp; Overlay Patterns</h3>
+<p><strong>Dialog:</strong> Irreversible confirmations only. Destructive action button left, Cancel right (primary focus). Body states the consequence.
+<strong>Sheet (side panel):</strong> Detail views — client, project, employee. Slides from right, 480px wide.
+<strong>Rule:</strong> Never nest a Dialog inside a Sheet. Never open a Sheet from inside a Dialog.
+<strong><code>⌘K</code> / <code>Ctrl+K</code>:</strong> Reserved for future command palette — do not bind elsewhere.</p>
+<hr>
+<h2 id="responsive-design--accessibility">Responsive Design &amp; Accessibility</h2>
+<h3 id="responsive-strategy">Responsive Strategy</h3>
+<p><strong>Primary target: Desktop (1280px+).</strong> This is an internal business operations platform used at workstations during the workday. All primary flows are designed and optimized for desktop-width screens.</p>
+<p><strong>Supported:</strong> Desktop (1024px–1920px+)
+<strong>Degraded but functional:</strong> Tablet landscape (1024px)
+<strong>Not supported:</strong> Mobile (&lt;768px) — data-dense surfaces like <code>AvailabilityCalendarGrid</code> and <code>TimesheetWeekGrid</code> cannot be meaningfully rendered at phone widths without a separate mobile-specific design investment. Deferred post-MVP.</p>
+<p><strong>Extra real estate (1440px+):</strong> Sidebar stays fixed at 220px. Content area uses <code>max-w-screen-xl mx-auto</code> to prevent extreme line lengths on ultra-wide monitors. The availability calendar uses full available width to show more date columns.</p>
+<h3 id="breakpoint-strategy">Breakpoint Strategy</h3>
+<p>Using Tailwind's default breakpoints:</p>
+<table>
+<thead>
+<tr>
+<th>Breakpoint</th>
+<th>Width</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sm</code></td>
+<td>640px</td>
+<td>Not a target; layout may be broken</td>
+</tr>
+<tr>
+<td><code>md</code></td>
+<td>768px</td>
+<td>Sidebar auto-collapses to icon-only</td>
+</tr>
+<tr>
+<td><code>lg</code></td>
+<td>1024px</td>
+<td>Minimum supported width — full layout renders</td>
+</tr>
+<tr>
+<td><code>xl</code></td>
+<td>1280px</td>
+<td>Primary design target</td>
+</tr>
+<tr>
+<td><code>2xl</code></td>
+<td>1536px</td>
+<td>Content max-width caps; calendar gains columns</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Sidebar collapse:</strong> Defaults expanded at <code>lg</code>+. Auto-collapses to 56px icon-only at <code>md</code>. User can toggle at any width.</p>
+<p><strong>Table overflow:</strong> Wide tables use <code>overflow-x-auto</code> within the content area. Horizontal scroll is acceptable and expected for data grids.</p>
+<h3 id="accessibility-strategy">Accessibility Strategy</h3>
+<p><strong>Compliance target: WCAG 2.2 Level AA</strong> — no relaxation.</p>
+<p><strong>Color contrast:</strong></p>
+<ul>
+<li>Body text (slate-700) on white: 7.4:1 ✓</li>
+<li>Sidebar text on slate-900: ≥4.5:1 ✓</li>
+<li>Violet primary buttons: white on violet-600 = 4.55:1 ✓ — use violet-700 if audit flags borderline</li>
+<li>Status cells: all include color + text label; text must meet 4.5:1 on its cell background</li>
+</ul>
+<p><strong>Keyboard navigation:</strong></p>
+<ul>
+<li>Full tab order through all interactive elements</li>
+<li><code>AvailabilityCalendarGrid</code> and <code>TimesheetWeekGrid</code>: <code>role=&quot;grid&quot;</code> with arrow-key navigation between cells</li>
+<li>Sidebar items activated with Enter/Space</li>
+<li>Dialog and Sheet trap focus while open; return focus to trigger on close</li>
+<li>Skip link: <code>&lt;a href=&quot;#main-content&quot; class=&quot;sr-only focus:not-sr-only&quot;&gt;</code> in AppShell</li>
+</ul>
+<p><strong>Focus indicators:</strong></p>
+<ul>
+<li>Tailwind/shadcn default focus rings retained — never <code>outline: none</code> without a visible replacement</li>
+<li>Global: <code>focus-visible:ring-2 focus-visible:ring-violet-500</code></li>
+</ul>
+<p><strong>Screen reader support:</strong></p>
+<ul>
+<li>All icon-only buttons: <code>aria-label</code></li>
+<li>Calendar cells: <code>aria-label=&quot;[Employee], [Date]: [Status]&quot;</code></li>
+<li><code>CandidateRankingPanel</code>: <code>aria-label=&quot;Candidate recommendations for [need name]&quot;</code></li>
+<li>Loading skeletons: <code>aria-busy=&quot;true&quot;</code> on container</li>
+<li>Toast success: <code>role=&quot;status&quot;</code>; Toast error: <code>role=&quot;alert&quot;</code></li>
+<li><code>NotificationQueue</code> items: <code>role=&quot;status&quot;</code> with <code>aria-live=&quot;polite&quot;</code></li>
+</ul>
+<p><strong>Motion:</strong></p>
+<ul>
+<li>All animations use <code>motion-safe:</code> Tailwind variant or <code>useReducedMotion</code> hook</li>
+<li>Respects <code>prefers-reduced-motion: reduce</code></li>
+</ul>
+<h3 id="testing-strategy">Testing Strategy</h3>
+<p><strong>Keyboard:</strong> Tab through every primary flow (timesheet submit, staffing assign, invoice generate) keyboard-only before any release.
+<strong>Screen reader:</strong> NVDA + Chrome (Windows) as primary test combination given Windows workstation user base.
+<strong>Contrast:</strong> <code>axe-core</code> integrated in Storybook CI — all new components must pass before merge.
+<strong>Browsers:</strong> Chrome (primary), Edge (secondary), Firefox (tertiary). Safari not required.
+<strong>Zoom:</strong> All layouts remain usable at 150% browser zoom without horizontal overflow in the main content area.</p>
+
+</body>
+</html>

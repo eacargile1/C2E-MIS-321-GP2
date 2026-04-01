@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MIS321-GP2 — UX Design Directions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: #F1F5F9; color: #0F172A; }
+
+  /* ── Tokens ── */
+  :root {
+    --violet:      #7C3AED;
+    --violet-h:    #6D28D9;
+    --slate-900:   #0F172A;
+    --slate-800:   #1E293B;
+    --slate-700:   #334155;
+    --slate-500:   #64748B;
+    --slate-400:   #94A3B8;
+    --slate-200:   #E2E8F0;
+    --slate-100:   #F1F5F9;
+    --slate-50:    #F8FAFC;
+    --white:       #FFFFFF;
+    --s-booked:    #3B82F6;
+    --soft-booked: #22C55E;
+    --available:   #EF4444;
+    --pto:         #EAB308;
+    --success:     #16A34A;
+    --warn:        #D97706;
+  }
+
+  /* ── Nav tabs ── */
+  .tab-bar { display:flex; gap:8px; padding:24px 32px 0; }
+  .tab { padding:8px 20px; border-radius:8px 8px 0 0; background:var(--slate-200); color:var(--slate-500); font-size:13px; font-weight:500; cursor:pointer; border:none; }
+  .tab.active { background:var(--white); color:var(--slate-900); border-bottom:2px solid var(--white); }
+  .tab-desc { padding:8px 32px 16px; font-size:12px; color:var(--slate-500); background:var(--slate-100); }
+
+  /* ── Screen wrapper ── */
+  .screen { display:none; padding:0 32px 40px; }
+  .screen.active { display:block; }
+
+  /* ── App frame ── */
+  .app { display:flex; height:640px; border-radius:12px; overflow:hidden; box-shadow:0 8px 40px rgba(0,0,0,0.18); }
+
+  /* ── Sidebar ── */
+  .sidebar { width:220px; min-width:220px; background:var(--slate-900); display:flex; flex-direction:column; padding:0; }
+  .sidebar-logo { padding:20px 20px 12px; display:flex; align-items:center; gap:10px; border-bottom:1px solid var(--slate-800); }
+  .sidebar-logo .logo-mark { width:28px; height:28px; background:var(--violet); border-radius:6px; display:flex; align-items:center; justify-content:center; color:white; font-weight:700; font-size:13px; }
+  .sidebar-logo .logo-text { color:var(--slate-50); font-size:14px; font-weight:600; }
+  .nav-section { padding:12px 12px 4px; }
+  .nav-label { font-size:10px; font-weight:600; color:var(--slate-500); letter-spacing:.08em; text-transform:uppercase; padding:0 8px 6px; }
+  .nav-item { display:flex; align-items:center; gap:10px; padding:7px 10px; border-radius:6px; cursor:pointer; color:var(--slate-400); font-size:13px; font-weight:400; }
+  .nav-item:hover { background:var(--slate-800); color:var(--slate-200); }
+  .nav-item.active { background:rgba(124,58,237,0.15); color:var(--white); }
+  .nav-item.active .nav-dot { background:var(--violet); }
+  .nav-dot { width:6px; height:6px; border-radius:50%; background:var(--slate-700); flex-shrink:0; }
+  .nav-icon { width:16px; height:16px; background:currentColor; border-radius:3px; opacity:.7; flex-shrink:0; }
+  .sidebar-footer { margin-top:auto; padding:12px; border-top:1px solid var(--slate-800); display:flex; align-items:center; gap:10px; }
+  .avatar { width:28px; height:28px; border-radius:50%; background:var(--violet); display:flex; align-items:center; justify-content:center; color:white; font-size:11px; font-weight:600; flex-shrink:0; }
+  .user-info .name { font-size:12px; color:var(--slate-200); font-weight:500; }
+  .user-info .role { font-size:10px; color:var(--slate-500); }
+
+  /* ── Main area ── */
+  .main { flex:1; background:var(--white); display:flex; flex-direction:column; overflow:hidden; }
+  .topbar { height:52px; border-bottom:1px solid var(--slate-200); display:flex; align-items:center; padding:0 24px; gap:16px; flex-shrink:0; }
+  .topbar-title { font-size:16px; font-weight:600; color:var(--slate-900); }
+  .topbar-sub { font-size:13px; color:var(--slate-500); }
+  .topbar-actions { margin-left:auto; display:flex; gap:8px; align-items:center; }
+  .btn { padding:6px 14px; border-radius:6px; font-size:13px; font-weight:500; border:none; cursor:pointer; }
+  .btn-primary { background:var(--violet); color:white; }
+  .btn-primary:hover { background:var(--violet-h); }
+  .btn-ghost { background:transparent; color:var(--slate-700); border:1px solid var(--slate-200); }
+  .content { flex:1; overflow:auto; padding:20px 24px; }
+
+  /* ── Tables ── */
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { text-align:left; font-size:11px; font-weight:600; color:var(--slate-500); letter-spacing:.04em; text-transform:uppercase; padding:0 12px 8px; border-bottom:1px solid var(--slate-200); }
+  td { padding:0 12px; height:36px; border-bottom:1px solid var(--slate-100); color:var(--slate-700); vertical-align:middle; font-variant-numeric:tabular-nums; }
+  tr:hover td { background:var(--slate-50); }
+
+  /* ── Badges ── */
+  .badge { display:inline-flex; align-items:center; gap:5px; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:500; }
+  .badge-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+  .badge-fully { background:#EFF6FF; color:#1D4ED8; }
+  .badge-fully .badge-dot { background:var(--s-booked); }
+  .badge-soft { background:#F0FDF4; color:#15803D; }
+  .badge-soft .badge-dot { background:var(--soft-booked); }
+  .badge-avail { background:#FEF2F2; color:#B91C1C; }
+  .badge-avail .badge-dot { background:var(--available); }
+  .badge-pto { background:#FEFCE8; color:#A16207; }
+  .badge-pto .badge-dot { background:var(--pto); }
+  .badge-violet { background:rgba(124,58,237,.1); color:var(--violet); }
+  .badge-slate { background:var(--slate-100); color:var(--slate-600); }
+
+  /* ── Calendar grid ── */
+  .cal-grid { display:grid; font-size:12px; }
+  .cal-header { display:grid; grid-template-columns:160px repeat(10,1fr); border-bottom:2px solid var(--slate-200); }
+  .cal-hcell { padding:6px 4px; font-size:10px; font-weight:600; color:var(--slate-500); text-align:center; text-transform:uppercase; }
+  .cal-row { display:grid; grid-template-columns:160px repeat(10,1fr); border-bottom:1px solid var(--slate-100); }
+  .cal-row:hover .cal-cell { filter:brightness(.97); }
+  .cal-name { padding:0 12px; height:36px; display:flex; align-items:center; gap:8px; }
+  .cal-name-text .n { font-size:13px; font-weight:500; color:var(--slate-800); }
+  .cal-name-text .t { font-size:11px; color:var(--slate-500); }
+  .cal-cell { height:36px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:500; }
+  .c-full { background:#DBEAFE; color:#1D4ED8; }
+  .c-soft { background:#DCFCE7; color:#15803D; }
+  .c-avail { background:#FEE2E2; color:#B91C1C; }
+  .c-pto  { background:#FEF9C3; color:#A16207; }
+
+  /* ── Cards / panels ── */
+  .panel { background:var(--slate-50); border:1px solid var(--slate-200); border-radius:8px; padding:16px; }
+  .panel-title { font-size:13px; font-weight:600; color:var(--slate-800); margin-bottom:12px; }
+  .metric { text-align:center; }
+  .metric .val { font-size:28px; font-weight:700; color:var(--slate-900); font-variant-numeric:tabular-nums; }
+  .metric .lbl { font-size:11px; color:var(--slate-500); margin-top:2px; }
+  .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .grid-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+  .grid-4 { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:12px; }
+
+  /* ── Timesheet auto-fill row ── */
+  .ts-auto { background:rgba(124,58,237,.04); }
+  .ts-auto td:first-child { border-left:2px solid var(--violet); }
+  .ts-tag { font-size:10px; color:var(--violet); font-weight:500; }
+  input[type=number] { width:64px; height:28px; border:1px solid var(--slate-200); border-radius:4px; padding:0 8px; font-size:13px; font-family:inherit; font-variant-numeric:tabular-nums; color:var(--slate-900); background:white; }
+  input[type=number]:focus { outline:2px solid var(--violet); outline-offset:1px; }
+
+  /* ── Toast ── */
+  .toast { position:absolute; bottom:24px; right:24px; background:var(--slate-900); color:white; padding:10px 16px; border-radius:8px; font-size:13px; display:flex; align-items:center; gap:10px; box-shadow:0 4px 16px rgba(0,0,0,.2); }
+  .toast-success { border-left:3px solid var(--success); }
+  .toast-icon { width:16px; height:16px; background:var(--success); border-radius:50%; flex-shrink:0; }
+
+  /* ── AI panel ── */
+  .ai-panel { background:var(--slate-50); border:1px solid var(--slate-200); border-radius:8px; }
+  .ai-header { padding:12px 16px; border-bottom:1px solid var(--slate-200); display:flex; align-items:center; gap:8px; }
+  .ai-spark { width:20px; height:20px; background:var(--violet); border-radius:4px; display:flex; align-items:center; justify-content:center; color:white; font-size:11px; }
+  .ai-title { font-size:12px; font-weight:600; color:var(--slate-800); }
+  .ai-sub { font-size:11px; color:var(--slate-500); margin-left:auto; }
+  .candidate { padding:10px 16px; border-bottom:1px solid var(--slate-100); display:flex; align-items:center; gap:12px; cursor:pointer; }
+  .candidate:hover { background:white; }
+  .candidate:last-child { border:none; }
+  .c-rank { width:20px; height:20px; border-radius:50%; background:var(--violet); color:white; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .c-rank.r2 { background:var(--slate-400); }
+  .c-rank.r3 { background:var(--slate-300); color:var(--slate-700); }
+  .c-info .cn { font-size:13px; font-weight:500; color:var(--slate-800); }
+  .c-info .cr { font-size:11px; color:var(--slate-500); }
+  .c-scores { margin-left:auto; display:flex; gap:6px; }
+  .score-pill { font-size:10px; padding:2px 7px; border-radius:10px; font-weight:500; }
+  .sp-match { background:#EDE9FE; color:#5B21B6; }
+  .sp-avail { background:#DCFCE7; color:#15803D; }
+  .c-select { width:28px; height:28px; border:1px solid var(--slate-200); border-radius:6px; background:white; display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:11px; color:var(--slate-500); flex-shrink:0; }
+  .c-select:hover { border-color:var(--violet); color:var(--violet); }
+
+  /* ── Split layout ── */
+  .split { display:flex; gap:0; flex:1; overflow:hidden; }
+  .split-left { width:55%; border-right:1px solid var(--slate-200); overflow:auto; }
+  .split-right { width:45%; overflow:auto; }
+  .split-title { padding:12px 16px; font-size:12px; font-weight:600; color:var(--slate-700); border-bottom:1px solid var(--slate-200); background:var(--slate-50); text-transform:uppercase; letter-spacing:.04em; }
+
+  /* ── Needs board ── */
+  .need-row { display:flex; align-items:center; gap:12px; padding:10px 16px; border-bottom:1px solid var(--slate-100); font-size:13px; }
+  .need-row:hover { background:var(--slate-50); }
+  .need-client { font-weight:500; color:var(--slate-800); min-width:90px; }
+  .need-role { color:var(--slate-600); min-width:100px; }
+  .need-stage { }
+  .need-assign { margin-left:auto; }
+  .stage-won { background:#DCFCE7; color:#15803D; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:500; }
+  .stage-neg { background:#FEF9C3; color:#A16207; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:500; }
+  .stage-commit { background:#EDE9FE; color:#5B21B6; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:500; }
+
+  /* ── Week nav ── */
+  .week-nav { display:flex; align-items:center; gap:12px; margin-bottom:16px; }
+  .week-nav .wk { font-size:14px; font-weight:600; color:var(--slate-800); }
+  .wk-btn { width:28px; height:28px; border:1px solid var(--slate-200); border-radius:6px; background:white; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:14px; color:var(--slate-500); }
+  .week-total { margin-left:auto; font-size:13px; color:var(--slate-600); }
+  .week-total strong { color:var(--slate-900); font-variant-numeric:tabular-nums; }
+
+  /* ── Direction label ── */
+  .dir-label { display:inline-block; background:var(--violet); color:white; font-size:11px; font-weight:600; padding:3px 10px; border-radius:4px; margin-bottom:12px; letter-spacing:.04em; }
+
+  /* ── Section filters ── */
+  .filter-bar { display:flex; gap:8px; margin-bottom:16px; align-items:center; }
+  .filter-chip { padding:4px 12px; border:1px solid var(--slate-200); border-radius:20px; font-size:12px; color:var(--slate-600); background:white; cursor:pointer; }
+  .filter-chip.active { background:var(--violet); color:white; border-color:var(--violet); }
+  .search-box { height:32px; border:1px solid var(--slate-200); border-radius:6px; padding:0 10px; font-size:13px; font-family:inherit; color:var(--slate-700); background:white; min-width:180px; }
+  .search-box:focus { outline:2px solid var(--violet); outline-offset:1px; border-color:transparent; }
+
+  /* ── Dashboard ── */
+  .dash-greeting { margin-bottom:20px; }
+  .dash-greeting h2 { font-size:20px; font-weight:600; color:var(--slate-900); }
+  .dash-greeting p { font-size:13px; color:var(--slate-500); margin-top:2px; }
+  .progress-bar { height:4px; background:var(--slate-200); border-radius:2px; margin-top:8px; }
+  .progress-fill { height:100%; border-radius:2px; background:var(--violet); }
+  .activity-item { display:flex; align-items:flex-start; gap:10px; padding:10px 0; border-bottom:1px solid var(--slate-100); }
+  .activity-item:last-child { border:none; }
+  .act-dot { width:8px; height:8px; border-radius:50%; background:var(--violet); margin-top:4px; flex-shrink:0; }
+  .act-text { font-size:13px; color:var(--slate-700); }
+  .act-time { font-size:11px; color:var(--slate-400); margin-top:2px; }
+
+  .relative { position:relative; }
+</style>
+</head>
+<body>
+
+<div style="padding:32px 32px 0;">
+  <h1 style="font-size:22px;font-weight:700;color:#0F172A;">MIS321-GP2 — UX Design Directions</h1>
+  <p style="font-size:13px;color:#64748B;margin-top:4px;">3 design directions based on established visual foundation (Violet primary · Slate-900 sidebar · Inter · shadcn/ui)</p>
+</div>
+
+<div class="tab-bar">
+  <button class="tab active" onclick="showTab('a',this)">Direction A — Command Center</button>
+  <button class="tab" onclick="showTab('b',this)">Direction B — Dashboard First</button>
+  <button class="tab" onclick="showTab('c',this)">Direction C — Split Panel</button>
+</div>
+<div class="tab-desc" id="tab-desc">
+  <strong>Direction A:</strong> Linear-inspired. Dense, keyboard-first, full-width tables. Sidebar is the primary navigation layer. Each module is a focused workspace. Best for power users who live in the tool daily.
+</div>
+
+<!-- ════════════════════ DIRECTION A ════════════════════ -->
+<div class="screen active" id="screen-a">
+  <div style="margin-bottom:8px;"><span class="dir-label">A — COMMAND CENTER</span>
+    <span style="font-size:12px;color:#64748B;margin-left:12px;">Shown: Availability Calendar view (Manager role)</span>
+  </div>
+  <div class="app relative">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-logo">
+        <div class="logo-mark">O</div>
+        <div class="logo-text">OpsHub</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-item"><div class="nav-dot"></div>Timesheet</div>
+        <div class="nav-item"><div class="nav-dot"></div>Expenses</div>
+        <div class="nav-item"><div class="nav-dot"></div>Projects</div>
+        <div class="nav-item active"><div class="nav-dot"></div>Staffing</div>
+        <div class="nav-item"><div class="nav-dot"></div>PTO</div>
+        <div class="nav-item"><div class="nav-dot"></div>Clients</div>
+        <div class="nav-item"><div class="nav-dot"></div>Reporting</div>
+        <div class="nav-item"><div class="nav-dot"></div>Invoices</div>
+      </div>
+      <div class="sidebar-footer">
+        <div class="avatar">JM</div>
+        <div class="user-info"><div class="name">Jordan M.</div><div class="role">Manager</div></div>
+      </div>
+    </div>
+    <!-- Main -->
+    <div class="main">
+      <div class="topbar">
+        <div class="topbar-title">Staffing</div>
+        <div class="topbar-sub">Availability · March 2026</div>
+        <div class="topbar-actions">
+          <div class="filter-chip active">Availability</div>
+          <div class="filter-chip">Needs Board</div>
+          <button class="btn btn-primary">+ Add Need</button>
+        </div>
+      </div>
+      <div class="content">
+        <div class="filter-bar">
+          <input class="search-box" placeholder="Filter employees…" value="">
+          <div class="filter-chip active">All Teams</div>
+          <div class="filter-chip">My Team</div>
+          <div style="margin-left:auto;display:flex;gap:6px;">
+            <span class="badge badge-fully"><span class="badge-dot"></span>Fully Booked</span>
+            <span class="badge badge-soft"><span class="badge-dot"></span>Soft Booked</span>
+            <span class="badge badge-avail"><span class="badge-dot"></span>Available</span>
+            <span class="badge badge-pto"><span class="badge-dot"></span>PTO</span>
+          </div>
+        </div>
+        <div class="cal-grid">
+          <div class="cal-header">
+            <div class="cal-hcell" style="text-align:left;padding-left:14px;">Employee</div>
+            <div class="cal-hcell">Mon 2</div><div class="cal-hcell">Tue 3</div>
+            <div class="cal-hcell">Wed 4</div><div class="cal-hcell">Thu 5</div>
+            <div class="cal-hcell">Fri 6</div><div class="cal-hcell">Mon 9</div>
+            <div class="cal-hcell">Tue 10</div><div class="cal-hcell">Wed 11</div>
+            <div class="cal-hcell">Thu 12</div><div class="cal-hcell">Fri 13</div>
+          </div>
+          <div class="cal-row">
+            <div class="cal-name"><div class="avatar" style="width:24px;height:24px;font-size:9px;">AJ</div><div class="cal-name-text"><div class="n">Alex Johnson</div><div class="t">Sr. Engineer</div></div></div>
+            <div class="cal-cell c-full">Full</div><div class="cal-cell c-full">Full</div><div class="cal-cell c-full">Full</div><div class="cal-cell c-full">Full</div><div class="cal-cell c-full">Full</div>
+            <div class="cal-cell c-soft">Soft</div><div class="cal-cell c-soft">Soft</div><div class="cal-cell c-avail">Avail</div><div class="cal-cell c-avail">Avail</div><div class="cal-cell c-avail">Avail</div>
+          </div>
+          <div class="cal-row">
+            <div class="cal-name"><div class="avatar" style="width:24px;height:24px;font-size:9px;background:#0D9488;">SR</div><div class="cal-name-text"><div class="n">Sam Rivera</div><div class="t">Data Engineer</div></div></div>
+            <div class="cal-cell c-pto">PTO</div><div class="cal-cell c-pto">PTO</div><div class="cal-cell c-full">Full</div><div class="cal-cell c-full">Full</div><div class="cal-cell c-full">Full</div>
+            <div class="cal-cell c-full">Full</div><div class="cal-cell c-full">Full</div><div class="cal-cell c-full">Full</div><div class="cal-cell c-full">Full</div><div class="cal-cell c-full">Full</div>
+          </div>
+          <div class="cal-row">
+            <div class="cal-name"><div class="avatar" style="width:24px;height:24px;font-size:9px;background:#EA580C;">ML</div><div class="cal-name-text"><div class="n">Morgan Lee</div><div class="t">Consultant</div></div></div>
+            <div class="cal-cell c-avail">Avail</div><div class="cal-cell c-avail">Avail</div><div class="cal-cell c-avail">Avail</div><div class="cal-cell c-soft">Soft</div><div class="cal-cell c-soft">Soft</div>
+            <div class="cal-cell c-soft">Soft</div><div class="cal-cell c-soft">Soft</div><div class="cal-cell c-soft">Soft</div><div class="cal-cell c-avail">Avail</div><div class="cal-cell c-avail">Avail</div>
+          </div>
+          <div class="cal-row">
+            <div class="cal-name"><div class="avatar" style="width:24px;height:24px;font-size:9px;background:#7C3AED;">TP</div><div class="cal-name-text"><div class="n">Taylor Park</div><div class="t">Sr. Consultant</div></div></div>
+            <div class="cal-cell c-full">Full</div><div class="cal-cell c-full">Full</div><div class="cal-cell c-full">Full</div><div class="cal-cell c-full">Full</div><div class="cal-cell c-pto">PTO</div>
+            <div class="cal-cell c-avail">Avail</div><div class="cal-cell c-avail">Avail</div><div class="cal-cell c-avail">Avail</div><div class="cal-cell c-avail">Avail</div><div class="cal-cell c-avail">Avail</div>
+          </div>
+          <div class="cal-row">
+            <div class="cal-name"><div class="avatar" style="width:24px;height:24px;font-size:9px;background:#0891B2;">CW</div><div class="cal-name-text"><div class="n">Casey Ward</div><div class="t">Engineer</div></div></div>
+            <div class="cal-cell c-soft">Soft</div><div class="cal-cell c-soft">Soft</div><div class="cal-cell c-soft">Soft</div><div class="cal-cell c-full">Full</div><div class="cal-cell c-full">Full</div>
+            <div class="cal-cell c-full">Full</div><div class="cal-cell c-full">Full</div><div class="cal-cell c-full">Full</div><div class="cal-cell c-full">Full</div><div class="cal-cell c-full">Full</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="toast toast-success"><div class="toast-icon"></div>Alex Johnson assigned — availability updated</div>
+  </div>
+</div>
+
+<!-- ════════════════════ DIRECTION B ════════════════════ -->
+<div class="screen" id="screen-b">
+  <div style="margin-bottom:8px;"><span class="dir-label">B — DASHBOARD FIRST</span>
+    <span style="font-size:12px;color:#64748B;margin-left:12px;">Shown: Role-aware dashboard (Manager role) + Timesheet view</span>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+    <!-- Dashboard -->
+    <div>
+      <div style="font-size:11px;font-weight:600;color:#64748B;margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em;">Dashboard — Monday Morning View</div>
+      <div class="app" style="height:540px;">
+        <div class="sidebar">
+          <div class="sidebar-logo"><div class="logo-mark">O</div><div class="logo-text">OpsHub</div></div>
+          <div class="nav-section">
+            <div class="nav-item active"><div class="nav-dot"></div>Dashboard</div>
+            <div class="nav-item"><div class="nav-dot"></div>Timesheet</div>
+            <div class="nav-item"><div class="nav-dot"></div>Staffing</div>
+            <div class="nav-item"><div class="nav-dot"></div>Projects</div>
+            <div class="nav-item"><div class="nav-dot"></div>Clients</div>
+            <div class="nav-item"><div class="nav-dot"></div>Reporting</div>
+            <div class="nav-item"><div class="nav-dot"></div>Invoices</div>
+          </div>
+          <div class="sidebar-footer"><div class="avatar">JM</div><div class="user-info"><div class="name">Jordan M.</div><div class="role">Manager</div></div></div>
+        </div>
+        <div class="main">
+          <div class="topbar"><div class="topbar-title">Good morning, Jordan</div><div class="topbar-sub" style="margin-left:auto;font-size:12px;color:#94A3B8;">Mon, Mar 9 · Week 11</div></div>
+          <div class="content" style="overflow:auto;">
+            <div class="grid-4" style="margin-bottom:16px;">
+              <div class="panel"><div class="metric"><div class="val">8</div><div class="lbl">Open Needs</div></div></div>
+              <div class="panel"><div class="metric"><div class="val" style="color:#EF4444;">3</div><div class="lbl">Available Staff</div></div></div>
+              <div class="panel"><div class="metric"><div class="val">12</div><div class="lbl">Active Projects</div></div></div>
+              <div class="panel"><div class="metric"><div class="val" style="color:#D97706;">2</div><div class="lbl">Conflicts</div></div></div>
+            </div>
+            <div class="grid-2" style="margin-bottom:16px;">
+              <div class="panel">
+                <div class="panel-title">Team Utilization — This Week</div>
+                <div style="font-size:12px;color:#64748B;margin-bottom:8px;">5 of 8 team members fully booked</div>
+                <div class="progress-bar"><div class="progress-fill" style="width:62%"></div></div>
+                <div style="font-size:11px;color:#64748B;margin-top:6px;">62% avg utilization</div>
+              </div>
+              <div class="panel">
+                <div class="panel-title">⚠ Conflicts Requiring Attention</div>
+                <div style="font-size:12px;color:#DC2626;margin-bottom:6px;">Sam Rivera — PTO overlaps Acme Corp SOW start (Mar 10)</div>
+                <div style="font-size:12px;color:#DC2626;">Taylor Park — Double-booked Mar 12</div>
+                <button class="btn btn-ghost" style="margin-top:8px;font-size:12px;padding:4px 10px;">Review All</button>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-title">Recent Activity</div>
+              <div class="activity-item"><div class="act-dot"></div><div><div class="act-text">Morgan Lee assigned to <strong>Acme Corp</strong> — availability updated to Soft Booked</div><div class="act-time">2 min ago</div></div></div>
+              <div class="activity-item"><div class="act-dot" style="background:#16A34A;"></div><div><div class="act-text">PTO approved for Taylor Park (Mar 6) — calendar updated</div><div class="act-time">1 hr ago</div></div></div>
+              <div class="activity-item"><div class="act-dot" style="background:#D97706;"></div><div><div class="act-text">Conflict detected: Sam Rivera — PTO Mar 10 overlaps project start</div><div class="act-time">3 hr ago</div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- Timesheet -->
+    <div>
+      <div style="font-size:11px;font-weight:600;color:#64748B;margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em;">Timesheet — IC View with Auto-fill</div>
+      <div class="app" style="height:540px;">
+        <div class="sidebar">
+          <div class="sidebar-logo"><div class="logo-mark">O</div><div class="logo-text">OpsHub</div></div>
+          <div class="nav-section">
+            <div class="nav-item"><div class="nav-dot"></div>Dashboard</div>
+            <div class="nav-item active"><div class="nav-dot"></div>Timesheet</div>
+            <div class="nav-item"><div class="nav-dot"></div>Expenses</div>
+            <div class="nav-item"><div class="nav-dot"></div>Projects</div>
+            <div class="nav-item"><div class="nav-dot"></div>PTO</div>
+          </div>
+          <div class="sidebar-footer"><div class="avatar" style="background:#0D9488;">SR</div><div class="user-info"><div class="name">Sam Rivera</div><div class="role">Individual Contributor</div></div></div>
+        </div>
+        <div class="main">
+          <div class="topbar">
+            <div class="topbar-title">Timesheet</div>
+            <div class="topbar-actions">
+              <button class="btn btn-ghost">+ Add Row</button>
+              <button class="btn btn-primary">Submit Week</button>
+            </div>
+          </div>
+          <div class="content">
+            <div class="week-nav">
+              <button class="wk-btn">‹</button>
+              <div class="wk">Week of Mar 3 – Mar 7, 2026</div>
+              <button class="wk-btn">›</button>
+              <div class="week-total">Total: <strong>35.5h</strong> / 40h</div>
+            </div>
+            <table>
+              <thead><tr>
+                <th>Project</th><th>Client</th><th>Task</th>
+                <th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Total</th><th>Type</th>
+              </tr></thead>
+              <tbody>
+                <tr class="ts-auto">
+                  <td><strong>DataPlatform v2</strong><div class="ts-tag">Auto-filled</div></td>
+                  <td>Acme Corp</td><td style="color:#64748B;">Data Engineering</td>
+                  <td><input type="number" value="8"></td><td><input type="number" value="8"></td>
+                  <td><input type="number" value="8"></td><td><input type="number" value="8"></td>
+                  <td><input type="number" value="0"></td>
+                  <td style="font-weight:600;">32.0</td><td><span class="badge badge-violet">Billable</span></td>
+                </tr>
+                <tr class="ts-auto">
+                  <td><strong>Internal Training</strong><div class="ts-tag">Auto-filled</div></td>
+                  <td>—</td><td style="color:#64748B;">Team Workshop</td>
+                  <td><input type="number" value="0"></td><td><input type="number" value="0"></td>
+                  <td><input type="number" value="0"></td><td><input type="number" value="0"></td>
+                  <td><input type="number" value="3.5"></td>
+                  <td style="font-weight:600;">3.5</td><td><span class="badge badge-slate">Non-Bill</span></td>
+                </tr>
+                <tr>
+                  <td style="color:#94A3B8;font-style:italic;">+ Add row…</td>
+                  <td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════ DIRECTION C ════════════════════ -->
+<div class="screen" id="screen-c">
+  <div style="margin-bottom:8px;"><span class="dir-label">C — SPLIT PANEL</span>
+    <span style="font-size:12px;color:#64748B;margin-left:12px;">Shown: Staffing Needs + AI Recommendations (Manager role)</span>
+  </div>
+  <div class="app">
+    <div class="sidebar">
+      <div class="sidebar-logo"><div class="logo-mark">O</div><div class="logo-text">OpsHub</div></div>
+      <div class="nav-section">
+        <div class="nav-item"><div class="nav-dot"></div>Timesheet</div>
+        <div class="nav-item"><div class="nav-dot"></div>Projects</div>
+        <div class="nav-item active"><div class="nav-dot"></div>Staffing</div>
+        <div class="nav-item"><div class="nav-dot"></div>PTO</div>
+        <div class="nav-item"><div class="nav-dot"></div>Clients</div>
+        <div class="nav-item"><div class="nav-dot"></div>Reporting</div>
+        <div class="nav-item"><div class="nav-dot"></div>Invoices</div>
+      </div>
+      <div class="sidebar-footer"><div class="avatar">JM</div><div class="user-info"><div class="name">Jordan M.</div><div class="role">Manager</div></div></div>
+    </div>
+    <div class="main">
+      <div class="topbar">
+        <div class="topbar-title">Staffing</div>
+        <div class="topbar-sub">Needs Board</div>
+        <div class="topbar-actions">
+          <div class="filter-chip">Availability</div>
+          <div class="filter-chip active">Needs Board</div>
+          <button class="btn btn-primary">+ Add Need</button>
+        </div>
+      </div>
+      <div class="split">
+        <!-- Left: Needs board -->
+        <div class="split-left">
+          <div class="split-title">Open Needs (8)</div>
+          <div class="need-row" style="background:#EDE9FE20;border-left:2px solid #7C3AED;">
+            <div>
+              <div style="font-size:13px;font-weight:600;color:#0F172A;">Acme Corp — Sr. Data Engineer</div>
+              <div style="font-size:11px;color:#64748B;margin-top:2px;">Mar 10 – Jun 30 · C#, .NET, Data Modeling</div>
+            </div>
+            <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+              <span class="stage-won">Won</span>
+              <span class="badge badge-violet">Reviewing AI</span>
+            </div>
+          </div>
+          <div class="need-row">
+            <div>
+              <div style="font-size:13px;font-weight:500;color:#0F172A;">BuildCo — Consultant</div>
+              <div style="font-size:11px;color:#64748B;margin-top:2px;">Apr 1 – Jul 15 · Project Management</div>
+            </div>
+            <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+              <span class="stage-neg">Negotiation</span>
+              <span class="badge badge-slate">TBD</span>
+            </div>
+          </div>
+          <div class="need-row">
+            <div>
+              <div style="font-size:13px;font-weight:500;color:#0F172A;">Nexus Health — Data Engineer</div>
+              <div style="font-size:11px;color:#64748B;margin-top:2px;">May 1 – Aug 31 · Python, Data Engineering</div>
+            </div>
+            <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+              <span class="stage-commit">Commit</span>
+              <span class="badge badge-slate">OPEN</span>
+            </div>
+          </div>
+          <div class="need-row">
+            <div>
+              <div style="font-size:13px;font-weight:500;color:#0F172A;">Vertex Inc — Sr. Consultant</div>
+              <div style="font-size:11px;color:#64748B;margin-top:2px;">Mar 17 – May 30 · Strategy, PM</div>
+            </div>
+            <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+              <span class="stage-won">Won</span>
+              <span class="badge badge-soft"><span class="badge-dot"></span>Taylor Park</span>
+            </div>
+          </div>
+          <div class="need-row">
+            <div>
+              <div style="font-size:13px;font-weight:500;color:#0F172A;">Meridian Co — Engineer</div>
+              <div style="font-size:11px;color:#64748B;margin-top:2px;">Apr 15 – Sep 30 · React, TypeScript</div>
+            </div>
+            <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+              <span class="stage-neg">Negotiation</span>
+              <span class="badge badge-slate">OPEN</span>
+            </div>
+          </div>
+        </div>
+        <!-- Right: AI panel for selected need -->
+        <div class="split-right">
+          <div class="split-title" style="display:flex;align-items:center;gap:8px;">
+            <span>AI Recommendations</span>
+            <span style="font-size:10px;color:#7C3AED;background:#EDE9FE;padding:2px 6px;border-radius:3px;font-weight:600;">Acme Corp · Sr. Data Engineer</span>
+          </div>
+          <div style="padding:12px 16px;background:#F8FAFC;border-bottom:1px solid #E2E8F0;">
+            <div style="font-size:11px;color:#64748B;">Ranked by skill match · availability · historical utilization</div>
+          </div>
+          <div class="candidate">
+            <div class="c-rank">1</div>
+            <div class="c-info"><div class="cn">Alex Johnson</div><div class="cr">Sr. Engineer · Available from Mar 9</div></div>
+            <div class="c-scores">
+              <span class="score-pill sp-match">Skills 94%</span>
+              <span class="score-pill sp-avail">Available</span>
+            </div>
+            <div class="c-select">→</div>
+          </div>
+          <div class="candidate">
+            <div class="c-rank r2">2</div>
+            <div class="c-info"><div class="cn">Morgan Lee</div><div class="cr">Consultant · Soft Booked Mar 3–13</div></div>
+            <div class="c-scores">
+              <span class="score-pill sp-match">Skills 81%</span>
+              <span class="score-pill" style="background:#FEF9C3;color:#A16207;">Soft Booked</span>
+            </div>
+            <div class="c-select">→</div>
+          </div>
+          <div class="candidate">
+            <div class="c-rank r3">3</div>
+            <div class="c-info"><div class="cn">Casey Ward</div><div class="cr">Engineer · Fully Booked until Mar 20</div></div>
+            <div class="c-scores">
+              <span class="score-pill sp-match">Skills 73%</span>
+              <span class="score-pill" style="background:#DBEAFE;color:#1D4ED8;">Fully Booked</span>
+            </div>
+            <div class="c-select">→</div>
+          </div>
+          <div style="padding:16px;border-top:1px solid #E2E8F0;margin-top:auto;">
+            <div style="font-size:11px;color:#64748B;margin-bottom:10px;">Selecting will set status to Soft Booked and update the availability calendar.</div>
+            <button class="btn btn-primary" style="width:100%;">Assign Alex Johnson →</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="padding:24px 32px;background:#F8FAFC;margin-top:32px;border-top:1px solid #E2E8F0;">
+  <div style="font-size:13px;font-weight:600;color:#0F172A;margin-bottom:8px;">Which direction resonates?</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;font-size:12px;color:#475569;">
+    <div><strong style="color:#7C3AED;">A — Command Center:</strong> Best for daily power users. Dense, keyboard-first, full-width tables. No dashboard overhead.</div>
+    <div><strong style="color:#7C3AED;">B — Dashboard First:</strong> Best for Managers who need a morning briefing view. Role-aware landing page with metrics, conflicts, and activity feed.</div>
+    <div><strong style="color:#7C3AED;">C — Split Panel:</strong> Best for the staffing workflow specifically. Needs board + AI recommendations side by side. Eliminates context switching.</div>
+  </div>
+</div>
+
+<script>
+const descs = {
+  a: '<strong>Direction A:</strong> Linear-inspired. Dense, keyboard-first, full-width tables. Sidebar is the primary navigation layer. Each module is a focused workspace. Best for power users who live in the tool daily.',
+  b: '<strong>Direction B:</strong> Dashboard-first landing for Managers. Role-aware homepage surfaces metrics, conflicts, and activity before diving into modules. Timesheet view shows auto-fill pattern with purple tint and "Auto-filled" label.',
+  c: '<strong>Direction C:</strong> Split-panel staffing view. Needs board on the left, AI recommendations panel on the right. Selecting a need immediately loads ranked candidates. Best showcases the platform\'s core differentiator.'
+};
+function showTab(id, el) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('screen-' + id).classList.add('active');
+  el.classList.add('active');
+  document.getElementById('tab-desc').innerHTML = descs[id];
+}
+</script>
+</body>
+</html>

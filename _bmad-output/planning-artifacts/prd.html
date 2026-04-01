@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>prd.md</title>
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+
+<style>
+/* https://github.com/microsoft/vscode/blob/master/extensions/markdown-language-features/media/markdown.css */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+body {
+	font-family: var(--vscode-markdown-font-family, -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif);
+	font-size: var(--vscode-markdown-font-size, 14px);
+	padding: 0 26px;
+	line-height: var(--vscode-markdown-line-height, 22px);
+	word-wrap: break-word;
+}
+
+#code-csp-warning {
+	position: fixed;
+	top: 0;
+	right: 0;
+	color: white;
+	margin: 16px;
+	text-align: center;
+	font-size: 12px;
+	font-family: sans-serif;
+	background-color:#444444;
+	cursor: pointer;
+	padding: 6px;
+	box-shadow: 1px 1px 1px rgba(0,0,0,.25);
+}
+
+#code-csp-warning:hover {
+	text-decoration: none;
+	background-color:#007acc;
+	box-shadow: 2px 2px 2px rgba(0,0,0,.25);
+}
+
+body.scrollBeyondLastLine {
+	margin-bottom: calc(100vh - 22px);
+}
+
+body.showEditorSelection .code-line {
+	position: relative;
+}
+
+body.showEditorSelection .code-active-line:before,
+body.showEditorSelection .code-line:hover:before {
+	content: "";
+	display: block;
+	position: absolute;
+	top: 0;
+	left: -12px;
+	height: 100%;
+}
+
+body.showEditorSelection li.code-active-line:before,
+body.showEditorSelection li.code-line:hover:before {
+	left: -30px;
+}
+
+.vscode-light.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.15);
+}
+
+.vscode-light.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.40);
+}
+
+.vscode-light.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-dark.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.4);
+}
+
+.vscode-dark.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.60);
+}
+
+.vscode-dark.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-high-contrast.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 160, 0, 0.7);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 160, 0, 1);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+img {
+	max-width: 100%;
+	max-height: 100%;
+}
+
+a {
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+a:focus,
+input:focus,
+select:focus,
+textarea:focus {
+	outline: 1px solid -webkit-focus-ring-color;
+	outline-offset: -1px;
+}
+
+hr {
+	border: 0;
+	height: 2px;
+	border-bottom: 2px solid;
+}
+
+h1 {
+	padding-bottom: 0.3em;
+	line-height: 1.2;
+	border-bottom-width: 1px;
+	border-bottom-style: solid;
+}
+
+h1, h2, h3 {
+	font-weight: normal;
+}
+
+table {
+	border-collapse: collapse;
+}
+
+table > thead > tr > th {
+	text-align: left;
+	border-bottom: 1px solid;
+}
+
+table > thead > tr > th,
+table > thead > tr > td,
+table > tbody > tr > th,
+table > tbody > tr > td {
+	padding: 5px 10px;
+}
+
+table > tbody > tr + tr > td {
+	border-top: 1px solid;
+}
+
+blockquote {
+	margin: 0 7px 0 5px;
+	padding: 0 16px 0 10px;
+	border-left-width: 5px;
+	border-left-style: solid;
+}
+
+code {
+	font-family: Menlo, Monaco, Consolas, "Droid Sans Mono", "Courier New", monospace, "Droid Sans Fallback";
+	font-size: 1em;
+	line-height: 1.357em;
+}
+
+body.wordWrap pre {
+	white-space: pre-wrap;
+}
+
+pre:not(.hljs),
+pre.hljs code > div {
+	padding: 16px;
+	border-radius: 3px;
+	overflow: auto;
+}
+
+pre code {
+	color: var(--vscode-editor-foreground);
+	tab-size: 4;
+}
+
+/** Theming */
+
+.vscode-light pre {
+	background-color: rgba(220, 220, 220, 0.4);
+}
+
+.vscode-dark pre {
+	background-color: rgba(10, 10, 10, 0.4);
+}
+
+.vscode-high-contrast pre {
+	background-color: rgb(0, 0, 0);
+}
+
+.vscode-high-contrast h1 {
+	border-color: rgb(0, 0, 0);
+}
+
+.vscode-light table > thead > tr > th {
+	border-color: rgba(0, 0, 0, 0.69);
+}
+
+.vscode-dark table > thead > tr > th {
+	border-color: rgba(255, 255, 255, 0.69);
+}
+
+.vscode-light h1,
+.vscode-light hr,
+.vscode-light table > tbody > tr + tr > td {
+	border-color: rgba(0, 0, 0, 0.18);
+}
+
+.vscode-dark h1,
+.vscode-dark hr,
+.vscode-dark table > tbody > tr + tr > td {
+	border-color: rgba(255, 255, 255, 0.18);
+}
+
+</style>
+
+<style>
+/* Tomorrow Theme */
+/* http://jmblog.github.com/color-themes-for-google-code-highlightjs */
+/* Original theme - https://github.com/chriskempson/tomorrow-theme */
+
+/* Tomorrow Comment */
+.hljs-comment,
+.hljs-quote {
+	color: #8e908c;
+}
+
+/* Tomorrow Red */
+.hljs-variable,
+.hljs-template-variable,
+.hljs-tag,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-regexp,
+.hljs-deletion {
+	color: #c82829;
+}
+
+/* Tomorrow Orange */
+.hljs-number,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-literal,
+.hljs-type,
+.hljs-params,
+.hljs-meta,
+.hljs-link {
+	color: #f5871f;
+}
+
+/* Tomorrow Yellow */
+.hljs-attribute {
+	color: #eab700;
+}
+
+/* Tomorrow Green */
+.hljs-string,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+	color: #718c00;
+}
+
+/* Tomorrow Blue */
+.hljs-title,
+.hljs-section {
+	color: #4271ae;
+}
+
+/* Tomorrow Purple */
+.hljs-keyword,
+.hljs-selector-tag {
+	color: #8959a8;
+}
+
+.hljs {
+	display: block;
+	overflow-x: auto;
+	color: #4d4d4c;
+	padding: 0.5em;
+}
+
+.hljs-emphasis {
+	font-style: italic;
+}
+
+.hljs-strong {
+	font-weight: bold;
+}
+</style>
+
+<style>
+/*
+ * Markdown PDF CSS
+ */
+
+ body {
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "Meiryo";
+	padding: 0 12px;
+}
+
+pre {
+	background-color: #f8f8f8;
+	border: 1px solid #cccccc;
+	border-radius: 3px;
+	overflow-x: auto;
+	white-space: pre-wrap;
+	overflow-wrap: break-word;
+}
+
+pre:not(.hljs) {
+	padding: 23px;
+	line-height: 19px;
+}
+
+blockquote {
+	background: rgba(127, 127, 127, 0.1);
+	border-color: rgba(0, 122, 204, 0.5);
+}
+
+.emoji {
+	height: 1.4em;
+}
+
+code {
+	font-size: 14px;
+	line-height: 19px;
+}
+
+/* for inline code */
+:not(pre):not(.hljs) > code {
+	color: #C9AE75; /* Change the old color so it seems less like an error */
+	font-size: inherit;
+}
+
+/* Page Break : use <div class="page"/> to insert page break
+-------------------------------------------------------- */
+.page {
+	page-break-after: always;
+}
+
+</style>
+
+<script src="https://unpkg.com/mermaid/dist/mermaid.min.js"></script>
+</head>
+<body>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: document.body.classList.contains('vscode-dark') || document.body.classList.contains('vscode-high-contrast')
+          ? 'dark'
+          : 'default'
+    });
+  </script>
+<h1 id="product-requirements-document---mis321-gp2">Product Requirements Document - MIS321-GP2</h1>
+<p><strong>Author:</strong> Evanc
+<strong>Date:</strong> 2026-03-05</p>
+<hr>
+<h2 id="executive-summary">Executive Summary</h2>
+<p>MIS321-GP2 is a unified internal business operations platform for a professional services firm replacing two disconnected systems: a Harvest-style time/expense/invoicing tool and an Excel-based resource tracker. The platform consolidates staffing, time tracking, expense management, project budgeting, client management, reporting, and invoice generation into a single source of truth — eliminating manual cross-referencing that causes mis-scheduled employees, stale availability data, inaccurate forecasts, and billing inconsistencies.</p>
+<p><strong>Target users:</strong> Internal employees (Individual Contributors, Managers, Finance, Admins) at a services firm billing client work by the hour.</p>
+<p><strong>Core problem solved:</strong> Fragmented operational data forces managers to manually reconcile two tools before making staffing decisions, causes employees to show up with no work assigned due to inconsistent platform states, and makes forecasting unreliable because availability and actual hours logged are never in sync.</p>
+<h3 id="what-makes-this-special">What Makes This Special</h3>
+<p>The platform enforces data consistency by design. Staffing assignments, PTO approvals, and timesheet entries propagate automatically to the resource availability calendar — data is always current without manual updates. Managers make staffing decisions inside the platform on real availability, not stale data. Forecasts reflect actual expected billable hours. Invoices are generated directly from logged billable time and submitted expenses with no intermediate reconciliation step.</p>
+<p>Core insight: for a services business, operational accuracy directly determines whether invoices go out correctly, whether people get paid, and whether the business can forecast its own capacity. This system makes accuracy the default.</p>
+<p><strong>Project Classification:</strong></p>
+<ul>
+<li><strong>Type:</strong> Single-tenant internal operations platform (B2B SaaS pattern)</li>
+<li><strong>Domain:</strong> General business operations (services firm)</li>
+<li><strong>Complexity:</strong> Medium — no regulatory overhead; non-trivial cross-module state synchronization</li>
+<li><strong>Context:</strong> Brownfield replacement — consolidating two live systems at launch</li>
+<li><strong>Tech Stack:</strong> JavaScript SPA (frontend), C# REST API (backend), Relational database</li>
+</ul>
+<hr>
+<h2 id="success-criteria">Success Criteria</h2>
+<h3 id="user-success">User Success</h3>
+<ul>
+<li>Every employee completes weekly timesheets entirely within the platform — no Excel touchpoints at launch</li>
+<li>Managers make project staffing decisions inside the platform with availability data reflecting real state at time of decision</li>
+<li>PTO approvals automatically reflect on the staffing calendar — no manual calendar updates required</li>
+<li>Individual contributors submit expenses and view their own hours/billing data without manager involvement</li>
+</ul>
+<h3 id="business-success">Business Success</h3>
+<ul>
+<li><strong>Full adoption at launch</strong> — 100% of ~70–100 employees operating in the new system from day one; both legacy systems retired simultaneously</li>
+<li><strong>~8 hours/week recovered</strong> per user currently spent on manual cross-referencing — ~560–800 person-hours/week across the org</li>
+<li>Staffing forecasts reflect actual availability, PTO, and assignments without manual reconciliation</li>
+<li>Invoices generated directly from logged billable hours and submitted expenses for all ~30 clients</li>
+<li>End-of-year Excel Resource Tracker data successfully imported at launch</li>
+</ul>
+<h3 id="technical-success">Technical Success</h3>
+<ul>
+<li>70–100 concurrent users supported without performance degradation</li>
+<li>Cross-module state propagation (assignment → calendar, PTO → calendar, timesheet → project budget) is real-time or near-real-time</li>
+<li>~30 active clients with associated projects, timesheets, expenses, and invoices handled without data integrity issues</li>
+<li>RBAC enforced correctly across all four roles</li>
+</ul>
+<h3 id="measurable-outcomes">Measurable Outcomes</h3>
+<ul>
+<li>Weekly timesheet submission time ≤ previous process time</li>
+<li>Zero employees showing up with no work assigned due to platform state inconsistency</li>
+<li>Availability calendar status matches actual assignments at any given time</li>
+<li>Invoice generation time reduced vs. current manual process</li>
+</ul>
+<hr>
+<h2 id="product-scope">Product Scope</h2>
+<h3 id="mvp--minimum-viable-product">MVP — Minimum Viable Product</h3>
+<p>All modules must be fully functional and integrated at launch — this is a full system replacement, not a phased rollout. Both legacy systems retire on day one. A partial launch that leaves employees still needing Excel defeats the purpose.</p>
+<p><strong>Must-Have Capabilities:</strong></p>
+<ol>
+<li>Timesheet module — weekly entry per employee with billable/non-billable flag, linked to project and client</li>
+<li>Expense tracking — submission form with receipt upload, linked to project/client</li>
+<li>Availability calendar — color-coded (Fully Booked / Soft Booked / Available / PTO), auto-updating via event propagation</li>
+<li>Project management — creation, team assignment, budget tracking, time/expense rollup</li>
+<li>Individual project view (all roles) — every user sees assigned projects and can log time/expenses directly from their project view; dual-mode: Admin/Manager full management view + IC/Finance personal input view</li>
+<li>Staffing needs board — by client, role, sales stage, skills, dates, assigned employee (or TBD/OPEN)</li>
+<li>Client management — CRUD, contact info, related projects, search/filter</li>
+<li>Reports — personal and client-level with filters (employee, client, project, date range)</li>
+<li>Roles &amp; permissions — Admin / Manager / Finance / IC with RBAC as defined</li>
+<li>Invoice generation &amp; export — from billable hours + reimbursable expenses per client; immutable once generated</li>
+<li>SSO authentication — OAuth 2.0 / OIDC with company identity provider</li>
+<li>AI-assisted staffing recommendations — ranked candidate suggestions on need creation based on skill match, availability, and historical utilization; degrades gracefully to availability-only ranking when data is insufficient</li>
+<li>Excel data migration — one-time import of Resource Tracker end-of-year data at launch</li>
+<li>Admin availability override — manual fallback for calendar status corrections</li>
+</ol>
+<h3 id="growth-features-phase-2">Growth Features (Phase 2)</h3>
+<ul>
+<li>Automated timesheet pre-population from project assignments (expected hours → draft entries editable per day)</li>
+<li>QuickBooks integration — push finalized invoices into accounting system via QuickBooks Online API</li>
+<li>Advanced forecasting dashboards — capacity planning views, utilization trends</li>
+<li>Notifications/alerts — PTO conflicts with assignments, upcoming staffing gaps, budget overruns</li>
+</ul>
+<h3 id="vision-phase-3">Vision (Phase 3)</h3>
+<ul>
+<li>Client portal — external client visibility into project status and invoices</li>
+<li>Mobile app — timesheet and expense submission on mobile devices</li>
+</ul>
+<hr>
+<h2 id="user-journeys">User Journeys</h2>
+<h3 id="journey-1--marcus-individual-contributor-weekly-routine">Journey 1 — Marcus, Individual Contributor (Weekly Routine)</h3>
+<p>Marcus is a mid-level developer at the firm. Every Friday he dreaded the 30-minute ritual: open Harvest, log hours from memory, cross-check Slack and calendar for billable items, then open the expense spreadsheet.</p>
+<p>Now Marcus opens the platform. His project assignments are already there. He clicks into his timesheet — expected hours pre-populated from assignments. He adjusts Tuesday and Wednesday for overtime, adds a note, marks everything billable. He hits &quot;Track Expense&quot; for a software license, fills the form in under a minute, attaches the receipt, submits. Total time: 8 minutes.</p>
+<p><strong>Capabilities revealed:</strong> Timesheet entry, pre-populated hours from assignments, billable/non-billable flag, expense submission with receipt upload, project/client linkage.</p>
+<hr>
+<h3 id="journey-2--sarah-manager-monday-morning-staffing-decision">Journey 2 — Sarah, Manager (Monday Morning Staffing Decision)</h3>
+<p>Sarah manages four client accounts and a team of twelve. Monday mornings used to mean opening Harvest, the Excel Resource Tracker, and email to reconcile who was actually available before she could answer: &quot;Can I put Jordan on Apex starting next week?&quot;</p>
+<p>Now Sarah opens the platform's staffing view. Jordan is Soft Booked through the 14th, then Available. The Apex needs entry requires a C# developer starting the 18th — Jordan fits. She assigns Jordan in-platform. Jordan's status automatically updates to Soft Booked for Apex; when the SOW closes, one click sets Fully Booked. She checks client reporting — Henderson is on track, Apex is under-paced. Flags it for the team meeting.</p>
+<p><strong>Capabilities revealed:</strong> Availability calendar, staffing needs board, in-platform assignment, auto-status propagation (Available → Soft Booked → Fully Booked), client-level reporting, manager team view.</p>
+<hr>
+<h3 id="journey-3--jordan-individual-contributor-edge-case--pto--assignment-conflict">Journey 3 — Jordan, Individual Contributor (Edge Case — PTO + Assignment Conflict)</h3>
+<p>Jordan submits PTO for March 20–21. Request approved. Calendar automatically marks those days Yellow (PTO). The system detects Jordan is Soft Booked on Apex starting March 18th — flags the overlap in Sarah's manager view. Sarah reviews, determines the Apex start can slip two days, updates the assignment. Jordan's calendar reflects the adjusted start. No one shows up expecting 40 hours from Jordan that week.</p>
+<p><strong>Capabilities revealed:</strong> PTO request/approval, automatic calendar update on approval, conflict detection between PTO and assignments, manager alert, assignment date editing.</p>
+<hr>
+<h3 id="journey-4--diana-finance-invoice-run--end-of-month">Journey 4 — Diana, Finance (Invoice Run — End of Month)</h3>
+<p>End of month: Diana needs to invoice six clients. Previously: export Harvest data, manually match expenses, calculate totals, build invoices in Word. Two hours minimum, always at least one discrepancy.</p>
+<p>Now Diana opens the finance view. Per client: all billable hours broken out by employee and project, plus reimbursable expenses. Henderson — 147 billable hours, 3 expenses totaling $840. She generates the invoice with one click, exports it, sends it to the client. Six invoices in 25 minutes.</p>
+<p><strong>Capabilities revealed:</strong> Finance invoice generation view, billable hours/expense aggregation by client, invoice generation and export, monthly billing cycle support, invoice immutability.</p>
+<hr>
+<h3 id="journey-5--alex-admin-new-client--project-setup">Journey 5 — Alex, Admin (New Client + Project Setup)</h3>
+<p>Firm signs Vertex Analytics. Alex opens the Manage tab, creates the client record — name, contact info, billing rate. Creates the Vertex Q1 Engagement project, links it to the client, sets budget, assigns the team: Sarah as manager plus three ICs. Assignments propagate: availability calendars update, project appears in Sarah's manager view and each IC's project list. Done in under 10 minutes.</p>
+<p><strong>Capabilities revealed:</strong> Client creation, project creation, project-client linking, budget setting, team assignment, auto-propagation to dashboards and availability calendar.</p>
+<hr>
+<h3 id="journey-requirements-summary">Journey Requirements Summary</h3>
+<table>
+<thead>
+<tr>
+<th>Capability Area</th>
+<th>Revealed By</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Timesheet entry + pre-population</td>
+<td>Marcus, Jordan</td>
+</tr>
+<tr>
+<td>Expense submission + receipt upload</td>
+<td>Marcus</td>
+</tr>
+<tr>
+<td>Availability calendar (color-coded, auto-updating)</td>
+<td>Sarah, Jordan, Alex</td>
+</tr>
+<tr>
+<td>Staffing needs board (client, role, sales stage)</td>
+<td>Sarah</td>
+</tr>
+<tr>
+<td>In-platform assignment + status propagation</td>
+<td>Sarah, Alex</td>
+</tr>
+<tr>
+<td>PTO request/approval + conflict detection</td>
+<td>Jordan</td>
+</tr>
+<tr>
+<td>Manager conflict alerts</td>
+<td>Jordan</td>
+</tr>
+<tr>
+<td>Client-level and personal reporting</td>
+<td>Sarah, Diana</td>
+</tr>
+<tr>
+<td>Invoice generation + export (Finance role)</td>
+<td>Diana</td>
+</tr>
+<tr>
+<td>Client management (create, edit, search)</td>
+<td>Alex</td>
+</tr>
+<tr>
+<td>Project creation, budget, team assignment</td>
+<td>Alex</td>
+</tr>
+<tr>
+<td>Role-based views across all four roles</td>
+<td>All</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="domain-specific-requirements">Domain-Specific Requirements</h2>
+<h3 id="data-privacy--access-control">Data Privacy &amp; Access Control</h3>
+<ul>
+<li>Availability calendar (Fully Booked / Soft Booked / Available / PTO) is visible to all roles</li>
+<li>Employee billing rates are Finance and Admin only — enforced server-side</li>
+<li>Billable hours totals are visible to Managers (own team) and Finance; ICs see only their own</li>
+<li>Timesheet entries are individually scoped — employees enter and edit only their own contributions</li>
+</ul>
+<h3 id="invoice-data-integrity--audit-trail">Invoice Data Integrity &amp; Audit Trail</h3>
+<ul>
+<li>Invoices are immutable once generated — corrections require issuing a new invoice</li>
+<li>Full audit trail on all timesheet entry changes prior to invoice generation: who changed what, when, and previous value</li>
+<li>Billable hours traceable from timesheet entry → project budget → invoice line item</li>
+</ul>
+<h3 id="concurrent-access">Concurrent Access</h3>
+<ul>
+<li>Timesheet entries are individually owned — no concurrent editing conflicts expected</li>
+<li>Project/budget records use optimistic locking for admin/manager concurrent access</li>
+</ul>
+<h3 id="data-retention">Data Retention</h3>
+<ul>
+<li>All timesheet, expense, invoice, and staffing data retained indefinitely</li>
+<li>Historical data queryable across any date range</li>
+</ul>
+<hr>
+<h2 id="innovation--novel-patterns">Innovation &amp; Novel Patterns</h2>
+<h3 id="event-driven-availability-propagation">Event-Driven Availability Propagation</h3>
+<p>Availability status is never manually set as a standalone action — it is always the output of a real event (assignment created, PTO approved, SOW status changed). This eliminates the class of stale-data bugs inherent in multi-tool ops workflows. Every state change is event-sourced and propagates automatically to downstream modules.</p>
+<h3 id="ai-embedded-staffing-workflow">AI-Embedded Staffing Workflow</h3>
+<p>AI staffing recommendations are integrated directly into the assignment creation flow, not bolted on as a separate analytics layer. When a staffing need is created, the system proactively ranks candidates by skill match, current availability, and historical utilization — turning a manual search into a guided decision.</p>
+<h3 id="validation-approach">Validation Approach</h3>
+<ul>
+<li>Event propagation: all state-changing events update downstream availability within acceptable latency; conflict detection accuracy tested against known scenarios</li>
+<li>AI recommendations: validate relevance using migrated historical data; track manager acceptance rate as recommendation quality proxy</li>
+</ul>
+<h3 id="risk-mitigation">Risk Mitigation</h3>
+<ul>
+<li>If AI data is insufficient post-migration: degrade gracefully to availability-only ranking; the assignment workflow functions regardless</li>
+<li>If event propagation fails: auto-retry with admin visibility; manual override always available as safety valve</li>
+</ul>
+<hr>
+<h2 id="platform--architecture-requirements">Platform &amp; Architecture Requirements</h2>
+<h3 id="tenant-model">Tenant Model</h3>
+<p>Single-tenant — one organization, one deployment. All data scoped to the organization; no multi-tenancy or tenant isolation required. User accounts represent internal employees only.</p>
+<h3 id="authentication--sso">Authentication &amp; SSO</h3>
+<ul>
+<li>SSO required at launch via company identity provider (Google Workspace, Azure AD, or Microsoft Entra — TBD)</li>
+<li>No standalone username/password auth; identity managed externally via SSO</li>
+<li>Role assignment (Admin / Manager / Finance / IC) managed within the platform post-SSO authentication</li>
+<li>Admin provisions new employee accounts after SSO onboarding</li>
+</ul>
+<h3 id="rbac-matrix">RBAC Matrix</h3>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>Admin</th>
+<th>Manager</th>
+<th>Finance</th>
+<th>IC</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Submit own timesheet</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+</tr>
+<tr>
+<td>Submit own expenses</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+</tr>
+<tr>
+<td>Log time/expenses from project view</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+</tr>
+<tr>
+<td>View own reports</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+</tr>
+<tr>
+<td>View availability calendar (all employees)</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+</tr>
+<tr>
+<td>View team billable hours</td>
+<td>✓</td>
+<td>✓ (own team)</td>
+<td>✓</td>
+<td>✗</td>
+</tr>
+<tr>
+<td>View employee billing rates</td>
+<td>✓</td>
+<td>✗</td>
+<td>✓</td>
+<td>✗</td>
+</tr>
+<tr>
+<td>Assign employees to projects</td>
+<td>✓</td>
+<td>✓</td>
+<td>✗</td>
+<td>✗</td>
+</tr>
+<tr>
+<td>Manage staffing needs board</td>
+<td>✓</td>
+<td>✓</td>
+<td>✗</td>
+<td>✗</td>
+</tr>
+<tr>
+<td>Create/edit projects</td>
+<td>✓</td>
+<td>✓</td>
+<td>✗</td>
+<td>✗</td>
+</tr>
+<tr>
+<td>Create/edit clients</td>
+<td>✓</td>
+<td>✗</td>
+<td>✗</td>
+<td>✗</td>
+</tr>
+<tr>
+<td>Manage users &amp; roles</td>
+<td>✓</td>
+<td>✗</td>
+<td>✗</td>
+<td>✗</td>
+</tr>
+<tr>
+<td>Approve PTO requests</td>
+<td>✓</td>
+<td>✓</td>
+<td>✗</td>
+<td>✗</td>
+</tr>
+<tr>
+<td>Generate &amp; export invoices</td>
+<td>✓</td>
+<td>✗</td>
+<td>✓</td>
+<td>✗</td>
+</tr>
+<tr>
+<td>Configure system settings</td>
+<td>✓</td>
+<td>✗</td>
+<td>✗</td>
+<td>✗</td>
+</tr>
+<tr>
+<td>Override availability status</td>
+<td>✓</td>
+<td>✗</td>
+<td>✗</td>
+<td>✗</td>
+</tr>
+</tbody>
+</table>
+<h3 id="integration-list">Integration List</h3>
+<p><strong>Launch:</strong> SSO provider (OAuth 2.0 / OIDC); Excel <code>.xlsx</code> data import (one-time migration)</p>
+<p><strong>Growth:</strong> QuickBooks Online API — push finalized invoice data into accounting system</p>
+<h3 id="technical-architecture">Technical Architecture</h3>
+<ul>
+<li><strong>Frontend:</strong> JavaScript SPA (React or similar)</li>
+<li><strong>Backend:</strong> C# REST API</li>
+<li><strong>Auth:</strong> OAuth 2.0 / OIDC; JWT session tokens</li>
+<li><strong>State propagation:</strong> Event-driven — assignment/PTO/SOW events trigger cross-module updates</li>
+<li><strong>Database:</strong> Relational — supports complex joins across timesheets, projects, clients, employees, invoices</li>
+</ul>
+<hr>
+<h2 id="project-scoping--risk">Project Scoping &amp; Risk</h2>
+<h3 id="mvp-philosophy">MVP Philosophy</h3>
+<p>Platform MVP — all modules fully functional and integrated at launch. No phased user rollout; entire org migrates on day one. Modular build strategy enables independent component testing while requiring integrated release.</p>
+<h3 id="risk-mitigation">Risk Mitigation</h3>
+<table>
+<thead>
+<tr>
+<th>Risk</th>
+<th>Mitigation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Event propagation complexity</td>
+<td>Build and validate the propagation pipeline first; all other modules depend on it</td>
+</tr>
+<tr>
+<td>AI data quality at launch</td>
+<td>Graceful degradation to availability-only ranking; improves over time</td>
+</tr>
+<tr>
+<td>All-or-nothing launch constraint</td>
+<td>Build modularly, test independently, release together</td>
+</tr>
+<tr>
+<td>Excel migration data quality</td>
+<td>Pre-import data review + admin correction tools post-migration</td>
+</tr>
+<tr>
+<td>Behavior change at launch</td>
+<td>Role-specific onboarding; admin tools to assist/correct initial entries</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="functional-requirements">Functional Requirements</h2>
+<h3 id="authentication--user-management">Authentication &amp; User Management</h3>
+<ul>
+<li><strong>FR1:</strong> Employees can authenticate via company SSO (OAuth 2.0 / OIDC)</li>
+<li><strong>FR2:</strong> Admins can create, edit, and deactivate user accounts</li>
+<li><strong>FR3:</strong> Admins can assign and change roles (Admin / Manager / Finance / IC) for any user</li>
+<li><strong>FR4:</strong> The system enforces role-based access control by assigned role; unauthorized access attempts for restricted capabilities return a denied response</li>
+</ul>
+<h3 id="timesheet--time-tracking">Timesheet &amp; Time Tracking</h3>
+<ul>
+<li><strong>FR5:</strong> Employees can submit weekly timesheet entries: project, client, task description, date, hours, billable/non-billable flag, optional notes</li>
+<li><strong>FR6:</strong> Employees can edit or delete their own timesheet entries prior to invoice generation</li>
+<li><strong>FR7:</strong> Employees can log time directly from their individual project view</li>
+<li><strong>FR8:</strong> The system records a tamper-evident audit trail of all timesheet entry changes: actor, timestamp, previous value</li>
+<li><strong>FR9:</strong> Managers can view timesheet entries for employees on their teams</li>
+<li><strong>FR10:</strong> Admins and Finance can view timesheet entries across all employees</li>
+</ul>
+<h3 id="expense-tracking">Expense Tracking</h3>
+<ul>
+<li><strong>FR11:</strong> Employees can submit expense entries: date, amount, category, description, optional project/client linkage</li>
+<li><strong>FR12:</strong> Employees can attach a receipt file to an expense submission</li>
+<li><strong>FR13:</strong> Employees can log expenses directly from their individual project view</li>
+<li><strong>FR14:</strong> Submitted expenses can be linked to projects and clients for budget and invoice tracking</li>
+</ul>
+<h3 id="project-management">Project Management</h3>
+<ul>
+<li><strong>FR15:</strong> Admins and Managers can create projects linked to a client with a defined budget</li>
+<li><strong>FR16:</strong> Admins and Managers can assign employees to projects</li>
+<li><strong>FR17:</strong> All users can view their personally assigned projects in a dedicated project view</li>
+<li><strong>FR18:</strong> Project views can display total hours logged, expenses submitted, and budget consumed for that project</li>
+<li><strong>FR19:</strong> Admins and Managers can view full project details including all team contributions and budget status</li>
+</ul>
+<h3 id="staffing--availability">Staffing &amp; Availability</h3>
+<ul>
+<li><strong>FR20:</strong> All users can view the availability calendar showing all employees' status (Fully Booked / Soft Booked / Available / PTO)</li>
+<li><strong>FR21:</strong> The system automatically sets an employee's status to Soft Booked when assigned to a project</li>
+<li><strong>FR22:</strong> The system automatically sets an employee's status to Fully Booked when their project SOW is confirmed</li>
+<li><strong>FR23:</strong> The system automatically marks calendar days as PTO when a PTO request is approved</li>
+<li><strong>FR24:</strong> The system detects PTO/assignment conflicts and surfaces them to the employee's manager</li>
+<li><strong>FR25:</strong> Admins can manually override an employee's availability status</li>
+<li><strong>FR26:</strong> Admins and Managers can create and manage staffing needs entries: client, role level, sales stage, dates, required skills, assigned employee (specific person / TBD / OPEN)</li>
+</ul>
+<h3 id="ai-assisted-staffing">AI-Assisted Staffing</h3>
+<ul>
+<li><strong>FR27:</strong> On staffing need creation, the system can generate ranked employee recommendations by skill match, current availability, and historical utilization</li>
+<li><strong>FR28:</strong> The system can fall back to availability-only ranking when an employee has fewer than 3 completed project assignments in historical data, making AI scoring unreliable</li>
+</ul>
+<h3 id="pto-management">PTO Management</h3>
+<ul>
+<li><strong>FR29:</strong> Employees can submit PTO requests with dates and reason</li>
+<li><strong>FR30:</strong> Admins and Managers can approve or reject PTO requests</li>
+<li><strong>FR31:</strong> Approved PTO automatically triggers calendar updates and conflict detection</li>
+</ul>
+<h3 id="client-management">Client Management</h3>
+<ul>
+<li><strong>FR32:</strong> Admins can create, edit, and deactivate client records: name, contact information, billing rate, notes</li>
+<li><strong>FR33:</strong> All users can view client records and associated projects</li>
+<li><strong>FR34:</strong> Client records can display related projects and summary billing information</li>
+<li><strong>FR35:</strong> Users can search and filter the client list</li>
+</ul>
+<h3 id="reporting">Reporting</h3>
+<ul>
+<li><strong>FR36:</strong> Employees can view personal reports: total hours, billable hours, non-billable hours</li>
+<li><strong>FR37:</strong> Managers can view team-level reports: hours and contributions per employee across their clients and projects</li>
+<li><strong>FR38:</strong> Admins and Finance can view org-wide reports across all employees, clients, and projects</li>
+<li><strong>FR39:</strong> Reports can be filtered by employee, client, project, and date range</li>
+<li><strong>FR40:</strong> Client-level reports can display total billable hours, billable amounts, and per-employee breakdowns</li>
+</ul>
+<h3 id="invoice-generation">Invoice Generation</h3>
+<ul>
+<li><strong>FR41:</strong> Finance and Admins can generate client invoices aggregating billable hours and reimbursable expenses for a specified period</li>
+<li><strong>FR42:</strong> Generated invoices are immutable — corrections require a new invoice</li>
+<li><strong>FR43:</strong> Finance and Admins can export invoices in PDF and/or CSV format</li>
+<li><strong>FR44:</strong> Invoice line items can be traced back to source timesheet entries and expense submissions</li>
+</ul>
+<h3 id="data-migration">Data Migration</h3>
+<ul>
+<li><strong>FR45:</strong> Admins can execute a one-time import of Resource Tracker data from <code>.xlsx</code> at launch</li>
+<li><strong>FR46:</strong> Admins can review and correct data quality issues post-migration</li>
+</ul>
+<hr>
+<h2 id="non-functional-requirements">Non-Functional Requirements</h2>
+<h3 id="performance">Performance</h3>
+<ul>
+<li>Page load and navigation: ≤2 seconds under normal load</li>
+<li>Availability calendar render (all employees): ≤3 seconds</li>
+<li>Cross-module state propagation: ≤5 seconds from triggering event</li>
+<li>Report queries (up to 2 years historical data): ≤5 seconds</li>
+<li>Invoice generation: ≤10 seconds regardless of line item count</li>
+</ul>
+<h3 id="security">Security</h3>
+<ul>
+<li>All data encrypted at rest and in transit (TLS 1.2+ for API communication)</li>
+<li>Authentication exclusively via SSO — no local credential storage</li>
+<li>Billing rates restricted to Finance and Admin — enforced server-side, not UI-only</li>
+<li>Timesheet audit trail entries are write-once and tamper-evident</li>
+<li>Session tokens expire after 30 minutes of idle inactivity (configurable by admin); re-authentication required</li>
+<li>Expense receipt attachments scanned for malware before storage</li>
+</ul>
+<h3 id="reliability">Reliability</h3>
+<ul>
+<li>99.5% uptime during business hours (Mon–Fri, 7am–7pm)</li>
+<li>Timesheet and expense submissions durably persisted before client confirmation returned</li>
+<li>Failed event propagation auto-retried; surfaced to admins if unresolved after 3 attempts</li>
+</ul>
+<h3 id="scalability">Scalability</h3>
+<ul>
+<li>70–100 concurrent users at launch without performance degradation</li>
+<li>Architecture supports growth to 200+ users via horizontal scaling — no schema or service redesign required</li>
+<li>Report query response time remains ≤5 seconds for datasets spanning up to 5 years of accumulated data</li>
+</ul>
+<h3 id="integration">Integration</h3>
+<ul>
+<li>SSO: OAuth 2.0 / OIDC compatible with Google Workspace, Azure AD, and Microsoft Entra</li>
+<li>Excel import: <code>.xlsx</code> format; malformed rows handled gracefully with error reporting</li>
+<li>Invoice export: PDF and/or CSV</li>
+<li>QuickBooks (Growth): QuickBooks Online API</li>
+</ul>
+
+</body>
+</html>

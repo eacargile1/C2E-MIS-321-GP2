@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>client-requirements.md</title>
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+
+<style>
+/* https://github.com/microsoft/vscode/blob/master/extensions/markdown-language-features/media/markdown.css */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+body {
+	font-family: var(--vscode-markdown-font-family, -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif);
+	font-size: var(--vscode-markdown-font-size, 14px);
+	padding: 0 26px;
+	line-height: var(--vscode-markdown-line-height, 22px);
+	word-wrap: break-word;
+}
+
+#code-csp-warning {
+	position: fixed;
+	top: 0;
+	right: 0;
+	color: white;
+	margin: 16px;
+	text-align: center;
+	font-size: 12px;
+	font-family: sans-serif;
+	background-color:#444444;
+	cursor: pointer;
+	padding: 6px;
+	box-shadow: 1px 1px 1px rgba(0,0,0,.25);
+}
+
+#code-csp-warning:hover {
+	text-decoration: none;
+	background-color:#007acc;
+	box-shadow: 2px 2px 2px rgba(0,0,0,.25);
+}
+
+body.scrollBeyondLastLine {
+	margin-bottom: calc(100vh - 22px);
+}
+
+body.showEditorSelection .code-line {
+	position: relative;
+}
+
+body.showEditorSelection .code-active-line:before,
+body.showEditorSelection .code-line:hover:before {
+	content: "";
+	display: block;
+	position: absolute;
+	top: 0;
+	left: -12px;
+	height: 100%;
+}
+
+body.showEditorSelection li.code-active-line:before,
+body.showEditorSelection li.code-line:hover:before {
+	left: -30px;
+}
+
+.vscode-light.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.15);
+}
+
+.vscode-light.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.40);
+}
+
+.vscode-light.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-dark.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.4);
+}
+
+.vscode-dark.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.60);
+}
+
+.vscode-dark.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-high-contrast.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 160, 0, 0.7);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 160, 0, 1);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+img {
+	max-width: 100%;
+	max-height: 100%;
+}
+
+a {
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+a:focus,
+input:focus,
+select:focus,
+textarea:focus {
+	outline: 1px solid -webkit-focus-ring-color;
+	outline-offset: -1px;
+}
+
+hr {
+	border: 0;
+	height: 2px;
+	border-bottom: 2px solid;
+}
+
+h1 {
+	padding-bottom: 0.3em;
+	line-height: 1.2;
+	border-bottom-width: 1px;
+	border-bottom-style: solid;
+}
+
+h1, h2, h3 {
+	font-weight: normal;
+}
+
+table {
+	border-collapse: collapse;
+}
+
+table > thead > tr > th {
+	text-align: left;
+	border-bottom: 1px solid;
+}
+
+table > thead > tr > th,
+table > thead > tr > td,
+table > tbody > tr > th,
+table > tbody > tr > td {
+	padding: 5px 10px;
+}
+
+table > tbody > tr + tr > td {
+	border-top: 1px solid;
+}
+
+blockquote {
+	margin: 0 7px 0 5px;
+	padding: 0 16px 0 10px;
+	border-left-width: 5px;
+	border-left-style: solid;
+}
+
+code {
+	font-family: Menlo, Monaco, Consolas, "Droid Sans Mono", "Courier New", monospace, "Droid Sans Fallback";
+	font-size: 1em;
+	line-height: 1.357em;
+}
+
+body.wordWrap pre {
+	white-space: pre-wrap;
+}
+
+pre:not(.hljs),
+pre.hljs code > div {
+	padding: 16px;
+	border-radius: 3px;
+	overflow: auto;
+}
+
+pre code {
+	color: var(--vscode-editor-foreground);
+	tab-size: 4;
+}
+
+/** Theming */
+
+.vscode-light pre {
+	background-color: rgba(220, 220, 220, 0.4);
+}
+
+.vscode-dark pre {
+	background-color: rgba(10, 10, 10, 0.4);
+}
+
+.vscode-high-contrast pre {
+	background-color: rgb(0, 0, 0);
+}
+
+.vscode-high-contrast h1 {
+	border-color: rgb(0, 0, 0);
+}
+
+.vscode-light table > thead > tr > th {
+	border-color: rgba(0, 0, 0, 0.69);
+}
+
+.vscode-dark table > thead > tr > th {
+	border-color: rgba(255, 255, 255, 0.69);
+}
+
+.vscode-light h1,
+.vscode-light hr,
+.vscode-light table > tbody > tr + tr > td {
+	border-color: rgba(0, 0, 0, 0.18);
+}
+
+.vscode-dark h1,
+.vscode-dark hr,
+.vscode-dark table > tbody > tr + tr > td {
+	border-color: rgba(255, 255, 255, 0.18);
+}
+
+</style>
+
+<style>
+/* Tomorrow Theme */
+/* http://jmblog.github.com/color-themes-for-google-code-highlightjs */
+/* Original theme - https://github.com/chriskempson/tomorrow-theme */
+
+/* Tomorrow Comment */
+.hljs-comment,
+.hljs-quote {
+	color: #8e908c;
+}
+
+/* Tomorrow Red */
+.hljs-variable,
+.hljs-template-variable,
+.hljs-tag,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-regexp,
+.hljs-deletion {
+	color: #c82829;
+}
+
+/* Tomorrow Orange */
+.hljs-number,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-literal,
+.hljs-type,
+.hljs-params,
+.hljs-meta,
+.hljs-link {
+	color: #f5871f;
+}
+
+/* Tomorrow Yellow */
+.hljs-attribute {
+	color: #eab700;
+}
+
+/* Tomorrow Green */
+.hljs-string,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+	color: #718c00;
+}
+
+/* Tomorrow Blue */
+.hljs-title,
+.hljs-section {
+	color: #4271ae;
+}
+
+/* Tomorrow Purple */
+.hljs-keyword,
+.hljs-selector-tag {
+	color: #8959a8;
+}
+
+.hljs {
+	display: block;
+	overflow-x: auto;
+	color: #4d4d4c;
+	padding: 0.5em;
+}
+
+.hljs-emphasis {
+	font-style: italic;
+}
+
+.hljs-strong {
+	font-weight: bold;
+}
+</style>
+
+<style>
+/*
+ * Markdown PDF CSS
+ */
+
+ body {
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "Meiryo";
+	padding: 0 12px;
+}
+
+pre {
+	background-color: #f8f8f8;
+	border: 1px solid #cccccc;
+	border-radius: 3px;
+	overflow-x: auto;
+	white-space: pre-wrap;
+	overflow-wrap: break-word;
+}
+
+pre:not(.hljs) {
+	padding: 23px;
+	line-height: 19px;
+}
+
+blockquote {
+	background: rgba(127, 127, 127, 0.1);
+	border-color: rgba(0, 122, 204, 0.5);
+}
+
+.emoji {
+	height: 1.4em;
+}
+
+code {
+	font-size: 14px;
+	line-height: 19px;
+}
+
+/* for inline code */
+:not(pre):not(.hljs) > code {
+	color: #C9AE75; /* Change the old color so it seems less like an error */
+	font-size: inherit;
+}
+
+/* Page Break : use <div class="page"/> to insert page break
+-------------------------------------------------------- */
+.page {
+	page-break-after: always;
+}
+
+</style>
+
+<script src="https://unpkg.com/mermaid/dist/mermaid.min.js"></script>
+</head>
+<body>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: document.body.classList.contains('vscode-dark') || document.body.classList.contains('vscode-high-contrast')
+          ? 'dark'
+          : 'default'
+    });
+  </script>
+<h1 id="client-system-requirements-%E2%80%93-unified-business-operations-platform">Client System Requirements – Unified Business Operations Platform</h1>
+<h2 id="overview">Overview</h2>
+<p>The client currently runs their business operations using two separate systems:</p>
+<p><strong>A Harvest-like internal system for:</strong></p>
+<ul>
+<li>Time tracking</li>
+<li>Expense tracking</li>
+<li>Project management</li>
+<li>Reporting</li>
+<li>Client management</li>
+<li>Invoice generation</li>
+</ul>
+<p><strong>A large Excel-based resource planning system called Resource Tracker used for:</strong></p>
+<ul>
+<li>Employee scheduling</li>
+<li>Staffing forecasting</li>
+<li>Project staffing needs</li>
+</ul>
+<p>The client wants ONE unified system that integrates both systems and automates the connections between them.</p>
+<p>The goal is to remove manual cross-referencing between multiple tools and automatically synchronize staffing, time tracking, budgeting, and project management.</p>
+<hr>
+<h2 id="part-1--internal-operations-system-harvest-style">PART 1 — Internal Operations System (Harvest-style)</h2>
+<h3 id="1-time-tracking-timesheet-page">1. Time Tracking (Timesheet Page)</h3>
+<p>Every week employees must enter their work activity.</p>
+<p><strong>Purpose:</strong></p>
+<ul>
+<li>Track who is working</li>
+<li>Track what they are working on</li>
+<li>Track where time is being spent</li>
+<li>Determine billable vs non-billable time</li>
+<li>Support client invoicing</li>
+<li>Ensure employees get paid</li>
+</ul>
+<p>Each employee submits weekly timesheets.</p>
+<p><strong>Each entry must contain:</strong></p>
+<ul>
+<li>Employee</li>
+<li>Project</li>
+<li>Client</li>
+<li>Task description</li>
+<li>Date</li>
+<li>Hours worked</li>
+<li>Billable vs Non-Billable flag</li>
+<li>Notes (optional)</li>
+</ul>
+<p>These entries are later used to:</p>
+<ul>
+<li>Generate invoices</li>
+<li>Track project budgets</li>
+<li>Analyze utilization</li>
+</ul>
+<h3 id="2-expense-tracking">2. Expense Tracking</h3>
+<p>Employees must be able to submit work-related expenses.</p>
+<p>The system should include a <strong>Track Expense</strong> button.</p>
+<p><strong>Submitting an expense opens a form with:</strong></p>
+<ul>
+<li>Employee</li>
+<li>Expense date</li>
+<li>Expense amount</li>
+<li>Expense category</li>
+<li>Project (optional)</li>
+<li>Client (optional)</li>
+<li>Description</li>
+<li>Receipt upload (file attachment)</li>
+</ul>
+<p>The expense submission will later be used for:</p>
+<ul>
+<li>Reimbursement</li>
+<li>Project budget tracking</li>
+<li>Reporting</li>
+<li>Invoicing support</li>
+</ul>
+<h3 id="3-projects-tab">3. Projects Tab</h3>
+<p><strong>The Projects page should allow users to:</strong></p>
+<ul>
+<li>Create projects</li>
+<li>Assign team members</li>
+<li>View team members on each project</li>
+<li>Track time spent on projects</li>
+<li>Track expenses related to projects</li>
+<li>Track project budgets</li>
+</ul>
+<p><strong>Budget tracking should include:</strong></p>
+<ul>
+<li>Total hours logged by team members</li>
+<li>Expenses related to the project</li>
+<li>Comparison against budget</li>
+</ul>
+<h3 id="4-reports-tab">4. Reports Tab</h3>
+<p><strong>Users should be able to see:</strong></p>
+<p><em>Personal reporting (for themselves):</em></p>
+<ul>
+<li>Total hours worked</li>
+<li>Billable hours</li>
+<li>Non-billable hours</li>
+</ul>
+<p><em>Client reporting (for a specific client):</em></p>
+<ul>
+<li>Total hours across the whole team</li>
+<li>Billable amounts</li>
+<li>Time breakdown by employee</li>
+<li>Project costs</li>
+</ul>
+<p><strong>Reports should include filters:</strong></p>
+<ul>
+<li>Client</li>
+<li>Project</li>
+<li>Employee</li>
+<li>Date range</li>
+</ul>
+<h3 id="5-client-management-manage-tab">5. Client Management (Manage Tab)</h3>
+<p><strong>Features:</strong></p>
+<ul>
+<li>List all clients</li>
+<li>Search clients</li>
+<li>Filter clients</li>
+<li>Add new clients</li>
+</ul>
+<p><strong>Each client record should contain:</strong></p>
+<ul>
+<li>Client name</li>
+<li>Contact information</li>
+<li>General client information</li>
+<li>Related projects</li>
+</ul>
+<p>Client entries should be expandable to view details.</p>
+<h3 id="6-roles-and-permissions">6. Roles and Permissions</h3>
+<p><strong>Admin Role</strong> — Full system access:</p>
+<ul>
+<li>Configure system settings</li>
+<li>Manage clients</li>
+<li>Manage projects</li>
+<li>Manage users</li>
+<li>Generate invoices</li>
+</ul>
+<p><strong>Manager Role</strong> — Team oversight:</p>
+<ul>
+<li>Assign team members to projects</li>
+<li>Assign tasks</li>
+<li>View individual contributor activity</li>
+<li>View reporting for their teams</li>
+</ul>
+<p><strong>Finance Role</strong> — Financial operations:</p>
+<ul>
+<li>Generate invoices</li>
+<li>Export invoices</li>
+<li>Process financial records</li>
+<li>Push invoice data into accounting systems</li>
+<li>NOTE: Payment processing does NOT happen in this system</li>
+</ul>
+<p><strong>Individual Contributors</strong> — Normal employees:</p>
+<ul>
+<li>Submit timesheets</li>
+<li>Log expenses</li>
+<li>See their assigned projects</li>
+<li>See their own reporting</li>
+</ul>
+<h3 id="system-output">System Output</h3>
+<p>The system should generate client invoices using:</p>
+<ul>
+<li>Billable hours</li>
+<li>Project rates</li>
+<li>Reimbursable expenses</li>
+</ul>
+<p>Invoices can then be sent to clients externally.</p>
+<hr>
+<h2 id="part-2--resource-tracker-excel-system-replacement">PART 2 — Resource Tracker (Excel System Replacement)</h2>
+<h3 id="sheet-1--availability">Sheet 1 — Availability</h3>
+<p>Calendar-style grid showing staff availability.</p>
+<p><strong>Each employee row contains:</strong></p>
+<ul>
+<li>Employee Name</li>
+<li>Job Title</li>
+<li>Daily availability status</li>
+</ul>
+<p><strong>Color coding:</strong></p>
+<ul>
+<li>🔵 Blue = Fully Booked</li>
+<li>🟢 Green = Soft Booked</li>
+<li>🔴 Red = Available</li>
+<li>🟡 Yellow = PTO</li>
+</ul>
+<p>Once a Statement of Work (SOW) is signed, employee status changes from Soft Booked → Fully Booked.</p>
+<p>Used for staffing forecasts.</p>
+<h3 id="sheet-2--needs">Sheet 2 — Needs</h3>
+<p>Tracks upcoming project staffing needs. Rows grouped by client.</p>
+<p><strong>Each entry contains:</strong></p>
+<ul>
+<li>Client name</li>
+<li>Role level required</li>
+<li>Sales stage (Won / Negotiation / Commit / other pipeline stages)</li>
+<li>Start date</li>
+<li>End date</li>
+<li>Assigned employee (specific person, &quot;TBD&quot;, or &quot;OPEN&quot;)</li>
+<li>Required technical skills (e.g., C#, .NET, Data Engineering, Data Modeling)</li>
+<li>Job requirements</li>
+<li>Project notes</li>
+</ul>
+<hr>
+<h2 id="core-problem">Core Problem</h2>
+<p>Currently these systems are completely separate. Employees must manually cross-reference timesheets, resource tracker, staffing needs, PTO, and project assignments — creating significant inefficiencies.</p>
+<hr>
+<h2 id="client-goal--unified-system-with-automations">Client Goal — Unified System with Automations</h2>
+<h3 id="pto-integration">PTO Integration</h3>
+<p>When PTO is approved → automatically update staffing calendar to Yellow (PTO). Ensures forecasting doesn't assume billable hours on PTO days.</p>
+<h3 id="project-assignment-automation">Project Assignment Automation</h3>
+<p>When someone is assigned to a project → the system could automatically populate their timesheet. If expected to bill 40 hours, auto-generate timesheet entries that employees can then edit.</p>
+<h3 id="resource-tracker-automation">Resource Tracker Automation</h3>
+<ul>
+<li>When a person is tagged on a Need entry → availability changes to Green (Soft Booked)</li>
+<li>When the deal closes and project starts → status changes to Blue (Fully Booked)</li>
+</ul>
+<h3 id="desired-outcome">Desired Outcome</h3>
+<p>A single integrated platform where the following are all linked automatically:</p>
+<ul>
+<li>Project staffing</li>
+<li>PTO</li>
+<li>Timesheets</li>
+<li>Expenses</li>
+<li>Reporting</li>
+<li>Client management</li>
+<li>Resource forecasting</li>
+</ul>
+<p>Eliminates need to:</p>
+<ul>
+<li>Manually cross-reference Excel</li>
+<li>Manually update calendars</li>
+<li>Manually reconcile staffing vs timesheets</li>
+</ul>
+
+</body>
+</html>
