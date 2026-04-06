@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { login, me, type MeProfile } from './api'
 import AdminUsers from './pages/AdminUsers'
+import TimesheetWeek from './pages/TimesheetWeek'
 import './App.css'
 
 export type Session = { token: string; profile: MeProfile }
@@ -25,6 +26,9 @@ function HomePage({
             {session.profile.email} · {session.profile.role}
           </p>
           <p className="hint">Token is kept in memory only (refresh clears session).</p>
+          <p className="hint">
+            <Link to="/timesheet">Open timesheet →</Link>
+          </p>
           {session.profile.role === 'Admin' ? (
             <p className="hint">
               <Link to="/admin/users">Open user management →</Link>
@@ -113,6 +117,11 @@ function AdminUsersRoute({ session, onSignOut }: { session: Session | null; onSi
   return <AdminUsers token={session.token} profile={session.profile} onSignOut={onSignOut} />
 }
 
+function TimesheetRoute({ session, onSignOut }: { session: Session | null; onSignOut: () => void }) {
+  if (!session) return <Navigate to="/login" replace />
+  return <TimesheetWeek token={session.token} profile={session.profile} onSignOut={onSignOut} />
+}
+
 function AppRoutes() {
   const [session, setSession] = useState<Session | null>(null)
 
@@ -127,6 +136,7 @@ function AppRoutes() {
         path="/admin/users"
         element={<AdminUsersRoute session={session} onSignOut={signOut} />}
       />
+      <Route path="/timesheet" element={<TimesheetRoute session={session} onSignOut={signOut} />} />
       <Route path="/" element={<HomePage session={session} onSignOut={signOut} />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

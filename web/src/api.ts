@@ -137,3 +137,55 @@ export async function patchUser(
     throw new Error('Could not update user')
   return { id: r.id, email: r.email, role: r.role, isActive: r.isActive }
 }
+
+export type TimesheetLine = {
+  workDate: string // YYYY-MM-DD
+  client: string
+  project: string
+  task: string
+  hours: number
+  isBillable: boolean
+  notes: string | null
+}
+
+function assertTimesheetLine(x: unknown): TimesheetLine {
+  const r = x as Record<string, unknown>
+  if (
+    typeof r.workDate !== 'string' ||
+    typeof r.client !== 'string' ||
+    typeof r.project !== 'string' ||
+    typeof r.task !== 'string' ||
+    typeof r.hours !== 'number' ||
+    typeof r.isBillable !== 'boolean' ||
+    !(typeof r.notes === 'string' || r.notes === null || r.notes === undefined)
+  )
+    throw new Error('Could not load timesheet')
+  return {
+    workDate: r.workDate,
+    client: r.client,
+    project: r.project,
+    task: r.task,
+    hours: r.hours,
+    isBillable: r.isBillable,
+    notes: typeof r.notes === 'string' ? r.notes : null,
+  }
+}
+
+export async function getTimesheetWeek(token: string, weekStart: string): Promise<TimesheetLine[]> {
+  const res = await fetch(`${base}/api/timesheets/week?weekStart=${encodeURIComponent(weekStart)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load timesheet'))
+  const data = (await res.json()) as unknown
+  if (!Array.isArray(data)) throw new Error('Could not load timesheet')
+  return data.map(assertTimesheetLine)
+}
+
+export async function putTimesheetWeek(token: string, weekStart: string, lines: TimesheetLine[]): Promise<void> {
+  const res = await fetch(`${base}/api/timesheets/week?weekStart=${encodeURIComponent(weekStart)}`, {
+    method: 'PUT',
+    headers: authHeaders(token),
+    body: JSON.stringify(lines),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not save timesheet'))
+}
