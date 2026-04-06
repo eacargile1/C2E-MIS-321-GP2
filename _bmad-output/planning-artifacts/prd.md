@@ -91,7 +91,7 @@ All modules must be fully functional and integrated at launch — this is a full
 8. Reports — personal and client-level with filters (employee, client, project, date range)
 9. Roles & permissions — Admin / Manager / Finance / IC with RBAC as defined
 10. Invoice generation & export — from billable hours + reimbursable expenses per client; immutable once generated
-11. SSO authentication — OAuth 2.0 / OIDC with company identity provider
+11. Application login — email and password (no corporate SSO required at launch)
 12. AI-assisted staffing recommendations — ranked candidate suggestions on need creation based on skill match, availability, and historical utilization; degrades gracefully to availability-only ranking when data is insufficient
 13. Excel data migration — one-time import of Resource Tracker end-of-year data at launch
 14. Admin availability override — manual fallback for calendar status corrections
@@ -232,12 +232,12 @@ AI staffing recommendations are integrated directly into the assignment creation
 
 Single-tenant — one organization, one deployment. All data scoped to the organization; no multi-tenancy or tenant isolation required. User accounts represent internal employees only.
 
-### Authentication & SSO
+### Authentication & login
 
-- SSO required at launch via company identity provider (Google Workspace, Azure AD, or Microsoft Entra — TBD)
-- No standalone username/password auth; identity managed externally via SSO
-- Role assignment (Admin / Manager / Finance / IC) managed within the platform post-SSO authentication
-- Admin provisions new employee accounts after SSO onboarding
+- Users sign in at launch via the application login screen (email + password)
+- Credentials stored in the platform using strong one-way password hashes (no plaintext passwords)
+- Role assignment (Admin / Manager / Finance / IC) managed within the platform after authentication
+- Admin provisions new employee accounts (users must exist—or be created—before they can sign in)
 
 ### RBAC Matrix
 
@@ -262,7 +262,7 @@ Single-tenant — one organization, one deployment. All data scoped to the organ
 
 ### Integration List
 
-**Launch:** SSO provider (OAuth 2.0 / OIDC); Excel `.xlsx` data import (one-time migration)
+**Launch:** App-managed authentication (email + password); Excel `.xlsx` data import (one-time migration)
 
 **Growth:** QuickBooks Online API — push finalized invoice data into accounting system
 
@@ -270,7 +270,7 @@ Single-tenant — one organization, one deployment. All data scoped to the organ
 
 - **Frontend:** JavaScript SPA (React or similar)
 - **Backend:** C# REST API
-- **Auth:** OAuth 2.0 / OIDC; JWT session tokens
+- **Auth:** Email + password login; JWT session tokens after authentication
 - **State propagation:** Event-driven — assignment/PTO/SOW events trigger cross-module updates
 - **Database:** Relational — supports complex joins across timesheets, projects, clients, employees, invoices
 
@@ -298,7 +298,7 @@ Platform MVP — all modules fully functional and integrated at launch. No phase
 
 ### Authentication & User Management
 
-- **FR1:** Employees can authenticate via company SSO (OAuth 2.0 / OIDC)
+- **FR1:** Employees can authenticate via the application login (email and password)
 - **FR2:** Admins can create, edit, and deactivate user accounts
 - **FR3:** Admins can assign and change roles (Admin / Manager / Finance / IC) for any user
 - **FR4:** The system enforces role-based access control by assigned role; unauthorized access attempts for restricted capabilities return a denied response
@@ -390,7 +390,7 @@ Platform MVP — all modules fully functional and integrated at launch. No phase
 ### Security
 
 - All data encrypted at rest and in transit (TLS 1.2+ for API communication)
-- Authentication exclusively via SSO — no local credential storage
+- Authentication via application login; passwords stored only as strong one-way hashes (never plaintext)
 - Billing rates restricted to Finance and Admin — enforced server-side, not UI-only
 - Timesheet audit trail entries are write-once and tamper-evident
 - Session tokens expire after 30 minutes of idle inactivity (configurable by admin); re-authentication required
@@ -410,7 +410,7 @@ Platform MVP — all modules fully functional and integrated at launch. No phase
 
 ### Integration
 
-- SSO: OAuth 2.0 / OIDC compatible with Google Workspace, Azure AD, and Microsoft Entra
+- **Auth (launch):** Email + password; optional future SSO/OIDC can be added without changing FR intent for RBAC and sessions
 - Excel import: `.xlsx` format; malformed rows handled gracefully with error reporting
 - Invoice export: PDF and/or CSV
 - QuickBooks (Growth): QuickBooks Online API

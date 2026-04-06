@@ -476,7 +476,7 @@ Direction B provides the overall application pattern. Direction A's full-width c
 
 ```mermaid
 flowchart TD
-    A([Login via SSO]) --> B[Role detected: IC]
+    A([Login: email + password]) --> B[Role detected: IC]
     B --> C[Redirect to /timesheet]
     C --> D{Pre-populated entries\nexist for this week?}
     D -- Yes --> E[Render week grid\nAuto-filled rows: violet tint + badge\nManual rows: white]
@@ -511,7 +511,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A([Login via SSO]) --> B[Role detected: Manager]
+    A([Login: email + password]) --> B[Role detected: Manager]
     B --> C[Redirect to Dashboard]
     C --> D[Dashboard loads:\nOpen needs count\nAvailable staff count\nConflict alerts\nRecent activity feed]
     D --> E{Action needed?}

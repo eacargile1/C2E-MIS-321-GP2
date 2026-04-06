@@ -27,7 +27,7 @@ Architectural implication: modules are tightly coupled via state events — avai
 
 **Non-Functional Requirements:**
 - Performance: ≤2s page loads, ≤3s availability calendar render, ≤5s event propagation, ≤5s report queries (5-year dataset), ≤10s invoice generation
-- Security: TLS 1.2+, SSO-only auth, server-side RBAC, write-once audit trail, 30-min idle session timeout, malware scan on receipt uploads
+- Security: TLS 1.2+, app login (email + password, hashed credentials), server-side RBAC, write-once audit trail, 30-min idle session timeout, malware scan on receipt uploads
 - Reliability: 99.5% uptime (business hours), durable write-before-confirm, auto-retry with admin visibility after 3 failures
 - Scalability: 70–100 concurrent users at launch; horizontal scaling to 200+ without schema or service redesign
 
@@ -40,7 +40,7 @@ Architectural implication: modules are tightly coupled via state events — avai
 
 - Frontend: JavaScript SPA (React or similar)
 - Backend: C# REST API
-- Auth: OAuth 2.0 / OIDC via SSO provider (Google Workspace / Azure AD / Microsoft Entra — TBD at deployment)
+- Auth: Application login — email + password; JWT issued after credential validation; passwords stored as salted one-way hashes
 - Database: Relational (joins across timesheets, projects, clients, employees, invoices required)
 - State propagation: Event-driven via transactional outbox pattern
 - Growth integration: QuickBooks Online API (Phase 2 only)
@@ -51,7 +51,7 @@ Architectural implication: modules are tightly coupled via state events — avai
 1. **Event propagation pipeline** — must be reliable, retryable, and observable; failure path requires admin visibility
 2. **RBAC enforcement** — server-side on every protected endpoint; UI-only enforcement is a security violation per NFRs
 3. **Audit logging** — write-once, tamper-evident entries for timesheet changes and billed-hour modifications; append-only write pattern required
-4. **Session management** — JWT tokens with 30-min idle expiry; SSO re-auth flow
+4. **Session management** — JWT tokens with 30-min idle expiry; re-authentication via login when session expires
 5. **File handling** — receipt upload pipeline with malware scanning before storage
 6. **AI scoring layer** — must degrade gracefully to availability-only ranking when historical data threshold not met (<3 completed assignments)
 
@@ -98,7 +98,7 @@ npm install && npm run dev
 
 **Backend: CleanArch.StarterKit v9.0.1 (.NET 9)**
 
-**Rationale:** Hangfire background jobs maps directly to the transactional outbox worker (ADR-01). Built-in audit logging maps to ADR-03. CQRS/MediatR separates read-heavy reporting queries from write-heavy timesheet and event commands. JWT auth aligns with SSO token validation requirement.
+**Rationale:** Hangfire background jobs maps directly to the transactional outbox worker (ADR-01). Built-in audit logging maps to ADR-03. CQRS/MediatR separates read-heavy reporting queries from write-heavy timesheet and event commands. JWT auth aligns with session tokens after login.
 
 **Initialization:**
 ```bash
@@ -112,7 +112,7 @@ dotnet new cleanarch --name Ops
 - Command/Query: CQRS via MediatR
 - Background Jobs: Hangfire (outbox worker, retry queue)
 - Audit Logging: Built-in (maps to ADR-03 append-only audit trail)
-- Auth: JWT middleware (configured for SSO token validation)
+- Auth: JWT middleware (validates API-issued bearer tokens)
 - Validation: FluentValidation
 - Health Checks: Built-in endpoint
 - ORM: EF Core (relational DB, complex joins for reporting)
@@ -127,7 +127,7 @@ dotnet new cleanarch --name Ops
 
 **Critical Decisions (Block Implementation):**
 - Database: SQL Server with EF Core (Npgsql provider)
-- Auth: JWT via SSO (OAuth 2.0 / OIDC) — no local credential storage
+- Auth: JWT after email/password validation — passwords stored as salted hashes only (never plaintext)
 - Event propagation: Transactional outbox pattern (Hangfire worker)
 - RBAC: Two-layer server-side enforcement
 
@@ -153,8 +153,8 @@ dotnet new cleanarch --name Ops
 
 ### Authentication & Security
 
-- **Auth flow:** OAuth 2.0 / OIDC via company SSO provider (Google Workspace / Azure AD / Microsoft Entra — TBD at deployment); JWT bearer tokens validated on every API request
-- **Session expiry:** 30-minute idle timeout enforced in JWT middleware; re-authentication via SSO redirect
+- **Auth flow:** User submits email + password to login endpoint; API validates credentials against user store, issues signed JWT; JWT bearer tokens validated on every API request
+- **Session expiry:** 30-minute idle timeout enforced in JWT middleware; re-authentication via login screen
 - **RBAC enforcement:** Policy middleware (route-level capability check) + service-layer ownership check (row-level user-scoped access) — never UI-only
 - **File storage:** Local filesystem / mapped volume for receipt attachments (MVP); malware scan hook at upload boundary before write; path to blob storage (Azure Blob / S3) available for Phase 2 horizontal scaling
 - **Transport security:** TLS 1.2+ enforced at API gateway / reverse proxy layer
@@ -189,7 +189,7 @@ dotnet new cleanarch --name Ops
 **Implementation Sequence:**
 1. Scaffold both projects (frontend + backend starters)
 2. Configure SQL Server + EF Core connection + initial migration
-3. Implement SSO JWT middleware + RBAC policy setup
+3. Implement login + JWT issuance middleware + RBAC policy setup
 4. Build transactional outbox infrastructure (Hangfire + outbox table)
 5. Implement append-only audit log table + INSERT-only DB user
 6. Build domain modules against established infrastructure
@@ -255,7 +255,7 @@ Ops.Infrastructure/
   Outbox/            # Outbox table, Hangfire worker, retry logic
   AuditLog/          # Audit log writer (INSERT-only)
   FileStorage/       # Receipt upload + malware scan pipeline
-  Auth/              # JWT validation, SSO OIDC middleware
+  Auth/              # Credential validation, JWT issuance & validation
 Ops.WebApi/
   Controllers/       # Thin — delegate to MediatR, no business logic
   Middleware/        # RBAC policy, error handling, problem details
@@ -734,7 +734,7 @@ All 11 FR categories explicitly mapped to backend + frontend locations. Key cros
 **Requirements Analysis**
 - [x] Project context thoroughly analyzed
 - [x] Scale and complexity assessed (Medium-High, 70–100 users)
-- [x] Technical constraints identified (JS + C#, SQL Server, SSO)
+- [x] Technical constraints identified (JS + C#, SQL Server, app login)
 - [x] Cross-cutting concerns mapped (events, RBAC, audit, files, AI)
 
 **Architectural Decisions**
@@ -778,6 +778,6 @@ All 11 FR categories explicitly mapped to backend + frontend locations. Key cros
 **First Implementation Priorities (in order):**
 1. Scaffold both projects — `dotnet new cleanarch --name Ops` + clone modern-react-template
 2. Configure SQL Server + EF Core initial migration (all entity tables + OutboxMessages + AuditLog tables + reporting indexes)
-3. SSO JWT middleware + RBAC policy definitions
+3. Login + JWT middleware + RBAC policy definitions
 4. Transactional outbox infrastructure (Hangfire worker + OutboxWriter)
 5. Build domain modules against established infrastructure

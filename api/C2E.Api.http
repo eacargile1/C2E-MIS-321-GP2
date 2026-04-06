@@ -1,0 +1,6 @@
+@C2E.Api_HostAddress = http://localhost:5028
+
+GET {{C2E.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

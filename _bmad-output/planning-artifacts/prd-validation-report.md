@@ -82,10 +82,10 @@ overallStatus: Warning
 
 **Vague Quantifiers Found:** 0
 
-**Implementation Leakage:** 1
-- FR1: references "OAuth 2.0 / OIDC" — borderline acceptable as capability-relevant auth protocol
+**Implementation Leakage:** 0
+- *(Updated 2026-04-01: FR1 now specifies application email/password login; prior OIDC note superseded.)*
 
-**FR Violations Total:** 1 actionable (format deviation is systematic/stylistic, not semantic)
+**FR Violations Total:** 0 actionable from implementation leakage (format deviation remains systematic/stylistic, not semantic)
 
 ### Non-Functional Requirements
 
@@ -162,7 +162,7 @@ overallStatus: Warning
 **Libraries:** 0 violations
 
 **Other — Capability-Relevant Terms (Acceptable):**
-- `OAuth 2.0 / OIDC` (FR1, NFR Integration) — auth standard the system must support ✓
+- `Email + password` / JWT sessions (FR1, architecture) — authentication capability the system must support ✓
 - `PDF and/or CSV` (FR43) — user-facing export format capability ✓
 - `.xlsx` (FR45) — required import format capability ✓
 - `QuickBooks Online API` (NFR Integration) — explicit client business requirement ✓
