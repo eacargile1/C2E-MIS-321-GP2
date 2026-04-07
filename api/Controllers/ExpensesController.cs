@@ -1,0 +1,163 @@
+using System.Globalization;
+using System.Security.Claims;
+using C2E.Api.Authorization;
+using C2E.Api.Data;
+using C2E.Api.Dtos;
+using C2E.Api.Models;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+
+namespace C2E.Api.Controllers;
+
+[ApiController]
+[Route("api/expenses")]
+[Authorize]
+public sealed class ExpensesController(AppDbContext db) : ControllerBase
+{
+    [HttpGet("mine")]
+    public async Task<ActionResult<IReadOnlyList<ExpenseResponse>>> ListMine(CancellationToken ct)
+    {
+        if (!TryGetUserId(out var userId)) return Unauthorized();
+        var users = await db.Users.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Email, ct);
+        var rows = await db.ExpenseEntries
+            .AsNoTracking()
+            .Where(x => x.UserId == userId)
+            .OrderByDescending(x => x.ExpenseDate)
+            .ThenByDescending(x => x.CreatedAtUtc)
+            .ToListAsync(ct);
+        return Ok(rows.Select(x => Map(x, users)).ToList());
+    }
+
+    [HttpPost]
+    public async Task<ActionResult<ExpenseResponse>> Create([FromBody] CreateExpenseRequest body, CancellationToken ct)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(new AuthErrorResponse { Message = FirstModelError() ?? "Invalid request." });
+        if (!TryGetUserId(out var userId)) return Unauthorized();
+        if (!TryParseDateOnly(body.ExpenseDate, out var expenseDate))
+            return BadRequest(new AuthErrorResponse { Message = "Invalid expenseDate. Use YYYY-MM-DD." });
+
+        var now = DateTime.UtcNow;
+        var entity = new ExpenseEntry
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            ExpenseDate = expenseDate,
+            Client = body.Client.Trim(),
+            Project = body.Project.Trim(),
+            Category = body.Category.Trim(),
+            Description = body.Description.Trim(),
+            Amount = body.Amount,
+            Status = ExpenseStatus.Pending,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now,
+        };
+        db.ExpenseEntries.Add(entity);
+        await db.SaveChangesAsync(ct);
+
+        var userEmail = User.FindFirstValue(ClaimTypes.Email) ?? "";
+        return Ok(new ExpenseResponse
+        {
+            Id = entity.Id,
+            UserId = entity.UserId,
+            UserEmail = userEmail,
+            ExpenseDate = entity.ExpenseDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            Client = entity.Client,
+            Project = entity.Project,
+            Category = entity.Category,
+            Description = entity.Description,
+            Amount = entity.Amount,
+            Status = entity.Status.ToString(),
+            ReviewedByEmail = null,
+            ReviewedAtUtc = null,
+        });
+    }
+
+    [HttpGet("approvals/pending")]
+    [Authorize(Roles = RbacRoleSets.AdminAndManager)]
+    public async Task<ActionResult<IReadOnlyList<ExpenseResponse>>> ListPendingApprovals(CancellationToken ct)
+    {
+        var users = await db.Users.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Email, ct);
+        var rows = await db.ExpenseEntries
+            .AsNoTracking()
+            .Where(x => x.Status == ExpenseStatus.Pending)
+            .OrderBy(x => x.ExpenseDate)
+            .ThenBy(x => x.CreatedAtUtc)
+            .ToListAsync(ct);
+        return Ok(rows.Select(x => Map(x, users)).ToList());
+    }
+
+    [HttpPost("{id:guid}/approve")]
+    [Authorize(Roles = RbacRoleSets.AdminAndManager)]
+    public async Task<IActionResult> Approve([FromRoute] Guid id, CancellationToken ct) =>
+        await Review(id, ExpenseStatus.Approved, ct);
+
+    [HttpPost("{id:guid}/reject")]
+    [Authorize(Roles = RbacRoleSets.AdminAndManager)]
+    public async Task<IActionResult> Reject([FromRoute] Guid id, CancellationToken ct) =>
+        await Review(id, ExpenseStatus.Rejected, ct);
+
+    private async Task<IActionResult> Review(Guid id, ExpenseStatus nextStatus, CancellationToken ct)
+    {
+        if (!TryGetUserId(out var userId)) return Unauthorized();
+        var row = await db.ExpenseEntries.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (row is null) return NotFound();
+        if (row.Status != ExpenseStatus.Pending)
+            return BadRequest(new AuthErrorResponse { Message = "Only pending expenses can be reviewed." });
+
+        row.Status = nextStatus;
+        row.ReviewedByUserId = userId;
+        row.ReviewedAtUtc = DateTime.UtcNow;
+        row.UpdatedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    private static ExpenseResponse Map(ExpenseEntry x, IReadOnlyDictionary<Guid, string> users) =>
+        new()
+        {
+            Id = x.Id,
+            UserId = x.UserId,
+            UserEmail = users.TryGetValue(x.UserId, out var owner) ? owner : "",
+            ExpenseDate = x.ExpenseDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            Client = x.Client,
+            Project = x.Project,
+            Category = x.Category,
+            Description = x.Description,
+            Amount = x.Amount,
+            Status = x.Status.ToString(),
+            ReviewedByEmail = x.ReviewedByUserId is { } uid && users.TryGetValue(uid, out var rev) ? rev : null,
+            ReviewedAtUtc = x.ReviewedAtUtc,
+        };
+
+    private bool TryGetUserId(out Guid id)
+    {
+        var sub = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue(ClaimTypes.Name);
+        if (sub is null || !Guid.TryParse(sub, out id))
+        {
+            id = default;
+            return false;
+        }
+        return true;
+    }
+
+    private static bool TryParseDateOnly(string input, out DateOnly date) =>
+        DateOnly.TryParseExact(
+            input.Trim(),
+            "yyyy-MM-dd",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out date);
+
+    private string? FirstModelError()
+    {
+        foreach (var (_, state) in ModelState)
+        {
+            if (state.Errors.Count == 0) continue;
+            var msg = state.Errors[0].ErrorMessage;
+            if (!string.IsNullOrWhiteSpace(msg)) return msg;
+        }
+        return null;
+    }
+}

@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { getTimesheetWeek, putTimesheetWeek, type MeProfile, type TimesheetLine } from '../api'
+import {
+  getResourceTrackerMonth,
+  getTimesheetWeek,
+  putTimesheetWeek,
+  type MeProfile,
+  type ResourceTrackerEmployeeRow,
+  type TimesheetLine,
+} from '../api'
 import '../App.css'
 
 type Toast = { id: number; message: string; variant: 'ok' | 'err' }
@@ -41,6 +47,14 @@ function addDays(d: Date, days: number) {
   const x = new Date(d.getTime())
   x.setDate(x.getDate() + days)
   return x
+}
+
+function startOfMonth(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), 1)
+}
+
+function endOfMonth(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0)
 }
 
 function toDraft(l: TimesheetLine): DraftLine {
@@ -84,19 +98,21 @@ function keyOf(r: { workDate: string; client: string; project: string; task: str
 export default function TimesheetWeek({
   token,
   profile,
-  onSignOut,
 }: {
   token: string
   profile: MeProfile
-  onSignOut: () => void
 }) {
+  const [monthAnchor, setMonthAnchor] = useState(() => startOfMonth(new Date()))
   const [weekStart, setWeekStart] = useState(() => toYmd(startOfWeekMonday(new Date())))
   const [lines, setLines] = useState<DraftLine[]>([])
+  const [monthRows, setMonthRows] = useState<ResourceTrackerEmployeeRow[]>([])
+  const [monthLoading, setMonthLoading] = useState(true)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [persistedKeys, setPersistedKeys] = useState<Set<string>>(() => new Set())
   const lastLoadId = useRef(0)
+  const lastMonthLoadId = useRef(0)
 
   const weekStartDate = useMemo(() => {
     if (!isYmd(weekStart)) return startOfWeekMonday(new Date())
@@ -106,6 +122,18 @@ export default function TimesheetWeek({
   }, [weekStart])
 
   const weekEndDate = useMemo(() => addDays(weekStartDate, 6), [weekStartDate])
+  const monthLabel = useMemo(
+    () => monthAnchor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
+    [monthAnchor],
+  )
+  const monthStart = useMemo(() => startOfMonth(monthAnchor), [monthAnchor])
+  const monthEnd = useMemo(() => endOfMonth(monthAnchor), [monthAnchor])
+  const monthStartYmd = useMemo(() => toYmd(monthStart), [monthStart])
+  const monthDays = useMemo(() => {
+    const out: Date[] = []
+    for (let d = monthStart; d <= monthEnd; d = addDays(d, 1)) out.push(d)
+    return out
+  }, [monthStart, monthEnd])
 
   const pushToast = useCallback((message: string, variant: 'ok' | 'err') => {
     const id = Date.now()
@@ -131,10 +159,30 @@ export default function TimesheetWeek({
     }
   }, [token, weekStart, pushToast])
 
+  const refreshMonth = useCallback(async () => {
+    const loadId = ++lastMonthLoadId.current
+    setMonthLoading(true)
+    try {
+      const rows = await getResourceTrackerMonth(token, monthStartYmd)
+      if (loadId !== lastMonthLoadId.current) return
+      setMonthRows(rows)
+    } catch (e) {
+      if (loadId !== lastMonthLoadId.current) return
+      pushToast(e instanceof Error ? e.message : 'Month load failed', 'err')
+      setMonthRows([])
+    } finally {
+      if (loadId === lastMonthLoadId.current) setMonthLoading(false)
+    }
+  }, [monthStartYmd, token, pushToast])
+
   useEffect(() => {
     if (!isYmd(weekStart)) setWeekStart(toYmd(startOfWeekMonday(new Date())))
     void refresh()
   }, [refresh, weekStart])
+
+  useEffect(() => {
+    void refreshMonth()
+  }, [refreshMonth])
 
   const addRow = () => setLines((xs) => [...xs, blankDraft(weekStart)])
 
@@ -154,6 +202,13 @@ export default function TimesheetWeek({
 
   const setPrevWeek = () => setWeekStart(toYmd(addDays(weekStartDate, -7)))
   const setNextWeek = () => setWeekStart(toYmd(addDays(weekStartDate, 7)))
+  const setPrevMonth = () => setMonthAnchor((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))
+  const setNextMonth = () => setMonthAnchor((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))
+  const jumpToToday = () => {
+    const now = new Date()
+    setMonthAnchor(startOfMonth(now))
+    setWeekStart(toYmd(startOfWeekMonday(now)))
+  }
 
   const onSave = async () => {
     setSaving(true)
@@ -182,6 +237,7 @@ export default function TimesheetWeek({
       await putTimesheetWeek(token, weekStart, payload)
       pushToast('Saved', 'ok')
       await refresh()
+      await refreshMonth()
     } catch (e) {
       pushToast(e instanceof Error ? e.message : 'Save failed', 'err')
     } finally {
@@ -191,25 +247,85 @@ export default function TimesheetWeek({
 
   return (
     <div className="admin-wrap">
-      <header className="admin-header">
-        <div>
-          <h1 className="title admin-title">Timesheet</h1>
-          <p className="subtitle admin-sub">Signed in as {profile.email}</p>
-        </div>
-        <div className="admin-header-actions">
-          <Link to="/" className="btn secondary">
-            Home
-          </Link>
-          <button type="button" className="btn secondary" onClick={onSignOut}>
-            Sign out
-          </button>
-        </div>
-      </header>
+      <div className="card admin-card">
+        <h1 className="title admin-title">Resource Tracker / Timesheet</h1>
+        <p className="subtitle admin-sub">Signed in as {profile.email} · {profile.role}</p>
+      </div>
 
       <div className="card admin-card">
         <div className="admin-table-head">
           <div>
-            <h2 className="admin-h2">Week</h2>
+            <h2 className="admin-h2">Monthly Availability Grid</h2>
+            <p className="admin-hint">{monthLabel}</p>
+          </div>
+          <div className="admin-header-actions">
+            <button type="button" className="btn secondary btn-sm" onClick={setPrevMonth} disabled={monthLoading || saving}>
+              ← Month
+            </button>
+            <button type="button" className="btn secondary btn-sm" onClick={setNextMonth} disabled={monthLoading || saving}>
+              Month →
+            </button>
+            <button type="button" className="btn secondary btn-sm" onClick={jumpToToday} disabled={monthLoading || saving}>
+              Today
+            </button>
+          </div>
+        </div>
+        <div className="timesheet-legend">
+          <span><i className="lg fully" /> Fully Booked</span>
+          <span><i className="lg soft" /> Soft Booked</span>
+          <span><i className="lg available" /> Available</span>
+          <span><i className="lg pto" /> PTO</span>
+        </div>
+        {monthLoading ? (
+          <p className="admin-hint">Loading month…</p>
+        ) : (
+          <div className="table-scroll">
+            <table className="resource-matrix">
+              <thead>
+                <tr>
+                  <th className="sticky-col">Employee</th>
+                  {monthDays.map((d) => (
+                    <th key={toYmd(d)}>{d.getDate()}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {monthRows.length === 0 ? (
+                  <tr>
+                    <td className="sticky-col">No employees</td>
+                    {monthDays.map((d) => (
+                      <td key={toYmd(d)} className="status-empty">—</td>
+                    ))}
+                  </tr>
+                ) : (
+                  monthRows.map((row) => (
+                    <tr key={row.userId}>
+                      <td className="sticky-col" title={`${row.email} (${row.role})`}>
+                        {row.email}
+                      </td>
+                      {row.days.map((day) => (
+                        <td
+                          key={day.date}
+                          className={`status-${day.status}`}
+                          title={`${row.email} · ${day.date} · ${day.status} · ${day.hours.toFixed(2)}h`}
+                          onClick={() => setWeekStart(toYmd(startOfWeekMonday(new Date(day.date))))}
+                        >
+                          {day.hours > 0 ? day.hours.toFixed(0) : ''}
+                        </td>
+                      ))}
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="card admin-card">
+        <div className="admin-table-head">
+          <div>
+            <h2 className="admin-h2">Weekly Editor</h2>
             <p className="admin-hint">
               Monday–Sunday · {weekStart} → {toYmd(weekEndDate)}
             </p>
@@ -249,7 +365,7 @@ export default function TimesheetWeek({
                   {lines.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="admin-hint">
-                        No lines yet.
+                        No lines yet for this week. Use Add line below, or pick a week from the calendar above.
                       </td>
                     </tr>
                   ) : null}

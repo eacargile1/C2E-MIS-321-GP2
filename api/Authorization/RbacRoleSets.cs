@@ -13,4 +13,7 @@ public static class RbacRoleSets
 
     /// <summary>Create client (stub); matrix: Admin-only for client create/edit.</summary>
     public const string AdminOnly = nameof(AppRole.Admin);
+
+    /// <summary>Project create/edit and staffing actions allowed for Admin + Manager.</summary>
+    public const string AdminAndManager = $"{nameof(AppRole.Admin)},{nameof(AppRole.Manager)}";
 }

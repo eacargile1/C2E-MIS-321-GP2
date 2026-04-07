@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { createUser, listUsers, patchUser, type MeProfile, type UserRow } from '../api'
 import '../App.css'
 
@@ -142,22 +141,12 @@ export default function AdminUsers({
 
   return (
     <div className="admin-wrap">
-      <header className="admin-header">
-        <div>
-          <h1 className="title admin-title">Users</h1>
-          <p className="subtitle admin-sub">
-            Signed in as {profile.email} · Admin
-          </p>
-        </div>
-        <div className="admin-header-actions">
-          <Link to="/" className="btn secondary">
-            Home
-          </Link>
-          <button type="button" className="btn secondary" onClick={onSignOut}>
-            Sign out
-          </button>
-        </div>
-      </header>
+      <div className="card admin-card">
+        <h1 className="title admin-title">Users</h1>
+        <p className="subtitle admin-sub">
+          Signed in as {profile.email} · Admin
+        </p>
+      </div>
 
       <div className="card admin-card">
         <h2 className="admin-h2">Create user</h2>

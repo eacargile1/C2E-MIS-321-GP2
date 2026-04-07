@@ -228,6 +228,172 @@ export async function patchClient(
   return assertClient(await res.json())
 }
 
+export type ProjectRow = {
+  id: string
+  name: string
+  clientId: string
+  clientName: string
+  budgetAmount: number
+  isActive: boolean
+}
+
+function assertProject(x: unknown): ProjectRow {
+  const r = x as Record<string, unknown>
+  if (
+    typeof r.id !== 'string' ||
+    typeof r.name !== 'string' ||
+    typeof r.clientId !== 'string' ||
+    typeof r.clientName !== 'string' ||
+    typeof r.budgetAmount !== 'number' ||
+    typeof r.isActive !== 'boolean'
+  )
+    throw new Error('Could not load project')
+  return {
+    id: r.id,
+    name: r.name,
+    clientId: r.clientId,
+    clientName: r.clientName,
+    budgetAmount: r.budgetAmount,
+    isActive: r.isActive,
+  }
+}
+
+export async function listProjects(
+  token: string,
+  args?: { q?: string; clientId?: string; includeInactive?: boolean },
+): Promise<ProjectRow[]> {
+  const params = new URLSearchParams()
+  if (args?.q?.trim()) params.set('q', args.q.trim())
+  if (args?.clientId) params.set('clientId', args.clientId)
+  if (args?.includeInactive) params.set('includeInactive', 'true')
+  const qs = params.toString()
+  const url = qs ? `${base}/api/projects?${qs}` : `${base}/api/projects`
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load projects'))
+  const data = (await res.json()) as unknown
+  if (!Array.isArray(data)) throw new Error('Could not load projects')
+  return data.map(assertProject)
+}
+
+export async function createProject(
+  token: string,
+  body: { name: string; clientId: string; budgetAmount: number },
+): Promise<ProjectRow> {
+  const res = await fetch(`${base}/api/projects`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not create project'))
+  return assertProject(await res.json())
+}
+
+export async function patchProject(
+  token: string,
+  id: string,
+  body: { name?: string; clientId?: string; budgetAmount?: number; isActive?: boolean },
+): Promise<ProjectRow> {
+  const res = await fetch(`${base}/api/projects/${id}`, {
+    method: 'PATCH',
+    headers: authHeaders(token),
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not update project'))
+  return assertProject(await res.json())
+}
+
+export type ExpenseRow = {
+  id: string
+  userId: string
+  userEmail: string
+  expenseDate: string
+  client: string
+  project: string
+  category: string
+  description: string
+  amount: number
+  status: 'Pending' | 'Approved' | 'Rejected'
+  reviewedByEmail: string | null
+  reviewedAtUtc: string | null
+}
+
+function assertExpense(x: unknown): ExpenseRow {
+  const r = x as Record<string, unknown>
+  if (
+    typeof r.id !== 'string' ||
+    typeof r.userId !== 'string' ||
+    typeof r.userEmail !== 'string' ||
+    typeof r.expenseDate !== 'string' ||
+    typeof r.client !== 'string' ||
+    typeof r.project !== 'string' ||
+    typeof r.category !== 'string' ||
+    typeof r.description !== 'string' ||
+    typeof r.amount !== 'number' ||
+    (r.status !== 'Pending' && r.status !== 'Approved' && r.status !== 'Rejected')
+  ) {
+    throw new Error('Could not load expenses')
+  }
+  return {
+    id: r.id,
+    userId: r.userId,
+    userEmail: r.userEmail,
+    expenseDate: r.expenseDate,
+    client: r.client,
+    project: r.project,
+    category: r.category,
+    description: r.description,
+    amount: r.amount,
+    status: r.status,
+    reviewedByEmail: typeof r.reviewedByEmail === 'string' ? r.reviewedByEmail : null,
+    reviewedAtUtc: typeof r.reviewedAtUtc === 'string' ? r.reviewedAtUtc : null,
+  }
+}
+
+export async function listMyExpenses(token: string): Promise<ExpenseRow[]> {
+  const res = await fetch(`${base}/api/expenses/mine`, { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load expenses'))
+  const data = (await res.json()) as unknown
+  if (!Array.isArray(data)) throw new Error('Could not load expenses')
+  return data.map(assertExpense)
+}
+
+export async function createExpense(
+  token: string,
+  body: { expenseDate: string; client: string; project: string; category: string; description: string; amount: number },
+): Promise<ExpenseRow> {
+  const res = await fetch(`${base}/api/expenses`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not create expense'))
+  return assertExpense(await res.json())
+}
+
+export async function listPendingExpenseApprovals(token: string): Promise<ExpenseRow[]> {
+  const res = await fetch(`${base}/api/expenses/approvals/pending`, { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load approvals'))
+  const data = (await res.json()) as unknown
+  if (!Array.isArray(data)) throw new Error('Could not load approvals')
+  return data.map(assertExpense)
+}
+
+export async function approveExpense(token: string, id: string): Promise<void> {
+  const res = await fetch(`${base}/api/expenses/${id}/approve`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not approve expense'))
+}
+
+export async function rejectExpense(token: string, id: string): Promise<void> {
+  const res = await fetch(`${base}/api/expenses/${id}/reject`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not reject expense'))
+}
+
 export type TimesheetLine = {
   workDate: string // YYYY-MM-DD
   client: string
@@ -278,4 +444,48 @@ export async function putTimesheetWeek(token: string, weekStart: string, lines: 
     body: JSON.stringify(lines),
   })
   if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not save timesheet'))
+}
+
+export type ResourceTrackerDay = {
+  date: string
+  status: 'Available' | 'SoftBooked' | 'FullyBooked' | 'PTO'
+  hours: number
+}
+
+export type ResourceTrackerEmployeeRow = {
+  userId: string
+  email: string
+  role: string
+  days: ResourceTrackerDay[]
+}
+
+export async function getResourceTrackerMonth(token: string, monthStart: string): Promise<ResourceTrackerEmployeeRow[]> {
+  const res = await fetch(`${base}/api/timesheets/organization?monthStart=${encodeURIComponent(monthStart)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load resource tracker'))
+  const data = (await res.json()) as unknown
+  if (!Array.isArray(data)) throw new Error('Could not load resource tracker')
+  return data.map((row) => {
+    const r = row as Record<string, unknown>
+    if (
+      typeof r.userId !== 'string' ||
+      typeof r.email !== 'string' ||
+      typeof r.role !== 'string' ||
+      !Array.isArray(r.days)
+    )
+      throw new Error('Could not load resource tracker')
+    const days = r.days.map((d) => {
+      const x = d as Record<string, unknown>
+      if (
+        typeof x.date !== 'string' ||
+        typeof x.status !== 'string' ||
+        typeof x.hours !== 'number' ||
+        (x.status !== 'Available' && x.status !== 'SoftBooked' && x.status !== 'FullyBooked' && x.status !== 'PTO')
+      )
+        throw new Error('Could not load resource tracker')
+      return { date: x.date, status: x.status, hours: x.hours } as ResourceTrackerDay
+    })
+    return { userId: r.userId, email: r.email, role: r.role, days }
+  })
 }

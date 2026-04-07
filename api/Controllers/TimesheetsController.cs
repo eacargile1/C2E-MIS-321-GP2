@@ -15,10 +15,63 @@ namespace C2E.Api.Controllers;
 [Route("api/timesheets")]
 public sealed class TimesheetsController(AppDbContext db) : ControllerBase
 {
-    /// <summary>Org-wide timesheet visibility (FR10). Replace body when E2 lands.</summary>
+    /// <summary>Org-wide availability matrix for the month (FR20).</summary>
     [HttpGet("organization")]
-    [Authorize(Roles = RbacRoleSets.AdminAndFinance)]
-    public ActionResult<IReadOnlyList<object>> GetOrganization() => Ok(Array.Empty<object>());
+    [Authorize]
+    public async Task<ActionResult<IReadOnlyList<ResourceTrackerEmployeeRowResponse>>> GetOrganization(
+        [FromQuery] string monthStart,
+        CancellationToken ct)
+    {
+        if (!TryParseDateOnly(monthStart, out var parsed))
+            return BadRequest(new AuthErrorResponse { Message = "Invalid monthStart. Use YYYY-MM-DD." });
+
+        var start = new DateOnly(parsed.Year, parsed.Month, 1);
+        var end = start.AddMonths(1);
+        var userRows = await db.Users
+            .AsNoTracking()
+            .Where(u => u.IsActive)
+            .OrderBy(u => u.Email)
+            .Select(u => new { u.Id, u.Email, u.Role })
+            .ToListAsync(ct);
+
+        var lines = await db.TimesheetLines
+            .AsNoTracking()
+            .Where(l => l.WorkDate >= start && l.WorkDate < end)
+            .GroupBy(l => new { l.UserId, l.WorkDate })
+            .Select(g => new { g.Key.UserId, g.Key.WorkDate, Hours = g.Sum(x => x.Hours) })
+            .ToListAsync(ct);
+
+        var byUserDate = lines.ToDictionary(x => (x.UserId, x.WorkDate), x => x.Hours);
+        var dayCount = end.DayNumber - start.DayNumber;
+        var result = new List<ResourceTrackerEmployeeRowResponse>(userRows.Count);
+
+        foreach (var u in userRows)
+        {
+            var days = new List<ResourceTrackerDayResponse>(dayCount);
+            for (var i = 0; i < dayCount; i++)
+            {
+                var day = start.AddDays(i);
+                var hours = byUserDate.TryGetValue((u.Id, day), out var h) ? h : 0m;
+                var status = hours >= 8m ? "FullyBooked" : hours > 0m ? "SoftBooked" : "Available";
+                days.Add(new ResourceTrackerDayResponse
+                {
+                    Date = day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                    Status = status,
+                    Hours = hours,
+                });
+            }
+
+            result.Add(new ResourceTrackerEmployeeRowResponse
+            {
+                UserId = u.Id,
+                Email = u.Email,
+                Role = u.Role.ToString(),
+                Days = days,
+            });
+        }
+
+        return Ok(result);
+    }
 
     /// <summary>Employee weekly timesheet lines (FR5). Week is Monday–Sunday (7 days starting at weekStart).</summary>
     [HttpGet("week")]

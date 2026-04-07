@@ -39,3 +39,18 @@ public sealed class TimesheetLineResponse
     public string? Notes { get; init; }
 }
 
+public sealed class ResourceTrackerDayResponse
+{
+    public required string Date { get; init; }
+    public required string Status { get; init; } // Available | SoftBooked | FullyBooked | PTO
+    public required decimal Hours { get; init; }
+}
+
+public sealed class ResourceTrackerEmployeeRowResponse
+{
+    public required Guid UserId { get; init; }
+    public required string Email { get; init; }
+    public required string Role { get; init; }
+    public required IReadOnlyList<ResourceTrackerDayResponse> Days { get; init; }
+}
+

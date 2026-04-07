@@ -87,6 +87,9 @@ public class RbacEnforcementTests
             (await client.GetAsync("/api/clients")).StatusCode);
         Assert.Equal(
             HttpStatusCode.Unauthorized,
+            (await client.GetAsync("/api/projects")).StatusCode);
+        Assert.Equal(
+            HttpStatusCode.Unauthorized,
             (await client.PostAsJsonAsync("/api/clients", new { name = "x" })).StatusCode);
         Assert.Equal(
             HttpStatusCode.Unauthorized,
@@ -94,7 +97,7 @@ public class RbacEnforcementTests
     }
 
     [Fact]
-    public async Task Organization_timesheets_IC_forbidden_Finance_ok()
+    public async Task Organization_timesheets_IC_and_Finance_ok()
     {
         using var factory = Factory();
         var client = factory.CreateClient();
@@ -103,10 +106,11 @@ public class RbacEnforcementTests
             client, "fin.ts@local.test", "FinTsPass1!", "Finance");
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
-        await AssertForbiddenJsonAsync(await client.GetAsync("/api/timesheets/organization"));
+        var icRes = await client.GetAsync("/api/timesheets/organization?monthStart=2026-03-01");
+        Assert.Equal(HttpStatusCode.OK, icRes.StatusCode);
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", financeToken);
-        var ok = await client.GetAsync("/api/timesheets/organization");
+        var ok = await client.GetAsync("/api/timesheets/organization?monthStart=2026-03-01");
         Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
     }
 

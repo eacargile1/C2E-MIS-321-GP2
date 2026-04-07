@@ -28,7 +28,10 @@ public sealed class ClientsController(AppDbContext db) : ControllerBase
         if (!User.IsInRole(nameof(AppRole.Admin)))
             includeInactive = false;
 
-        var query = db.Clients.AsNoTracking().AsQueryable();
+        var query = db.Clients
+            .AsNoTracking()
+            .Include(c => c.Projects)
+            .AsQueryable();
         if (!includeInactive)
             query = query.Where(c => c.IsActive);
 
@@ -49,7 +52,10 @@ public sealed class ClientsController(AppDbContext db) : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<ClientResponse>> Get(Guid id, CancellationToken ct = default)
     {
-        var c = await db.Clients.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        var c = await db.Clients
+            .AsNoTracking()
+            .Include(x => x.Projects)
+            .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (c is null)
             return NotFound();
         if (!c.IsActive && !User.IsInRole(nameof(AppRole.Admin)))
@@ -143,7 +149,11 @@ public sealed class ClientsController(AppDbContext db) : ControllerBase
             DefaultBillingRate = includeBilling ? c.DefaultBillingRate : null,
             Notes = c.Notes,
             IsActive = c.IsActive,
-            Projects = [],
+            Projects = c.Projects
+                .Where(p => p.IsActive)
+                .OrderBy(p => p.Name)
+                .Select(p => new ClientProjectStubDto { Id = p.Id, Name = p.Name })
+                .ToList(),
         };
 
     private string? FirstModelError()

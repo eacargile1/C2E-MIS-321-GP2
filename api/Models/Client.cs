@@ -19,4 +19,6 @@ public sealed class Client
 
     public DateTime CreatedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
+
+    public ICollection<Project> Projects { get; set; } = new List<Project>();
 }

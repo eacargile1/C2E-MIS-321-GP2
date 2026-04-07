@@ -237,7 +237,11 @@ Backlog derived from PRD functional requirements (FR1–FR46). Story IDs are sta
 
 | Story | Status | Notes |
 |-------|--------|--------|
-| S-E4-01 … S-E4-05 | **Not started** | No `Project` entity, assignments, or project views (FR15–FR19). |
+| S-E4-01 | **Partial** | `Project` entity + migration + `POST /api/projects` (Admin/Manager), includes client linkage + budget (FR15). |
+| S-E4-02 | **Not started** | Employee assignment to projects not implemented yet (FR16). |
+| S-E4-03 | **Partial** | SPA `/projects` directory and list view exist; not yet user-assigned-personalized (FR17). |
+| S-E4-04 | **Not started** | Project rollups for hours/expenses/budget consumed not implemented (FR18). |
+| S-E4-05 | **Partial** | Admin/Manager can list/filter/patch projects, but no team contribution detail yet (FR19). |
 
 ### E5 — Availability, staffing needs & overrides
 
@@ -263,7 +267,7 @@ Backlog derived from PRD functional requirements (FR1–FR46). Story IDs are sta
 |-------|--------|--------|
 | S-E8-01 | **Done** | Admin `POST`/`PATCH`, `Client` entity + migration; deactivate = `isActive` (FR32). |
 | S-E8-02 | **Done** | Authenticated `GET /api/clients/{id}` (inactive hidden from non-admin). |
-| S-E8-03 | **Partial** | Related `projects` array is **empty** until E4 (FR34 summary billing later). |
+| S-E8-03 | **Partial** | Related `projects` now includes active project stubs; summary billing still pending (FR34). |
 | S-E8-04 | **Done** | `GET /api/clients?q=` search + SPA `/clients` (FR35). |
 | — | **Stub** | `GET /api/clients/billing-rates` still **IC employee rates** placeholder (not client rates). |
 
@@ -294,7 +298,8 @@ Backlog derived from PRD functional requirements (FR1–FR46). Story IDs are sta
 | Admin users (list/create/patch) | **Done** (aligns with E1) |
 | Weekly timesheet page | **Partial** (aligns with E2 partial) |
 | Clients directory `/clients` | **Partial** (aligns with E8 — billing column only Admin/Finance) |
-| All other PRD modules (projects, calendar, expenses, reports, invoices, migration) | **Not started** |
+| Projects directory `/projects` | **Partial** (aligns with E4 — create/list/filter/edit active for Admin/Manager) |
+| Remaining PRD modules (calendar, expenses, reports, invoices, migration, assignments) | **Not started** |
 
 ### Cross-cutting gaps (architecture / NFR vs current code)
 

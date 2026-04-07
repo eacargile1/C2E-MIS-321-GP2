@@ -1,20 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { createClient, listClients, patchClient, type ClientRow, type MeProfile } from '../api'
 import '../App.css'
 
 type Toast = { id: number; message: string; variant: 'ok' | 'err' }
 
 const TOAST_MS = 4000
+const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
 
 export default function ClientsPage({
   token,
   profile,
-  onSignOut,
 }: {
   token: string
   profile: MeProfile
-  onSignOut: () => void
 }) {
   const isAdmin = profile.role === 'Admin'
   const canSeeRates = profile.role === 'Admin' || profile.role === 'Finance'
@@ -94,22 +92,12 @@ export default function ClientsPage({
 
   return (
     <div className="admin-wrap">
-      <header className="admin-header">
-        <div>
-          <h1 className="title admin-title">Clients</h1>
-          <p className="subtitle admin-sub">
-            Signed in as {profile.email} · {profile.role}
-          </p>
-        </div>
-        <div className="admin-header-actions">
-          <Link to="/" className="btn secondary">
-            Home
-          </Link>
-          <button type="button" className="btn secondary" onClick={onSignOut}>
-            Sign out
-          </button>
-        </div>
-      </header>
+      <div className="card admin-card">
+        <h1 className="title admin-title">Clients</h1>
+        <p className="subtitle admin-sub">
+          Signed in as {profile.email} · {profile.role}
+        </p>
+      </div>
 
       <div className="card admin-card">
         <div className="admin-table-head">
@@ -192,7 +180,7 @@ export default function ClientsPage({
                       )}
                     </td>
                     <td>{c.contactEmail ?? '—'}</td>
-                    {canSeeRates ? <td>{c.defaultBillingRate != null ? c.defaultBillingRate : '—'}</td> : null}
+                    {canSeeRates ? <td>{c.defaultBillingRate != null ? usd.format(c.defaultBillingRate) : '—'}</td> : null}
                     <td>
                       {editingId === c.id ? (
                         <label style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
