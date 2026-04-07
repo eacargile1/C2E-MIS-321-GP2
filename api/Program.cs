@@ -25,8 +25,8 @@ if (string.IsNullOrWhiteSpace(jwt.SigningKey) || jwt.SigningKey.Length < 32)
 if (jwt.AccessTokenMinutes < 1)
     throw new InvalidOperationException("Jwt:AccessTokenMinutes must be at least 1.");
 
-var inMemoryName = builder.Configuration["Database:InMemoryName"] ?? "c2e-dev";
-builder.Services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(inMemoryName));
+var dbConnectivity = DatabaseConnectivity.Resolve(builder.Configuration);
+builder.Services.AddAppDbContext(dbConnectivity);
 builder.Services.AddSingleton<PasswordHasher<AppUser>>();
 builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
 
@@ -68,7 +68,11 @@ var app = builder.Build();
 await using (var scope = app.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    await db.Database.EnsureCreatedAsync();
+    if (dbConnectivity.Kind == AppDatabaseKind.InMemory)
+        await db.Database.EnsureCreatedAsync();
+    else
+        await db.Database.MigrateAsync();
+
     if (!await db.Users.AnyAsync())
     {
         var hasher = scope.ServiceProvider.GetRequiredService<PasswordHasher<AppUser>>();

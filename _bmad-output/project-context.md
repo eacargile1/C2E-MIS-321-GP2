@@ -27,7 +27,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 |------|------|--------|
 | Backend | .NET **9** (`net9.0`) | `Nullable` + `ImplicitUsings` enabled |
 | API | ASP.NET Core controllers, JWT Bearer | See `api/C2E.Api.csproj` for exact package versions |
-| Data | EF Core **InMemory** `9.0.0` | `Database:InMemoryName`; not production persistence |
+| Data | EF Core **InMemory** + **Npgsql** `9.0.0` | **Tests / default local:** `Database:InMemoryName` → InMemory + `EnsureCreated`. **Heroku:** env `DATABASE_URL` (`postgres://…`) → Postgres + `Migrate` on startup. **Local Postgres:** non-empty `ConnectionStrings:DefaultConnection`. See `DatabaseConnectivity`, `HerokuDatabaseUrl`, `AppDbContextFactory` (design-time migrations). |
 | Identity | `PasswordHasher<AppUser>`, custom `AppUser` / `AppRole` | Roles map to JWT `ClaimTypes.Role` |
 | API docs | `Microsoft.AspNetCore.OpenApi` `9.0.8` | OpenAPI mapped in Development |
 | Frontend | React `^19.2.4`, Vite `^8.x`, TypeScript `~5.9.3` | ES modules; see `web/package.json` |
@@ -102,6 +102,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - Timesheet PUT is **upsert**: omitted lines are **not** deleted implicitly — document if adding delete semantics later.
 - **HTTPS redirection** is on; integration tests use `CreateClient()` (handles redirect/base address).
 - Do not commit real production JWT keys or passwords; use user secrets / env in real deployments.
+- **Postgres / Heroku:** `DATABASE_URL` is parsed in `HerokuDatabaseUrl`; migrations live in `api/Data/Migrations`. New migrations: `dotnet ef migrations add <Name> --project api/C2E.Api.csproj --startup-project api/C2E.Api.csproj --output-dir Data/Migrations`. On Postgres, startup runs **`MigrateAsync`**; tests keep **`Database:InMemoryName`** and use **`EnsureCreatedAsync`**.
 
 ---
 

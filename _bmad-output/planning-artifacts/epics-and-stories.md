@@ -295,7 +295,7 @@ Backlog derived from PRD functional requirements (FR1–FR46). Story IDs are sta
 
 ### Cross-cutting gaps (architecture / NFR vs current code)
 
-- **Persistence:** EF Core **InMemory** only—NFRs for durability, reporting at scale, and “real” joins require **relational DB + migrations** per `architecture.md`.
+- **Persistence:** **PostgreSQL path is implemented:** `DATABASE_URL` (Heroku) or `ConnectionStrings:DefaultConnection` + EF migrations (`api/Data/Migrations`), `MigrateAsync` on startup. **Tests and no-conn local runs** still use **InMemory**. Remaining gap vs NFRs: production hardening (backups, pooling, multi-dyno migration strategy) and filling out the rest of the relational schema beyond `Users` / `TimesheetLines`.
 - **API shape:** Architecture cites RFC 7807 and `/api/v1/`; current API uses **ad-hoc JSON errors** and **unversioned** `/api/...`.
 - **Event outbox / propagation:** Not present—required for E5/E7 and PRD MVP automation story.
 
