@@ -2,6 +2,7 @@
 workflowType: epics-and-stories
 status: complete
 derivedFrom: '_bmad-output/planning-artifacts/prd.md'
+implementationAlignmentUpdated: '2026-04-07'
 completedAt: '2026-04-01'
 inputDocuments:
   - '_bmad-output/planning-artifacts/prd.md'
@@ -197,6 +198,108 @@ Backlog derived from PRD functional requirements (FR1–FR46). Story IDs are sta
 
 - Malformed rows reported without failing entire batch (per NFR intent).
 - Idempotency or clear re-run strategy documented for ops.
+
+---
+
+## Implementation alignment (repo `api/` + `web/` vs PRD)
+
+**Authoritative requirements:** `prd.md` (FR1–FR46, NFRs). This section records **how much of each story is actually implemented today** so backlog work matches reality. Update this table when slices ship.
+
+**Legend:** `Done` = meets story + FR intent for MVP depth · `Partial` = real behavior but missing major pieces · `Stub` = route/UI placeholder only · `Not started` = no substantive implementation
+
+### E1 — Authentication, login & RBAC
+
+| Story | Status | Notes |
+|-------|--------|--------|
+| S-E1-01 | **Done** | Email/password login, JWT, hashed passwords. NFR “30‑min idle timeout” is **not** idle sliding—token is **fixed expiry** from issue (`Jwt:AccessTokenMinutes`); align in a future story. |
+| S-E1-02 | **Done** | List/create/patch users; deactivate; last-admin guards. |
+| S-E1-03 | **Done** | Role patch with validation. |
+| S-E1-04 | **Partial** | RBAC enforced on implemented routes + **stub** finance/admin routes; full matrix can’t be proven until all capabilities exist. |
+
+### E2 — Timesheets, audit & visibility
+
+| Story | Status | Notes |
+|-------|--------|--------|
+| S-E2-01 | **Partial** | Weekly lines (PUT/GET) with validation; **client/project are free text**, not linked entities (FR5 shape ok, **E4/E8 not in data model**). |
+| S-E2-02 | **Partial** | Upsert **updates** lines; **no delete** path; **no invoice-generation lock** (FR6 “prior to invoice” not modeled). |
+| S-E2-03 | **Not started** | No project view UI/API. |
+| S-E2-04 | **Not started** | No tamper-evident audit trail (FR8). |
+| S-E2-05 | **Not started** | No manager team-scoped timesheet read (FR9). |
+| S-E2-06 | **Stub** | `GET /api/timesheets/organization` returns **empty** array; no org-wide data (FR10). |
+
+### E3 — Expense tracking
+
+| Story | Status | Notes |
+|-------|--------|--------|
+| S-E3-01 … S-E3-04 | **Not started** | No expense APIs, models, or UI (FR11–FR14). |
+
+### E4 — Projects, assignments & project views
+
+| Story | Status | Notes |
+|-------|--------|--------|
+| S-E4-01 … S-E4-05 | **Not started** | No `Project` entity, assignments, or project views (FR15–FR19). |
+
+### E5 — Availability, staffing needs & overrides
+
+| Story | Status | Notes |
+|-------|--------|--------|
+| S-E5-01 … S-E5-05 | **Not started** | No calendar, staffing board, propagation, or override (FR20–FR22, FR25–FR26). FR21–FR22 depend on E4. |
+
+### E6 — AI-assisted staffing
+
+| Story | Status | Notes |
+|-------|--------|--------|
+| S-E6-01, S-E6-02 | **Not started** | No recommendation service (FR27–FR28). |
+
+### E7 — PTO & conflicts
+
+| Story | Status | Notes |
+|-------|--------|--------|
+| S-E7-01 … S-E7-04 | **Not started** | No PTO workflow (FR23–FR24, FR29–FR31). |
+
+### E8 — Client directory
+
+| Story | Status | Notes |
+|-------|--------|--------|
+| S-E8-01 | **Stub** | `POST /api/clients` returns placeholder body only—**not** real CRUD (FR32). |
+| S-E8-02 … S-E8-04 | **Not started** | No list/detail/search APIs or UI (FR33–FR35). |
+| — | **Stub** | `GET /api/clients/billing-rates` empty list (rates not implemented). |
+
+### E9 — Reporting
+
+| Story | Status | Notes |
+|-------|--------|--------|
+| S-E9-01 … S-E9-05 | **Not started** | No reporting APIs or UI (FR36–FR40). |
+
+### E10 — Invoices
+
+| Story | Status | Notes |
+|-------|--------|--------|
+| S-E10-01 | **Stub** | `POST /api/invoices/generate` returns **204** with no invoice payload (FR41 not met). |
+| S-E10-02 … S-E10-04 | **Not started** | Immutability, PDF/CSV export, traceability (FR42–FR44). |
+
+### E11 — Excel migration
+
+| Story | Status | Notes |
+|-------|--------|--------|
+| S-E11-01, S-E11-02 | **Not started** | No import pipeline (FR45–FR46). |
+
+### Frontend (`web/`)
+
+| Area | Status |
+|------|--------|
+| Login, in-memory session | **Done** |
+| Admin users (list/create/patch) | **Done** (aligns with E1) |
+| Weekly timesheet page | **Partial** (aligns with E2 partial) |
+| All other PRD modules (projects, calendar, expenses, reports, invoices, migration) | **Not started** |
+
+### Cross-cutting gaps (architecture / NFR vs current code)
+
+- **Persistence:** EF Core **InMemory** only—NFRs for durability, reporting at scale, and “real” joins require **relational DB + migrations** per `architecture.md`.
+- **API shape:** Architecture cites RFC 7807 and `/api/v1/`; current API uses **ad-hoc JSON errors** and **unversioned** `/api/...`.
+- **Event outbox / propagation:** Not present—required for E5/E7 and PRD MVP automation story.
+
+**Implication:** Epics **E2–E11** remain the backlog; **E1** and **part of E2** are the only non-stub vertical slices today. Next build steps should follow PRD sequencing: **real persistence + E8 clients + E4 projects**, then deepen **E2** (audit, manager/org reads, delete/lock) before treating invoices or calendar as complete.
 
 ---
 
