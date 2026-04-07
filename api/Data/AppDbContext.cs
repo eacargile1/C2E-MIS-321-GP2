@@ -6,10 +6,24 @@ namespace C2E.Api.Data;
 public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
     public DbSet<AppUser> Users => Set<AppUser>();
+    public DbSet<Client> Clients => Set<Client>();
     public DbSet<TimesheetLine> TimesheetLines => Set<TimesheetLine>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<Client>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.Name);
+            e.HasIndex(x => x.IsActive);
+            e.Property(x => x.Name).HasMaxLength(200);
+            e.Property(x => x.ContactName).HasMaxLength(200);
+            e.Property(x => x.ContactEmail).HasMaxLength(320);
+            e.Property(x => x.ContactPhone).HasMaxLength(50);
+            e.Property(x => x.DefaultBillingRate).HasPrecision(18, 2);
+            e.Property(x => x.Notes).HasMaxLength(2000);
+        });
+
         modelBuilder.Entity<AppUser>(e =>
         {
             e.HasKey(x => x.Id);

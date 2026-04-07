@@ -1,21 +1,160 @@
+using System.Security.Claims;
 using C2E.Api.Authorization;
+using C2E.Api.Data;
+using C2E.Api.Dtos;
+using C2E.Api.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace C2E.Api.Controllers;
 
 [ApiController]
 [Route("api/clients")]
-public sealed class ClientsController : ControllerBase
+[Authorize]
+public sealed class ClientsController(AppDbContext db) : ControllerBase
 {
-    /// <summary>Employee billing rates. Replace when E8/E10 land.</summary>
+    /// <summary>Employee billing rates (IC rates). Stub until dedicated module lands.</summary>
     [HttpGet("billing-rates")]
     [Authorize(Roles = RbacRoleSets.AdminAndFinance)]
     public ActionResult<object> GetBillingRates() => Ok(new { items = Array.Empty<object>() });
 
-    /// <summary>Create client. Replace when E8 lands.</summary>
+    [HttpGet]
+    public async Task<ActionResult<IReadOnlyList<ClientResponse>>> List(
+        [FromQuery] string? q,
+        [FromQuery] bool includeInactive = false,
+        CancellationToken ct = default)
+    {
+        if (!User.IsInRole(nameof(AppRole.Admin)))
+            includeInactive = false;
+
+        var query = db.Clients.AsNoTracking().AsQueryable();
+        if (!includeInactive)
+            query = query.Where(c => c.IsActive);
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var term = q.Trim().ToLowerInvariant();
+            query = query.Where(c => c.Name.ToLower().Contains(term));
+        }
+
+        var rows = await query
+            .OrderBy(c => c.Name)
+            .ToListAsync(ct);
+
+        var billing = CanViewBillingRates();
+        return Ok(rows.Select(c => Map(c, billing)).ToList());
+    }
+
+    [HttpGet("{id:guid}")]
+    public async Task<ActionResult<ClientResponse>> Get(Guid id, CancellationToken ct = default)
+    {
+        var c = await db.Clients.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (c is null)
+            return NotFound();
+        if (!c.IsActive && !User.IsInRole(nameof(AppRole.Admin)))
+            return NotFound();
+
+        return Ok(Map(c, CanViewBillingRates()));
+    }
+
     [HttpPost]
     [Authorize(Roles = RbacRoleSets.AdminOnly)]
-    public ActionResult<object> Create() =>
-        StatusCode(StatusCodes.Status201Created, new { id = Guid.NewGuid(), name = "(stub)" });
+    public async Task<ActionResult<ClientResponse>> Create([FromBody] CreateClientRequest body, CancellationToken ct)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(new AuthErrorResponse { Message = FirstModelError() ?? "Invalid request." });
+
+        var normalized = body.Name.Trim();
+        if (normalized.Length == 0)
+            return BadRequest(new AuthErrorResponse { Message = "Name is required." });
+
+        var now = DateTime.UtcNow;
+        var entity = new Client
+        {
+            Id = Guid.NewGuid(),
+            Name = normalized,
+            ContactName = string.IsNullOrWhiteSpace(body.ContactName) ? null : body.ContactName.Trim(),
+            ContactEmail = string.IsNullOrWhiteSpace(body.ContactEmail) ? null : body.ContactEmail.Trim().ToLowerInvariant(),
+            ContactPhone = string.IsNullOrWhiteSpace(body.ContactPhone) ? null : body.ContactPhone.Trim(),
+            DefaultBillingRate = body.DefaultBillingRate,
+            Notes = string.IsNullOrWhiteSpace(body.Notes) ? null : body.Notes.Trim(),
+            IsActive = true,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now,
+        };
+        db.Clients.Add(entity);
+        await db.SaveChangesAsync(ct);
+        return CreatedAtAction(nameof(Get), new { id = entity.Id }, Map(entity, includeBilling: true));
+    }
+
+    [HttpPatch("{id:guid}")]
+    [Authorize(Roles = RbacRoleSets.AdminOnly)]
+    public async Task<ActionResult<ClientResponse>> Patch(Guid id, [FromBody] PatchClientRequest body, CancellationToken ct)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(new AuthErrorResponse { Message = FirstModelError() ?? "Invalid request." });
+
+        if (body is { Name: null, ContactName: null, ContactEmail: null, ContactPhone: null, DefaultBillingRate: null, Notes: null, IsActive: null })
+            return BadRequest(new AuthErrorResponse { Message = "Provide at least one field to update." });
+
+        var entity = await db.Clients.FirstOrDefaultAsync(c => c.Id == id, ct);
+        if (entity is null)
+            return NotFound();
+
+        var now = DateTime.UtcNow;
+        if (body.Name is { } nameRaw)
+        {
+            var name = nameRaw.Trim();
+            if (name.Length == 0)
+                return BadRequest(new AuthErrorResponse { Message = "Name cannot be empty." });
+            entity.Name = name;
+        }
+
+        if (body.ContactName is not null)
+            entity.ContactName = string.IsNullOrWhiteSpace(body.ContactName) ? null : body.ContactName.Trim();
+        if (body.ContactEmail is not null)
+            entity.ContactEmail = string.IsNullOrWhiteSpace(body.ContactEmail) ? null : body.ContactEmail.Trim().ToLowerInvariant();
+        if (body.ContactPhone is not null)
+            entity.ContactPhone = string.IsNullOrWhiteSpace(body.ContactPhone) ? null : body.ContactPhone.Trim();
+        if (body.DefaultBillingRate is not null)
+            entity.DefaultBillingRate = body.DefaultBillingRate;
+        if (body.Notes is not null)
+            entity.Notes = string.IsNullOrWhiteSpace(body.Notes) ? null : body.Notes.Trim();
+        if (body.IsActive is not null)
+            entity.IsActive = body.IsActive.Value;
+
+        entity.UpdatedAtUtc = now;
+        await db.SaveChangesAsync(ct);
+        return Ok(Map(entity, includeBilling: true));
+    }
+
+    private bool CanViewBillingRates() =>
+        User.IsInRole(nameof(AppRole.Admin)) || User.IsInRole(nameof(AppRole.Finance));
+
+    private static ClientResponse Map(Models.Client c, bool includeBilling) =>
+        new()
+        {
+            Id = c.Id,
+            Name = c.Name,
+            ContactName = c.ContactName,
+            ContactEmail = c.ContactEmail,
+            ContactPhone = c.ContactPhone,
+            DefaultBillingRate = includeBilling ? c.DefaultBillingRate : null,
+            Notes = c.Notes,
+            IsActive = c.IsActive,
+            Projects = [],
+        };
+
+    private string? FirstModelError()
+    {
+        foreach (var (_, state) in ModelState)
+        {
+            if (state.Errors.Count == 0) continue;
+            var msg = state.Errors[0].ErrorMessage;
+            if (!string.IsNullOrWhiteSpace(msg)) return msg;
+        }
+
+        return null;
+    }
 }

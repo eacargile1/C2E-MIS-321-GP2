@@ -261,9 +261,11 @@ Backlog derived from PRD functional requirements (FR1–FR46). Story IDs are sta
 
 | Story | Status | Notes |
 |-------|--------|--------|
-| S-E8-01 | **Stub** | `POST /api/clients` returns placeholder body only—**not** real CRUD (FR32). |
-| S-E8-02 … S-E8-04 | **Not started** | No list/detail/search APIs or UI (FR33–FR35). |
-| — | **Stub** | `GET /api/clients/billing-rates` empty list (rates not implemented). |
+| S-E8-01 | **Done** | Admin `POST`/`PATCH`, `Client` entity + migration; deactivate = `isActive` (FR32). |
+| S-E8-02 | **Done** | Authenticated `GET /api/clients/{id}` (inactive hidden from non-admin). |
+| S-E8-03 | **Partial** | Related `projects` array is **empty** until E4 (FR34 summary billing later). |
+| S-E8-04 | **Done** | `GET /api/clients?q=` search + SPA `/clients` (FR35). |
+| — | **Stub** | `GET /api/clients/billing-rates` still **IC employee rates** placeholder (not client rates). |
 
 ### E9 — Reporting
 
@@ -291,6 +293,7 @@ Backlog derived from PRD functional requirements (FR1–FR46). Story IDs are sta
 | Login, in-memory session | **Done** |
 | Admin users (list/create/patch) | **Done** (aligns with E1) |
 | Weekly timesheet page | **Partial** (aligns with E2 partial) |
+| Clients directory `/clients` | **Partial** (aligns with E8 — billing column only Admin/Finance) |
 | All other PRD modules (projects, calendar, expenses, reports, invoices, migration) | **Not started** |
 
 ### Cross-cutting gaps (architecture / NFR vs current code)

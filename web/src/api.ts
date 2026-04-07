@@ -138,6 +138,96 @@ export async function patchUser(
   return { id: r.id, email: r.email, role: r.role, isActive: r.isActive }
 }
 
+export type ClientRow = {
+  id: string
+  name: string
+  contactName: string | null
+  contactEmail: string | null
+  contactPhone: string | null
+  defaultBillingRate: number | null
+  notes: string | null
+  isActive: boolean
+  projects: { id: string; name: string }[]
+}
+
+function assertClient(x: unknown): ClientRow {
+  const r = x as Record<string, unknown>
+  if (typeof r.id !== 'string' || typeof r.name !== 'string' || typeof r.isActive !== 'boolean')
+    throw new Error('Could not load client')
+  const projects = r.projects
+  if (!Array.isArray(projects)) throw new Error('Could not load client')
+  return {
+    id: r.id,
+    name: r.name,
+    contactName: typeof r.contactName === 'string' ? r.contactName : null,
+    contactEmail: typeof r.contactEmail === 'string' ? r.contactEmail : null,
+    contactPhone: typeof r.contactPhone === 'string' ? r.contactPhone : null,
+    defaultBillingRate: typeof r.defaultBillingRate === 'number' ? r.defaultBillingRate : null,
+    notes: typeof r.notes === 'string' ? r.notes : null,
+    isActive: r.isActive,
+    projects: projects.map((p) => {
+      const o = p as Record<string, unknown>
+      if (typeof o.id !== 'string' || typeof o.name !== 'string') throw new Error('Could not load client')
+      return { id: o.id, name: o.name }
+    }),
+  }
+}
+
+export async function listClients(token: string, q?: string, includeInactive?: boolean): Promise<ClientRow[]> {
+  const params = new URLSearchParams()
+  if (q?.trim()) params.set('q', q.trim())
+  if (includeInactive) params.set('includeInactive', 'true')
+  const qs = params.toString()
+  const url = qs ? `${base}/api/clients?${qs}` : `${base}/api/clients`
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load clients'))
+  const data = (await res.json()) as unknown
+  if (!Array.isArray(data)) throw new Error('Could not load clients')
+  return data.map(assertClient)
+}
+
+export async function createClient(
+  token: string,
+  body: {
+    name: string
+    contactName?: string
+    contactEmail?: string
+    contactPhone?: string
+    defaultBillingRate?: number
+    notes?: string
+  },
+): Promise<ClientRow> {
+  const res = await fetch(`${base}/api/clients`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not create client'))
+  return assertClient(await res.json())
+}
+
+export async function patchClient(
+  token: string,
+  id: string,
+  body: {
+    name?: string
+    contactName?: string | null
+    contactEmail?: string | null
+    contactPhone?: string | null
+    defaultBillingRate?: number | null
+    notes?: string | null
+    isActive?: boolean
+  },
+): Promise<ClientRow> {
+  const res = await fetch(`${base}/api/clients/${id}`, {
+    method: 'PATCH',
+    headers: authHeaders(token),
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not update client'))
+  return assertClient(await res.json())
+}
+
 export type TimesheetLine = {
   workDate: string // YYYY-MM-DD
   client: string

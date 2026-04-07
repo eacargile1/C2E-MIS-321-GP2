@@ -127,15 +127,14 @@ export default function TimesheetWeek({
       setPersistedKeys(new Set())
       setLines([])
     } finally {
-      if (loadId !== lastLoadId.current) return
-      setLoading(false)
+      if (loadId === lastLoadId.current) setLoading(false)
     }
   }, [token, weekStart, pushToast])
 
   useEffect(() => {
     if (!isYmd(weekStart)) setWeekStart(toYmd(startOfWeekMonday(new Date())))
     void refresh()
-  }, [refresh])
+  }, [refresh, weekStart])
 
   const addRow = () => setLines((xs) => [...xs, blankDraft(weekStart)])
 
