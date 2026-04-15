@@ -1,12 +1,18 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Configuration;
+using Pomelo.EntityFrameworkCore.MySql.Infrastructure;
 
 namespace C2E.Api.Data;
 
 /// <summary>Design-time factory for <c>dotnet ef</c> (migrations). Uses the API project directory as config root.</summary>
 public sealed class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbContext>
 {
+    private static readonly string DesignTimePlaceholderConnectionString =
+        "Server=127.0.0.1;Port=3306;Database=ef_design_placeholder;User ID=root;Password=root";
+
+    private static readonly ServerVersion DesignTimeServerVersion = new MySqlServerVersion(new Version(8, 0, 36));
+
     public AppDbContext CreateDbContext(string[] args)
     {
         var apiProjectDir = FindApiProjectDirectory();
@@ -18,18 +24,22 @@ public sealed class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
             .Build();
 
         var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
-        var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
-        var conn = configuration.GetConnectionString("DefaultConnection");
+        var connectivity = DatabaseConnectivity.Resolve(configuration);
+        var explicitInMemory = !string.IsNullOrWhiteSpace(configuration["Database:InMemoryName"]);
 
-        if (!string.IsNullOrWhiteSpace(databaseUrl))
-            optionsBuilder.UseNpgsql(HerokuDatabaseUrl.ToNpgsql(databaseUrl));
-        else if (!string.IsNullOrWhiteSpace(conn))
-            optionsBuilder.UseNpgsql(conn);
+        if (connectivity.Kind == AppDatabaseKind.MySql)
+        {
+            var cs = connectivity.MySqlConnectionString!;
+            optionsBuilder.UseMySql(cs, ServerVersion.AutoDetect(cs));
+        }
+        else if (connectivity.Kind == AppDatabaseKind.InMemory && explicitInMemory)
+        {
+            optionsBuilder.UseInMemoryDatabase(connectivity.InMemoryName!);
+        }
         else
         {
-            // Never contacted during `migrations add`; only used so EF selects the Npgsql provider for the model snapshot.
-            optionsBuilder.UseNpgsql(
-                "Host=127.0.0.1;Port=5432;Database=ef_design_placeholder;Username=postgres;Password=postgres");
+            // No relational config: keep MySQL model snapshot for `dotnet ef` (mirrors relational provider, not in-memory fallback).
+            optionsBuilder.UseMySql(DesignTimePlaceholderConnectionString, DesignTimeServerVersion);
         }
 
         return new AppDbContext(optionsBuilder.Options);

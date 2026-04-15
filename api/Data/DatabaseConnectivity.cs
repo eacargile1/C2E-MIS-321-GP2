@@ -3,10 +3,10 @@ namespace C2E.Api.Data;
 public enum AppDatabaseKind
 {
     InMemory,
-    Npgsql,
+    MySql,
 }
 
-public sealed record DatabaseConnectivity(AppDatabaseKind Kind, string? InMemoryName, string? NpgsqlConnectionString)
+public sealed record DatabaseConnectivity(AppDatabaseKind Kind, string? InMemoryName, string? MySqlConnectionString)
 {
     /// <summary>
     /// Resolution order: explicit in-memory (tests) → <c>DATABASE_URL</c> (Heroku) → <c>ConnectionStrings:DefaultConnection</c> → in-memory fallback.
@@ -19,12 +19,14 @@ public sealed record DatabaseConnectivity(AppDatabaseKind Kind, string? InMemory
 
         var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
         var conn = config.GetConnectionString("DefaultConnection");
-        var npgsql = !string.IsNullOrWhiteSpace(databaseUrl)
-            ? HerokuDatabaseUrl.ToNpgsql(databaseUrl)
-            : conn;
+        string? mysqlConn = null;
+        if (!string.IsNullOrWhiteSpace(databaseUrl))
+            mysqlConn = HerokuDatabaseUrl.ToMySqlConnectionString(databaseUrl);
+        else if (!string.IsNullOrWhiteSpace(conn))
+            mysqlConn = conn;
 
-        if (!string.IsNullOrWhiteSpace(npgsql))
-            return new DatabaseConnectivity(AppDatabaseKind.Npgsql, null, npgsql.Trim());
+        if (!string.IsNullOrWhiteSpace(mysqlConn))
+            return new DatabaseConnectivity(AppDatabaseKind.MySql, null, mysqlConn.Trim());
 
         var fallback = config["Database:InMemoryFallbackName"] ?? "c2e-dev";
         return new DatabaseConnectivity(AppDatabaseKind.InMemory, fallback, null);

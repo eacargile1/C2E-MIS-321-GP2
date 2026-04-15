@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Pomelo.EntityFrameworkCore.MySql.Infrastructure;
 
 namespace C2E.Api.Data;
 
@@ -13,9 +14,13 @@ public static class DbContextRegistration
                 case AppDatabaseKind.InMemory:
                     options.UseInMemoryDatabase(connectivity.InMemoryName!);
                     break;
-                case AppDatabaseKind.Npgsql:
-                    options.UseNpgsql(connectivity.NpgsqlConnectionString);
+                case AppDatabaseKind.MySql:
+                {
+                    var cs = connectivity.MySqlConnectionString!;
+                    var serverVersion = ServerVersion.AutoDetect(cs);
+                    options.UseMySql(cs, serverVersion);
                     break;
+                }
                 default:
                     throw new InvalidOperationException($"Unknown database kind: {connectivity.Kind}.");
             }

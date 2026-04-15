@@ -12,7 +12,7 @@ Internal ops platform (professional services): consolidated time, clients, proje
 - **Resource tracker** — Org-wide monthly grid derived from logged hours (all authenticated roles); weekly editor on the same page.
 - **Expenses** — Submit expenses (pending); Admin + Manager approve or reject; list own expenses.
 - **User admin** — Admin-only user CRUD and role assignment (`/admin/users`).
-- **Data** — EF Core migrations (SQLite dev / configurable DB including Heroku-style `DATABASE_URL`); API integration tests.
+- **Data** — EF Core migrations (Pomelo MySQL / in-memory for tests); Heroku-style `DATABASE_URL` (`mysql://…` from the MySQL add-on) or `ConnectionStrings:DefaultConnection`; API integration tests.
 
 ## Run locally
 
@@ -32,6 +32,8 @@ npm run dev
 ```
 
 Open `http://localhost:5173`. Set `VITE_API_BASE_URL` if the API is not on the default.
+
+**Database / deployment (Heroku MySQL)** — Set the add-on’s URL as `DATABASE_URL` (e.g. `mysql://user:pass@host:3306/dbname`). The API parses it into a MySQL connection string with TLS (`SslMode=Preferred`). Alternatively, omit `DATABASE_URL` and set `ConnectionStrings__DefaultConnection` to a full MySQL connection string. Tests and local default runs use **in-memory** EF when `Database:InMemoryName` is set or when neither env nor connection string is configured (`EnsureCreated`); relational startup uses `MigrateAsync`.
 
 **Tests** (from `tests/C2E.Api.Tests/`):
 
