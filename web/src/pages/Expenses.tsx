@@ -2,11 +2,15 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   approveExpense,
   createExpense,
+  listClients,
   listMyExpenses,
   listPendingExpenseApprovals,
+  listProjects,
   rejectExpense,
+  type ClientRow,
   type ExpenseRow,
   type MeProfile,
+  type ProjectRow,
 } from '../api'
 import '../App.css'
 
@@ -36,6 +40,8 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
   const [category, setCategory] = useState('Meals')
   const [description, setDescription] = useState('')
   const [amount, setAmount] = useState('')
+  const [catalogClients, setCatalogClients] = useState<ClientRow[]>([])
+  const [catalogProjects, setCatalogProjects] = useState<ProjectRow[]>([])
 
   const pushToast = useCallback((message: string, variant: 'ok' | 'err') => {
     const id = Date.now()
@@ -64,6 +70,32 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  useEffect(() => {
+    let cancelled = false
+    async function loadCat() {
+      try {
+        const isAdmin = profile.role === 'Admin'
+        const [c, p] = await Promise.all([
+          listClients(token, undefined, isAdmin),
+          listProjects(token, { includeInactive: isAdmin }),
+        ])
+        if (!cancelled) {
+          setCatalogClients(c)
+          setCatalogProjects(p)
+        }
+      } catch {
+        if (!cancelled) {
+          setCatalogClients([])
+          setCatalogProjects([])
+        }
+      }
+    }
+    void loadCat()
+    return () => {
+      cancelled = true
+    }
+  }, [token, profile.role])
 
   const onCreate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -112,6 +144,11 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
       <div className="card admin-card">
         <h1 className="title admin-title">Expenses</h1>
         <p className="subtitle admin-sub">Signed in as {profile.email} · {profile.role}</p>
+        {catalogClients.length > 0 ? (
+          <p className="admin-hint" style={{ marginTop: 8 }}>
+            Client and project must match active directory entries when clients exist in the system.
+          </p>
+        ) : null}
       </div>
 
       <div className="card admin-card">
@@ -123,11 +160,46 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
           </label>
           <label className="field">
             <span>Client</span>
-            <input value={client} onChange={(e) => setClient(e.target.value)} required />
+            {catalogClients.length > 0 &&
+            (!client.trim() || catalogClients.some((c) => c.name === client && c.isActive)) ? (
+              <select
+                value={client}
+                onChange={(e) => {
+                  setClient(e.target.value)
+                  setProject('')
+                }}
+                required
+              >
+                <option value="">— Select client —</option>
+                {catalogClients
+                  .filter((c) => c.isActive)
+                  .map((c) => (
+                    <option key={c.id} value={c.name}>
+                      {c.name}
+                    </option>
+                  ))}
+              </select>
+            ) : (
+              <input value={client} onChange={(e) => setClient(e.target.value)} required />
+            )}
           </label>
           <label className="field">
             <span>Project</span>
-            <input value={project} onChange={(e) => setProject(e.target.value)} required />
+            {catalogClients.length > 0 &&
+            (!project.trim() || catalogProjects.some((p) => p.clientName === client && p.name === project && p.isActive)) ? (
+              <select value={project} onChange={(e) => setProject(e.target.value)} required disabled={!client.trim()}>
+                <option value="">— Select project —</option>
+                {catalogProjects
+                  .filter((p) => p.clientName === client && p.isActive)
+                  .map((p) => (
+                    <option key={p.id} value={p.name}>
+                      {p.name}
+                    </option>
+                  ))}
+              </select>
+            ) : (
+              <input value={project} onChange={(e) => setProject(e.target.value)} required />
+            )}
           </label>
           <label className="field">
             <span>Category</span>

@@ -4,6 +4,7 @@ using C2E.Api.Data;
 using C2E.Api.Dtos;
 using C2E.Api.Models;
 using C2E.Api.Authorization;
+using C2E.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
@@ -255,6 +256,11 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
             if (notes is { Length: 0 }) notes = null;
 
             normalized.Add((workDate, client, project, task, line.Hours, line.IsBillable, notes));
+        }
+
+        foreach (var (_, client, project, _, _, _, _) in normalized)
+        {
+            await ActiveCatalogValidation.EnsureActiveClientAndProjectAsync(db, client, project, ct);
         }
 
         var existing = await db.TimesheetLines

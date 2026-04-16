@@ -44,9 +44,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.Email).IsUnique();
+            e.HasIndex(x => x.ManagerUserId);
             e.Property(x => x.Email).HasMaxLength(320);
             e.Property(x => x.PasswordHash).HasMaxLength(500);
             e.Property(x => x.Role).HasConversion<string>().HasMaxLength(32);
+            e.HasOne(x => x.Manager)
+                .WithMany(x => x.DirectReports)
+                .HasForeignKey(x => x.ManagerUserId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<TimesheetLine>(e =>

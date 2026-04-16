@@ -11,4 +11,6 @@ public class CreateUserRequest
     [Required]
     [MinLength(8)]
     public required string Password { get; init; }
+
+    public Guid? ManagerUserId { get; init; }
 }

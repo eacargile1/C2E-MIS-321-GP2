@@ -23,10 +23,12 @@ export default function AdminUsers({
   const [toasts, setToasts] = useState<Toast[]>([])
   const [createEmail, setCreateEmail] = useState('')
   const [createPassword, setCreatePassword] = useState('')
+  const [createManagerId, setCreateManagerId] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editEmail, setEditEmail] = useState('')
   const [editPassword, setEditPassword] = useState('')
-  const [editRole, setEditRole] = useState<string>('')
+  const [editRole, setEditRole] = useState('')
+  const [editManagerId, setEditManagerId] = useState('')
   const [confirmDeactivateId, setConfirmDeactivateId] = useState<string | null>(null)
 
   const pushToast = useCallback((message: string, variant: 'ok' | 'err') => {
@@ -56,9 +58,12 @@ export default function AdminUsers({
   const onCreate = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      await createUser(token, createEmail.trim(), createPassword)
+      await createUser(token, createEmail.trim(), createPassword, {
+        managerUserId: createManagerId.trim().length ? createManagerId.trim() : undefined,
+      })
       setCreateEmail('')
       setCreatePassword('')
+      setCreateManagerId('')
       pushToast('User created', 'ok')
       await refresh()
     } catch (err) {
@@ -71,6 +76,7 @@ export default function AdminUsers({
     setEditEmail(u.email)
     setEditPassword('')
     setEditRole(u.role)
+    setEditManagerId(u.managerUserId ?? '')
   }
 
   const cancelEdit = () => {
@@ -78,18 +84,30 @@ export default function AdminUsers({
     setEditEmail('')
     setEditPassword('')
     setEditRole('')
+    setEditManagerId('')
   }
 
   const saveEdit = async (id: string) => {
     setBusyId(id)
     try {
-      const body: { email?: string; password?: string; role?: string } = {}
+      const body: {
+        email?: string
+        password?: string
+        role?: string
+        assignManager?: boolean
+        managerUserId?: string | null
+      } = {}
       const u = users.find((x) => x.id === id)
       if (!u) return
       if (editEmail.trim().toLowerCase() !== u.email)
         body.email = editEmail.trim()
       if (editPassword.trim().length > 0) body.password = editPassword
       if (editRole !== u.role) body.role = editRole
+      const origMgr = u.managerUserId ?? ''
+      if (editManagerId !== origMgr) {
+        body.assignManager = true
+        body.managerUserId = editManagerId.trim().length ? editManagerId.trim() : null
+      }
       if (Object.keys(body).length === 0) {
         cancelEdit()
         return
@@ -173,6 +191,19 @@ export default function AdminUsers({
               autoComplete="new-password"
             />
           </label>
+          <label className="field">
+            <span>Manager (optional)</span>
+            <select value={createManagerId} onChange={(e) => setCreateManagerId(e.target.value)}>
+              <option value="">— None —</option>
+              {users
+                .filter((u) => u.role === 'Manager' && u.isActive)
+                .map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.email}
+                  </option>
+                ))}
+            </select>
+          </label>
           <button type="submit" className="btn primary">
             Create
           </button>
@@ -195,6 +226,7 @@ export default function AdminUsers({
                 <tr>
                   <th>Email</th>
                   <th>Role</th>
+                  <th>Manager</th>
                   <th>Status</th>
                   <th />
                 </tr>
@@ -230,6 +262,29 @@ export default function AdminUsers({
                         </select>
                       ) : (
                         <span className="role-pill">{u.role}</span>
+                      )}
+                    </td>
+                    <td>
+                      {editingId === u.id ? (
+                        <select
+                          className="table-input"
+                          value={editManagerId}
+                          onChange={(e) => setEditManagerId(e.target.value)}
+                          aria-label="Manager"
+                        >
+                          <option value="">— None —</option>
+                          {users
+                            .filter((x) => x.role === 'Manager' && x.isActive && x.id !== u.id)
+                            .map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.email}
+                              </option>
+                            ))}
+                        </select>
+                      ) : u.managerUserId ? (
+                        users.find((x) => x.id === u.managerUserId)?.email ?? '—'
+                      ) : (
+                        '—'
                       )}
                     </td>
                     <td>

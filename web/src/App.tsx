@@ -5,6 +5,7 @@ import AdminUsers from './pages/AdminUsers'
 import ClientsPage from './pages/Clients'
 import ExpensesPage from './pages/Expenses'
 import ProjectsPage from './pages/Projects'
+import ReportsPage from './pages/Reports'
 import TimesheetWeek from './pages/TimesheetWeek'
 import './App.css'
 
@@ -131,6 +132,9 @@ function HomeDashboard({ session }: { session: Session }) {
             <li>
               <NavLink to="/projects">Projects</NavLink>
             </li>
+            <li>
+              <NavLink to="/reports">My Reports</NavLink>
+            </li>
             {isAdmin ? (
               <li>
                 <NavLink to="/admin/users">User Management</NavLink>
@@ -147,6 +151,7 @@ function HomeDashboard({ session }: { session: Session }) {
           <li>Timesheet weekly entry workflow</li>
           <li>Client management directory</li>
           <li>Project management directory with filters and edits</li>
+          <li>Personal reports (time + expense totals by month)</li>
           {isAdmin ? <li>User administration and role assignment</li> : null}
         </ul>
       </section>
@@ -255,6 +260,9 @@ function AuthenticatedLayout({
           <NavLink to="/projects" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
             Projects
           </NavLink>
+          <NavLink to="/reports" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
+            Reports
+          </NavLink>
           {isAdmin ? (
             <NavLink to="/admin/users" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
               User Management
@@ -304,6 +312,11 @@ function ProjectsRoute({ session }: { session: Session | null }) {
   return <ProjectsPage token={session.token} profile={session.profile} />
 }
 
+function ReportsRoute({ session }: { session: Session | null }) {
+  if (!session) return <Navigate to="/login" replace />
+  return <ReportsPage token={session.token} profile={session.profile} />
+}
+
 function AppRoutes() {
   const [session, setSession] = useState<Session | null>(null)
   const signOut = useCallback(() => setSession(null), [])
@@ -317,6 +330,7 @@ function AppRoutes() {
         <Route path="/expenses" element={<ExpensesRoute session={session} />} />
         <Route path="/clients" element={<ClientsRoute session={session} />} />
         <Route path="/projects" element={<ProjectsRoute session={session} />} />
+        <Route path="/reports" element={<ReportsRoute session={session} />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

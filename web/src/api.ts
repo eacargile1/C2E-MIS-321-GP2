@@ -1,4 +1,8 @@
-const base = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5028'
+const rawBase = import.meta.env.VITE_API_BASE_URL
+const base =
+  typeof rawBase === 'string' && rawBase.trim().length > 0
+    ? rawBase.trim().replace(/\/$/, '')
+    : 'http://localhost:5028'
 
 async function parseJsonResponse(res: Response, parseErrorMessage: string): Promise<unknown> {
   const text = await res.text()
@@ -33,6 +37,7 @@ export type UserRow = {
   email: string
   role: string
   isActive: boolean
+  managerUserId: string | null
 }
 
 export async function login(email: string, password: string) {
@@ -94,15 +99,25 @@ export async function listUsers(token: string): Promise<UserRow[]> {
       typeof r.isActive !== 'boolean'
     )
       throw new Error('Could not load users')
-    return { id: r.id, email: r.email, role: r.role, isActive: r.isActive }
+    const mid = r.managerUserId
+    const managerUserId =
+      typeof mid === 'string' ? mid : mid === null || typeof mid === 'undefined' ? null : String(mid)
+    return { id: r.id, email: r.email, role: r.role, isActive: r.isActive, managerUserId }
   })
 }
 
-export async function createUser(token: string, email: string, password: string): Promise<UserRow> {
+export async function createUser(
+  token: string,
+  email: string,
+  password: string,
+  opts?: { managerUserId?: string | null },
+): Promise<UserRow> {
+  const body: Record<string, unknown> = { email, password }
+  if (opts?.managerUserId !== undefined) body.managerUserId = opts.managerUserId
   const res = await fetch(`${base}/api/users`, {
     method: 'POST',
     headers: authHeaders(token),
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not create user'))
   const r = (await res.json()) as Record<string, unknown>
@@ -113,13 +128,23 @@ export async function createUser(token: string, email: string, password: string)
     typeof r.isActive !== 'boolean'
   )
     throw new Error('Could not create user')
-  return { id: r.id, email: r.email, role: r.role, isActive: r.isActive }
+  const mid = r.managerUserId
+  const managerUserId =
+    typeof mid === 'string' ? mid : mid === null || typeof mid === 'undefined' ? null : String(mid)
+  return { id: r.id, email: r.email, role: r.role, isActive: r.isActive, managerUserId }
 }
 
 export async function patchUser(
   token: string,
   id: string,
-  body: { email?: string; password?: string; isActive?: boolean; role?: string },
+  body: {
+    email?: string
+    password?: string
+    isActive?: boolean
+    role?: string
+    assignManager?: boolean
+    managerUserId?: string | null
+  },
 ): Promise<UserRow> {
   const res = await fetch(`${base}/api/users/${id}`, {
     method: 'PATCH',
@@ -135,7 +160,62 @@ export async function patchUser(
     typeof r.isActive !== 'boolean'
   )
     throw new Error('Could not update user')
-  return { id: r.id, email: r.email, role: r.role, isActive: r.isActive }
+  const mid = r.managerUserId
+  const managerUserId =
+    typeof mid === 'string' ? mid : mid === null || typeof mid === 'undefined' ? null : String(mid)
+  return { id: r.id, email: r.email, role: r.role, isActive: r.isActive, managerUserId }
+}
+
+export type PersonalSummary = {
+  from: string
+  to: string
+  totalHours: number
+  billableHours: number
+  nonBillableHours: number
+  timesheetLineCount: number
+  expensePendingTotal: number
+  expenseApprovedTotal: number
+  expenseRejectedTotal: number
+  expenseCount: number
+}
+
+export async function getPersonalSummary(token: string, from: string, to: string): Promise<PersonalSummary> {
+  const qs = new URLSearchParams({ from, to })
+  const res = await fetch(`${base}/api/reports/personal-summary?${qs}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load report'))
+  const r = (await res.json()) as Record<string, unknown>
+  const nums = [
+    'totalHours',
+    'billableHours',
+    'nonBillableHours',
+    'expensePendingTotal',
+    'expenseApprovedTotal',
+    'expenseRejectedTotal',
+  ] as const
+  for (const k of nums) {
+    if (typeof r[k] !== 'number') throw new Error('Could not load report')
+  }
+  if (
+    typeof r.from !== 'string' ||
+    typeof r.to !== 'string' ||
+    typeof r.timesheetLineCount !== 'number' ||
+    typeof r.expenseCount !== 'number'
+  )
+    throw new Error('Could not load report')
+  return {
+    from: r.from,
+    to: r.to,
+    totalHours: r.totalHours as number,
+    billableHours: r.billableHours as number,
+    nonBillableHours: r.nonBillableHours as number,
+    timesheetLineCount: r.timesheetLineCount,
+    expensePendingTotal: r.expensePendingTotal as number,
+    expenseApprovedTotal: r.expenseApprovedTotal as number,
+    expenseRejectedTotal: r.expenseRejectedTotal as number,
+    expenseCount: r.expenseCount,
+  }
 }
 
 export type ClientRow = {

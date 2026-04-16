@@ -2,8 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   getResourceTrackerMonth,
   getTimesheetWeek,
+  listClients,
+  listProjects,
   putTimesheetWeek,
+  type ClientRow,
   type MeProfile,
+  type ProjectRow,
   type ResourceTrackerEmployeeRow,
   type TimesheetLine,
 } from '../api'
@@ -111,6 +115,8 @@ export default function TimesheetWeek({
   const [saving, setSaving] = useState(false)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [persistedKeys, setPersistedKeys] = useState<Set<string>>(() => new Set())
+  const [catalogClients, setCatalogClients] = useState<ClientRow[]>([])
+  const [catalogProjects, setCatalogProjects] = useState<ProjectRow[]>([])
   const lastLoadId = useRef(0)
   const lastMonthLoadId = useRef(0)
 
@@ -184,6 +190,32 @@ export default function TimesheetWeek({
     void refreshMonth()
   }, [refreshMonth])
 
+  useEffect(() => {
+    let cancelled = false
+    async function loadCat() {
+      try {
+        const isAdmin = profile.role === 'Admin'
+        const [c, p] = await Promise.all([
+          listClients(token, undefined, isAdmin),
+          listProjects(token, { includeInactive: isAdmin }),
+        ])
+        if (!cancelled) {
+          setCatalogClients(c)
+          setCatalogProjects(p)
+        }
+      } catch {
+        if (!cancelled) {
+          setCatalogClients([])
+          setCatalogProjects([])
+        }
+      }
+    }
+    void loadCat()
+    return () => {
+      cancelled = true
+    }
+  }, [token, profile.role])
+
   const addRow = () => setLines((xs) => [...xs, blankDraft(weekStart)])
 
   const removeRow = (idx: number) => {
@@ -250,6 +282,11 @@ export default function TimesheetWeek({
       <div className="card admin-card">
         <h1 className="title admin-title">Resource Tracker / Timesheet</h1>
         <p className="subtitle admin-sub">Signed in as {profile.email} · {profile.role}</p>
+        {catalogClients.length > 0 ? (
+          <p className="admin-hint" style={{ marginTop: 8 }}>
+            Client and project must match active directory entries when your org has clients configured.
+          </p>
+        ) : null}
       </div>
 
       <div className="card admin-card">
@@ -369,7 +406,18 @@ export default function TimesheetWeek({
                       </td>
                     </tr>
                   ) : null}
-                  {lines.map((r, idx) => (
+                  {lines.map((r, idx) => {
+                    const clientOrphan =
+                      catalogClients.length > 0 &&
+                      r.client.trim().length > 0 &&
+                      !catalogClients.some((c) => c.name === r.client && c.isActive)
+                    const projectOrphan =
+                      catalogProjects.length > 0 &&
+                      r.project.trim().length > 0 &&
+                      !catalogProjects.some(
+                        (p) => p.clientName === r.client && p.name === r.project && p.isActive,
+                      )
+                    return (
                     <tr key={idx}>
                       <td>
                         <input
@@ -383,20 +431,57 @@ export default function TimesheetWeek({
                         />
                       </td>
                       <td>
-                        <input
-                          className="table-input"
-                          value={r.client}
-                          onChange={(e) => updateRow(idx, { client: e.target.value })}
-                          aria-label="Client"
-                        />
+                        {catalogClients.length > 0 && !clientOrphan ? (
+                          <select
+                            className="table-input"
+                            value={r.client}
+                            onChange={(e) => updateRow(idx, { client: e.target.value, project: '' })}
+                            aria-label="Client"
+                          >
+                            <option value="">— Client —</option>
+                            {catalogClients
+                              .filter((c) => c.isActive)
+                              .map((c) => (
+                                <option key={c.id} value={c.name}>
+                                  {c.name}
+                                </option>
+                              ))}
+                          </select>
+                        ) : (
+                          <input
+                            className="table-input"
+                            value={r.client}
+                            onChange={(e) => updateRow(idx, { client: e.target.value })}
+                            aria-label="Client"
+                          />
+                        )}
                       </td>
                       <td>
-                        <input
-                          className="table-input"
-                          value={r.project}
-                          onChange={(e) => updateRow(idx, { project: e.target.value })}
-                          aria-label="Project"
-                        />
+                        {catalogClients.length > 0 && !projectOrphan ? (
+                          <select
+                            className="table-input"
+                            value={r.project}
+                            onChange={(e) => updateRow(idx, { project: e.target.value })}
+                            aria-label="Project"
+                            disabled={!r.client.trim()}
+                          >
+                            <option value="">— Project —</option>
+                            {catalogProjects
+                              .filter((p) => p.clientName === r.client && p.isActive)
+                              .map((p) => (
+                                <option key={p.id} value={p.name}>
+                                  {p.name}
+                                </option>
+                              ))}
+                          </select>
+                        ) : (
+                          <input
+                            className="table-input"
+                            value={r.project}
+                            onChange={(e) => updateRow(idx, { project: e.target.value })}
+                            aria-label="Project"
+                          />
+                        )}
                       </td>
                       <td>
                         <input
@@ -438,7 +523,8 @@ export default function TimesheetWeek({
                         </button>
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

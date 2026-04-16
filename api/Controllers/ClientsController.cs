@@ -14,10 +14,24 @@ namespace C2E.Api.Controllers;
 [Authorize]
 public sealed class ClientsController(AppDbContext db) : ControllerBase
 {
-    /// <summary>Employee billing rates (IC rates). Stub until dedicated module lands.</summary>
+    /// <summary>Default hourly billing rates per active client (Admin/Finance).</summary>
     [HttpGet("billing-rates")]
     [Authorize(Roles = RbacRoleSets.AdminAndFinance)]
-    public ActionResult<object> GetBillingRates() => Ok(new { items = Array.Empty<object>() });
+    public async Task<ActionResult<IReadOnlyList<ClientBillingRateItemDto>>> GetBillingRates(CancellationToken ct)
+    {
+        var rows = await db.Clients
+            .AsNoTracking()
+            .Where(c => c.IsActive)
+            .OrderBy(c => c.Name)
+            .Select(c => new ClientBillingRateItemDto
+            {
+                ClientId = c.Id,
+                ClientName = c.Name,
+                DefaultHourlyRate = c.DefaultBillingRate,
+            })
+            .ToListAsync(ct);
+        return Ok(rows);
+    }
 
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<ClientResponse>>> List(

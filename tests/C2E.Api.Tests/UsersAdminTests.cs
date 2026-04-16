@@ -239,7 +239,7 @@ public class UsersAdminTests
             new StringContent("{}", Encoding.UTF8, "application/json"));
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
         var err = await res.Content.ReadFromJsonAsync<AuthErrorDto>();
-        Assert.Equal("Provide at least one of email, password, isActive, or role.", err?.Message);
+        Assert.Equal("Provide at least one of email, password, isActive, role, or assignManager.", err?.Message);
     }
 
     [Fact]
@@ -376,7 +376,7 @@ public class UsersAdminTests
 
     private sealed record AuthErrorDto(string Message);
 
-    private sealed record UserDto(Guid Id, string Email, string Role, bool IsActive);
+    private sealed record UserDto(Guid Id, string Email, string Role, bool IsActive, Guid? ManagerUserId = null);
 
     private sealed record MeDto(Guid Id, string Email, string Role, bool IsActive);
 }

@@ -57,8 +57,23 @@ builder.Services.AddCors(o =>
 {
     o.AddDefaultPolicy(p =>
     {
-        p.WithOrigins(corsOrigins)
-            .AllowAnyHeader()
+        if (builder.Environment.IsDevelopment())
+        {
+            // Vite port changes, 127.0.0.1 vs localhost, etc. — all trigger opaque "failed to fetch" if not allowed.
+            p.SetIsOriginAllowed(static origin =>
+            {
+                if (string.IsNullOrEmpty(origin)) return false;
+                if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri)) return false;
+                if (uri.Scheme is not ("http" or "https")) return false;
+                return uri.Host is "localhost" or "127.0.0.1" or "[::1]";
+            });
+        }
+        else
+        {
+            p.WithOrigins(corsOrigins);
+        }
+
+        p.AllowAnyHeader()
             .AllowAnyMethod();
     });
 });
@@ -96,8 +111,10 @@ await using (var scope = app.Services.CreateAsyncScope())
 if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 
-app.UseHttpsRedirection();
+// CORS before HTTPS redirect so OPTIONS preflight is not redirected (browser shows "failed to fetch").
 app.UseCors();
+if (!app.Environment.IsDevelopment())
+    app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseMiddleware<RequireActiveUserMiddleware>();
 app.UseAuthorization();

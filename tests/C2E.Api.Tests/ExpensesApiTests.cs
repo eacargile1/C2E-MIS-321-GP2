@@ -44,6 +44,23 @@ public class ExpensesApiTests
         return await LoginTokenAsync(client, email, password);
     }
 
+    private static async Task<Guid> CreateUserWithRoleReturnIdAsync(
+        HttpClient client,
+        string email,
+        string password,
+        string role)
+    {
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        var create = await client.PostAsJsonAsync("/api/users", new { email, password });
+        create.EnsureSuccessStatusCode();
+        var created = await create.Content.ReadFromJsonAsync<UserDto>();
+        var patch = await client.PatchAsJsonAsync($"/api/users/{created!.Id}", new { role });
+        patch.EnsureSuccessStatusCode();
+        client.DefaultRequestHeaders.Authorization = null;
+        return created!.Id;
+    }
+
     [Fact]
     public async Task IC_can_create_and_list_own_expenses()
     {
@@ -77,8 +94,16 @@ public class ExpensesApiTests
     {
         using var factory = Factory();
         var client = factory.CreateClient();
-        var icToken = await CreateUserWithRoleAsync(client, "ic.appr@local.test", "IcApprPass1!", "IC");
-        var mgrToken = await CreateUserWithRoleAsync(client, "mgr.appr@local.test", "MgrApprPass1!", "Manager");
+        var icId = await CreateUserWithRoleReturnIdAsync(client, "ic.appr@local.test", "IcApprPass1!", "IC");
+        var mgrId = await CreateUserWithRoleReturnIdAsync(client, "mgr.appr@local.test", "MgrApprPass1!", "Manager");
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        var assignMgr = await client.PatchAsJsonAsync($"/api/users/{icId}", new { assignManager = true, managerUserId = mgrId });
+        assignMgr.EnsureSuccessStatusCode();
+        client.DefaultRequestHeaders.Authorization = null;
+
+        var icToken = await LoginTokenAsync(client, "ic.appr@local.test", "IcApprPass1!");
+        var mgrToken = await LoginTokenAsync(client, "mgr.appr@local.test", "MgrApprPass1!");
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
         var create = await client.PostAsJsonAsync("/api/expenses", new
@@ -110,6 +135,55 @@ public class ExpensesApiTests
     }
 
     private sealed record LoginResponseDto(string AccessToken, string TokenType, int ExpiresInSeconds);
+    [Fact]
+    public async Task Manager_sees_only_direct_reports_in_pending_queue()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        var mgrAId = await CreateUserWithRoleReturnIdAsync(client, "mgr.a@local.test", "MgrAApass1!", "Manager");
+        var mgrBId = await CreateUserWithRoleReturnIdAsync(client, "mgr.b@local.test", "MgrBApass1!", "Manager");
+        var icAId = await CreateUserWithRoleReturnIdAsync(client, "ic.a@local.test", "IcAApass1!", "IC");
+        var icBId = await CreateUserWithRoleReturnIdAsync(client, "ic.b@local.test", "IcBBpass1!", "IC");
+
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        Assert.True((await client.PatchAsJsonAsync($"/api/users/{icAId}", new { assignManager = true, managerUserId = mgrAId }))
+            .IsSuccessStatusCode);
+        Assert.True((await client.PatchAsJsonAsync($"/api/users/{icBId}", new { assignManager = true, managerUserId = mgrBId }))
+            .IsSuccessStatusCode);
+        client.DefaultRequestHeaders.Authorization = null;
+
+        var icAToken = await LoginTokenAsync(client, "ic.a@local.test", "IcAApass1!");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icAToken);
+        var create = await client.PostAsJsonAsync("/api/expenses", new
+        {
+            expenseDate = "2026-03-10",
+            client = "Valent",
+            project = "VAL023",
+            category = "Meals",
+            description = "Team lunch",
+            amount = 55m,
+        });
+        create.EnsureSuccessStatusCode();
+        client.DefaultRequestHeaders.Authorization = null;
+
+        var mgrAToken = await LoginTokenAsync(client, "mgr.a@local.test", "MgrAApass1!");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", mgrAToken);
+        var queue = await client.GetAsync("/api/expenses/approvals/pending");
+        queue.EnsureSuccessStatusCode();
+        var rows = await queue.Content.ReadFromJsonAsync<List<ExpenseDto>>();
+        Assert.NotNull(rows);
+        Assert.Single(rows!);
+
+        var mgrBToken = await LoginTokenAsync(client, "mgr.b@local.test", "MgrBApass1!");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", mgrBToken);
+        var queueB = await client.GetAsync("/api/expenses/approvals/pending");
+        queueB.EnsureSuccessStatusCode();
+        var rowsB = await queueB.Content.ReadFromJsonAsync<List<ExpenseDto>>();
+        Assert.NotNull(rowsB);
+        Assert.Empty(rowsB!);
+    }
+
     private sealed record UserDto(Guid Id, string Email, string Role, bool IsActive);
     private sealed record ExpenseDto(Guid Id, decimal Amount, string Status);
 }

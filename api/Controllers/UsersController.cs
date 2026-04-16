@@ -25,6 +25,7 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
                 Email = u.Email,
                 Role = u.Role.ToString(),
                 IsActive = u.IsActive,
+                ManagerUserId = u.ManagerUserId,
             })
             .ToListAsync(ct);
         return Ok(users);
@@ -47,6 +48,13 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
         if (await db.Users.AnyAsync(u => u.Email == normalized, ct))
             return Conflict(new AuthErrorResponse { Message = "A user with this email already exists." });
 
+        if (body.ManagerUserId is { } midCreate)
+        {
+            var err = await ValidateManagerAssignmentAsync(midCreate, userBeingEdited: null, ct);
+            if (err is not null)
+                return BadRequest(new AuthErrorResponse { Message = err });
+        }
+
         var user = new AppUser
         {
             Id = Guid.NewGuid(),
@@ -54,6 +62,7 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
             PasswordHash = "",
             Role = AppRole.IC,
             IsActive = true,
+            ManagerUserId = body.ManagerUserId,
         };
         user.PasswordHash = passwordHasher.HashPassword(user, body.Password);
         db.Users.Add(user);
@@ -66,8 +75,8 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
 
-        if (body.Email is null && body.Password is null && body.IsActive is null && body.Role is null)
-            return BadRequest(new AuthErrorResponse { Message = "Provide at least one of email, password, isActive, or role." });
+        if (body.Email is null && body.Password is null && body.IsActive is null && body.Role is null && body.AssignManager != true)
+            return BadRequest(new AuthErrorResponse { Message = "Provide at least one of email, password, isActive, role, or assignManager." });
 
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == id, ct);
         if (user is null) return NotFound();
@@ -117,8 +126,52 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
         if (newRole is { } r)
             user.Role = r;
 
+        if (body.AssignManager == true)
+        {
+            if (body.ManagerUserId is { } mid)
+            {
+                var err = await ValidateManagerAssignmentAsync(mid, user.Id, ct);
+                if (err is not null)
+                    return BadRequest(new AuthErrorResponse { Message = err });
+                if (await WouldCreateManagerCycleAsync(user.Id, mid, ct))
+                    return BadRequest(new AuthErrorResponse { Message = "That manager assignment would create a cycle." });
+                user.ManagerUserId = mid;
+            }
+            else
+                user.ManagerUserId = null;
+        }
+
         await db.SaveChangesAsync(ct);
         return Ok(ToResponse(user));
+    }
+
+    private async Task<string?> ValidateManagerAssignmentAsync(Guid managerId, Guid? userBeingEdited, CancellationToken ct)
+    {
+        if (userBeingEdited is { } uid && managerId == uid)
+            return "A user cannot be their own manager.";
+
+        var mgr = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == managerId, ct);
+        if (mgr is null || !mgr.IsActive)
+            return "Manager must reference an active user.";
+
+        return null;
+    }
+
+    private async Task<bool> WouldCreateManagerCycleAsync(Guid userId, Guid newManagerId, CancellationToken ct)
+    {
+        var step = newManagerId;
+        for (var i = 0; i < 32; i++)
+        {
+            if (step == userId) return true;
+            var next = await db.Users.AsNoTracking()
+                .Where(u => u.Id == step)
+                .Select(u => u.ManagerUserId)
+                .FirstOrDefaultAsync(ct);
+            if (next is null) return false;
+            step = next.Value;
+        }
+
+        return true;
     }
 
     private static UserResponse ToResponse(AppUser u) => new()
@@ -127,5 +180,6 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
         Email = u.Email,
         Role = u.Role.ToString(),
         IsActive = u.IsActive,
+        ManagerUserId = u.ManagerUserId,
     };
 }

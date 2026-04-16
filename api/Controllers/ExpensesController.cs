@@ -4,6 +4,7 @@ using C2E.Api.Authorization;
 using C2E.Api.Data;
 using C2E.Api.Dtos;
 using C2E.Api.Models;
+using C2E.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -37,6 +38,19 @@ public sealed class ExpensesController(AppDbContext db) : ControllerBase
         if (!TryGetUserId(out var userId)) return Unauthorized();
         if (!TryParseDateOnly(body.ExpenseDate, out var expenseDate))
             return BadRequest(new AuthErrorResponse { Message = "Invalid expenseDate. Use YYYY-MM-DD." });
+
+        try
+        {
+            await ActiveCatalogValidation.EnsureActiveClientAndProjectAsync(
+                db,
+                body.Client.Trim(),
+                body.Project.Trim(),
+                ct);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new AuthErrorResponse { Message = ex.Message });
+        }
 
         var now = DateTime.UtcNow;
         var entity = new ExpenseEntry
@@ -78,10 +92,19 @@ public sealed class ExpensesController(AppDbContext db) : ControllerBase
     [Authorize(Roles = RbacRoleSets.AdminAndManager)]
     public async Task<ActionResult<IReadOnlyList<ExpenseResponse>>> ListPendingApprovals(CancellationToken ct)
     {
+        if (!TryGetUserId(out var reviewerId)) return Unauthorized();
+
         var users = await db.Users.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Email, ct);
-        var rows = await db.ExpenseEntries
+        var q = db.ExpenseEntries
             .AsNoTracking()
-            .Where(x => x.Status == ExpenseStatus.Pending)
+            .Where(x => x.Status == ExpenseStatus.Pending);
+
+        if (User.IsInRole(nameof(AppRole.Manager)) && !User.IsInRole(nameof(AppRole.Admin)))
+        {
+            q = q.Where(x => db.Users.Any(u => u.Id == x.UserId && u.ManagerUserId == reviewerId));
+        }
+
+        var rows = await q
             .OrderBy(x => x.ExpenseDate)
             .ThenBy(x => x.CreatedAtUtc)
             .ToListAsync(ct);
@@ -105,6 +128,13 @@ public sealed class ExpensesController(AppDbContext db) : ControllerBase
         if (row is null) return NotFound();
         if (row.Status != ExpenseStatus.Pending)
             return BadRequest(new AuthErrorResponse { Message = "Only pending expenses can be reviewed." });
+
+        if (User.IsInRole(nameof(AppRole.Manager)) && !User.IsInRole(nameof(AppRole.Admin)))
+        {
+            var submitter = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == row.UserId, ct);
+            if (submitter?.ManagerUserId != userId)
+                return Forbid();
+        }
 
         row.Status = nextStatus;
         row.ReviewedByUserId = userId;
