@@ -217,8 +217,14 @@ namespace C2E.Api.Data.Migrations
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime(6)");
 
+                    b.Property<DateTime?>("DeletedAtUtc")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<decimal>("Hours")
                         .HasColumnType("decimal(65,30)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<bool>("IsBillable")
                         .HasColumnType("tinyint(1)");
@@ -250,7 +256,7 @@ namespace C2E.Api.Data.Migrations
 
                     b.HasIndex("UserId", "WorkDate");
 
-                    b.HasIndex("UserId", "WorkDate", "Client", "Project", "Task")
+                    b.HasIndex("UserId", "WorkDate", "Client", "Project", "Task", "IsDeleted")
                         .IsUnique();
 
                     b.ToTable("TimesheetLines");

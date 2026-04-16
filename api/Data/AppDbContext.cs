@@ -53,7 +53,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.UserId, x.WorkDate });
-            e.HasIndex(x => new { x.UserId, x.WorkDate, x.Client, x.Project, x.Task }).IsUnique();
+            e.HasIndex(x => new { x.UserId, x.WorkDate, x.Client, x.Project, x.Task, x.IsDeleted }).IsUnique();
 
             e.Property(x => x.Client).HasMaxLength(120);
             e.Property(x => x.Project).HasMaxLength(120);

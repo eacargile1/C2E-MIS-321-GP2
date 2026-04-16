@@ -91,10 +91,6 @@ function isEmptyRow(r: DraftLine) {
   )
 }
 
-function keyOf(r: { workDate: string; client: string; project: string; task: string }) {
-  return `${r.workDate}|${r.client}|${r.project}|${r.task}`
-}
-
 export default function TimesheetWeek({
   token,
   profile,
@@ -110,7 +106,6 @@ export default function TimesheetWeek({
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [toasts, setToasts] = useState<Toast[]>([])
-  const [persistedKeys, setPersistedKeys] = useState<Set<string>>(() => new Set())
   const lastLoadId = useRef(0)
   const lastMonthLoadId = useRef(0)
 
@@ -147,12 +142,10 @@ export default function TimesheetWeek({
     try {
       const rows = await getTimesheetWeek(token, weekStart)
       if (loadId !== lastLoadId.current) return
-      setPersistedKeys(new Set(rows.map(keyOf)))
       setLines(rows.map(toDraft))
     } catch (e) {
       if (loadId !== lastLoadId.current) return
       pushToast(e instanceof Error ? e.message : 'Load failed', 'err')
-      setPersistedKeys(new Set())
       setLines([])
     } finally {
       if (loadId === lastLoadId.current) setLoading(false)
@@ -187,13 +180,6 @@ export default function TimesheetWeek({
   const addRow = () => setLines((xs) => [...xs, blankDraft(weekStart)])
 
   const removeRow = (idx: number) => {
-    const r = lines[idx]
-    if (!r) return
-    const k = keyOf({ workDate: r.workDate, client: r.client.trim(), project: r.project.trim(), task: r.task.trim() })
-    if (persistedKeys.has(k) && !isEmptyRow(r)) {
-      pushToast('Delete is not supported yet (upsert-only).', 'err')
-      return
-    }
     setLines((xs) => xs.filter((_, i) => i !== idx))
   }
 
