@@ -10,6 +10,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<TimesheetLine> TimesheetLines => Set<TimesheetLine>();
     public DbSet<ExpenseEntry> ExpenseEntries => Set<ExpenseEntry>();
+    public DbSet<ClientQuote> ClientQuotes => Set<ClientQuote>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -45,6 +46,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.Email).IsUnique();
             e.Property(x => x.Email).HasMaxLength(320);
+            e.Property(x => x.DisplayName).HasMaxLength(80);
             e.Property(x => x.PasswordHash).HasMaxLength(500);
             e.Property(x => x.Role).HasConversion<string>().HasMaxLength(32);
         });
@@ -73,6 +75,26 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.Description).HasMaxLength(500);
             e.Property(x => x.Amount).HasPrecision(18, 2);
             e.Property(x => x.Status).HasConversion<string>().HasMaxLength(24);
+        });
+
+        modelBuilder.Entity<ClientQuote>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.ReferenceNumber).IsUnique();
+            e.HasIndex(x => x.ClientId);
+            e.HasIndex(x => x.Status);
+
+            e.Property(x => x.ReferenceNumber).HasMaxLength(40);
+            e.Property(x => x.Title).HasMaxLength(200);
+            e.Property(x => x.ScopeSummary).HasMaxLength(2000);
+            e.Property(x => x.EstimatedHours).HasPrecision(18, 2);
+            e.Property(x => x.HourlyRate).HasPrecision(18, 2);
+            e.Property(x => x.TotalAmount).HasPrecision(18, 2);
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(24);
+            e.HasOne(x => x.Client)
+                .WithMany()
+                .HasForeignKey(x => x.ClientId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

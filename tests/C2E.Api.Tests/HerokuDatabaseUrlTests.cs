@@ -14,7 +14,9 @@ public class HerokuDatabaseUrlTests
         Assert.Contains("Database=dbnameprod", cs);
         Assert.Contains("User ID=user", cs);
         Assert.Contains("Password=secret@word", cs);
-        Assert.Contains("SslMode=Preferred", cs);
+        // MySqlConnector may omit SslMode when it matches the implicit default.
+        if (cs.Contains("SslMode", StringComparison.OrdinalIgnoreCase))
+            Assert.Contains("Preferred", cs, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

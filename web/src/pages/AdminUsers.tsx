@@ -23,8 +23,10 @@ export default function AdminUsers({
   const [toasts, setToasts] = useState<Toast[]>([])
   const [createEmail, setCreateEmail] = useState('')
   const [createPassword, setCreatePassword] = useState('')
+  const [createDisplayName, setCreateDisplayName] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editEmail, setEditEmail] = useState('')
+  const [editDisplayName, setEditDisplayName] = useState('')
   const [editPassword, setEditPassword] = useState('')
   const [editRole, setEditRole] = useState<string>('')
   const [confirmDeactivateId, setConfirmDeactivateId] = useState<string | null>(null)
@@ -56,9 +58,10 @@ export default function AdminUsers({
   const onCreate = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      await createUser(token, createEmail.trim(), createPassword)
+      await createUser(token, createEmail.trim(), createPassword, createDisplayName.trim() || undefined)
       setCreateEmail('')
       setCreatePassword('')
+      setCreateDisplayName('')
       pushToast('User created', 'ok')
       await refresh()
     } catch (err) {
@@ -69,6 +72,7 @@ export default function AdminUsers({
   const startEdit = (u: UserRow) => {
     setEditingId(u.id)
     setEditEmail(u.email)
+    setEditDisplayName(u.displayName)
     setEditPassword('')
     setEditRole(u.role)
   }
@@ -76,6 +80,7 @@ export default function AdminUsers({
   const cancelEdit = () => {
     setEditingId(null)
     setEditEmail('')
+    setEditDisplayName('')
     setEditPassword('')
     setEditRole('')
   }
@@ -83,11 +88,12 @@ export default function AdminUsers({
   const saveEdit = async (id: string) => {
     setBusyId(id)
     try {
-      const body: { email?: string; password?: string; role?: string } = {}
+      const body: { email?: string; password?: string; role?: string; displayName?: string } = {}
       const u = users.find((x) => x.id === id)
       if (!u) return
       if (editEmail.trim().toLowerCase() !== u.email)
         body.email = editEmail.trim()
+      if (editDisplayName.trim() !== u.displayName) body.displayName = editDisplayName.trim()
       if (editPassword.trim().length > 0) body.password = editPassword
       if (editRole !== u.role) body.role = editRole
       if (Object.keys(body).length === 0) {
@@ -96,7 +102,10 @@ export default function AdminUsers({
       }
       const updated = await patchUser(token, id, body)
       const roleOnly =
-        body.role !== undefined && body.email === undefined && body.password === undefined
+        body.role !== undefined &&
+        body.email === undefined &&
+        body.password === undefined &&
+        body.displayName === undefined
       pushToast(roleOnly ? 'Role updated' : 'User updated', 'ok')
       cancelEdit()
       if (id === profile.id && updated.role !== 'Admin') onSignOut()
@@ -144,7 +153,7 @@ export default function AdminUsers({
       <div className="card admin-card">
         <h1 className="title admin-title">Users</h1>
         <p className="subtitle admin-sub">
-          Signed in as {profile.email} · Admin
+          Signed in as {profile.displayName} ({profile.email}) · Admin
         </p>
       </div>
 
@@ -152,6 +161,17 @@ export default function AdminUsers({
         <h2 className="admin-h2">Create user</h2>
         <p className="admin-hint">New accounts default to role IC. Password min. 8 characters.</p>
         <form className="form admin-form-grid" onSubmit={onCreate}>
+          <label className="field">
+            <span>Display name</span>
+            <input
+              type="text"
+              value={createDisplayName}
+              onChange={(e) => setCreateDisplayName(e.target.value)}
+              placeholder="Optional; defaults to email before @"
+              maxLength={80}
+              autoComplete="off"
+            />
+          </label>
           <label className="field">
             <span>Email</span>
             <input
@@ -194,6 +214,7 @@ export default function AdminUsers({
               <thead>
                 <tr>
                   <th>Email</th>
+                  <th>Display name</th>
                   <th>Role</th>
                   <th>Status</th>
                   <th />
@@ -212,6 +233,19 @@ export default function AdminUsers({
                         />
                       ) : (
                         u.email
+                      )}
+                    </td>
+                    <td>
+                      {editingId === u.id ? (
+                        <input
+                          className="table-input"
+                          value={editDisplayName}
+                          onChange={(e) => setEditDisplayName(e.target.value)}
+                          maxLength={80}
+                          aria-label="Edit display name"
+                        />
+                      ) : (
+                        u.displayName
                       )}
                     </td>
                     <td>

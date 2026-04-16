@@ -15,6 +15,20 @@ namespace C2E.Api.Controllers;
 [Authorize]
 public sealed class ExpensesController(AppDbContext db) : ControllerBase
 {
+    /// <summary>Full expense register for finance ops (all users, all approval states).</summary>
+    [HttpGet("ledger")]
+    [Authorize(Roles = RbacRoleSets.AdminAndFinance)]
+    public async Task<ActionResult<IReadOnlyList<ExpenseResponse>>> ListLedger(CancellationToken ct)
+    {
+        var users = await db.Users.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Email, ct);
+        var rows = await db.ExpenseEntries
+            .AsNoTracking()
+            .OrderByDescending(x => x.ExpenseDate)
+            .ThenByDescending(x => x.CreatedAtUtc)
+            .ToListAsync(ct);
+        return Ok(rows.Select(x => Map(x, users)).ToList());
+    }
+
     [HttpGet("mine")]
     public async Task<ActionResult<IReadOnlyList<ExpenseResponse>>> ListMine(CancellationToken ct)
     {

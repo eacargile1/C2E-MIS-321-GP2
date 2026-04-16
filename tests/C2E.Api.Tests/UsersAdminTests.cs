@@ -119,6 +119,7 @@ public class UsersAdminTests
             {
                 Id = Guid.NewGuid(),
                 Email = "admin2@local.test",
+                DisplayName = UserProfileName.DefaultFromEmail("admin2@local.test"),
                 PasswordHash = "",
                 Role = AppRole.Admin,
                 IsActive = true,
@@ -239,7 +240,7 @@ public class UsersAdminTests
             new StringContent("{}", Encoding.UTF8, "application/json"));
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
         var err = await res.Content.ReadFromJsonAsync<AuthErrorDto>();
-        Assert.Equal("Provide at least one of email, password, isActive, or role.", err?.Message);
+        Assert.Equal("Provide at least one of email, password, isActive, role, or displayName.", err?.Message);
     }
 
     [Fact]

@@ -13,4 +13,7 @@ public class UpdateUserRequest
     public bool? IsActive { get; init; }
 
     public string? Role { get; init; }
+
+    [MaxLength(80)]
+    public string? DisplayName { get; init; }
 }

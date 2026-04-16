@@ -1,3 +1,4 @@
+using C2E.Api;
 using C2E.Api.Data;
 using C2E.Api.Dtos;
 using C2E.Api.Models;
@@ -19,15 +20,8 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
         var users = await db.Users
             .AsNoTracking()
             .OrderBy(u => u.Email)
-            .Select(u => new UserResponse
-            {
-                Id = u.Id,
-                Email = u.Email,
-                Role = u.Role.ToString(),
-                IsActive = u.IsActive,
-            })
             .ToListAsync(ct);
-        return Ok(users);
+        return Ok(users.Select(ToResponse).ToList());
     }
 
     [HttpGet("{id:guid}")]
@@ -47,10 +41,14 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
         if (await db.Users.AnyAsync(u => u.Email == normalized, ct))
             return Conflict(new AuthErrorResponse { Message = "A user with this email already exists." });
 
+        var displayName = string.IsNullOrWhiteSpace(body.DisplayName)
+            ? UserProfileName.DefaultFromEmail(normalized)
+            : body.DisplayName.Trim();
         var user = new AppUser
         {
             Id = Guid.NewGuid(),
             Email = normalized,
+            DisplayName = displayName,
             PasswordHash = "",
             Role = AppRole.IC,
             IsActive = true,
@@ -66,8 +64,8 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
 
-        if (body.Email is null && body.Password is null && body.IsActive is null && body.Role is null)
-            return BadRequest(new AuthErrorResponse { Message = "Provide at least one of email, password, isActive, or role." });
+        if (body.Email is null && body.Password is null && body.IsActive is null && body.Role is null && body.DisplayName is null)
+            return BadRequest(new AuthErrorResponse { Message = "Provide at least one of email, password, isActive, role, or displayName." });
 
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == id, ct);
         if (user is null) return NotFound();
@@ -117,6 +115,12 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
         if (newRole is { } r)
             user.Role = r;
 
+        if (body.DisplayName is not null)
+        {
+            var d = body.DisplayName.Trim();
+            user.DisplayName = d.Length > 0 ? d : UserProfileName.DefaultFromEmail(user.Email);
+        }
+
         await db.SaveChangesAsync(ct);
         return Ok(ToResponse(user));
     }
@@ -125,6 +129,9 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
     {
         Id = u.Id,
         Email = u.Email,
+        DisplayName = string.IsNullOrWhiteSpace(u.DisplayName)
+            ? UserProfileName.DefaultFromEmail(u.Email)
+            : u.DisplayName,
         Role = u.Role.ToString(),
         IsActive = u.IsActive,
     };

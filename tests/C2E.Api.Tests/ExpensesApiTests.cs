@@ -109,7 +109,56 @@ public class ExpensesApiTests
         Assert.Equal("Approved", rows![0].Status);
     }
 
+    [Fact]
+    public async Task Finance_expense_ledger_sees_all_statuses_IC_forbidden()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        var icToken = await CreateUserWithRoleAsync(client, "ic.led@local.test", "IcLedPass1!", "IC");
+        var finToken = await CreateUserWithRoleAsync(client, "fin.led@local.test", "FinLedPass1!", "Finance");
+        var mgrToken = await CreateUserWithRoleAsync(client, "mgr.led@local.test", "MgrLedPass1!", "Manager");
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
+        await client.PostAsJsonAsync("/api/expenses", new
+        {
+            expenseDate = "2026-03-05",
+            client = "Acme",
+            project = "ACM-1",
+            category = "Travel",
+            description = "Cab",
+            amount = 22m,
+        });
+        var pend = await client.PostAsJsonAsync("/api/expenses", new
+        {
+            expenseDate = "2026-03-06",
+            client = "Acme",
+            project = "ACM-1",
+            category = "Meals",
+            description = "Lunch",
+            amount = 33m,
+        });
+        pend.EnsureSuccessStatusCode();
+        var createdPend = await pend.Content.ReadFromJsonAsync<ExpenseDto>();
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", mgrToken);
+        await client.PostAsync($"/api/expenses/{createdPend!.Id}/approve", null);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
+        var icLedger = await client.GetAsync("/api/expenses/ledger");
+        Assert.Equal(HttpStatusCode.Forbidden, icLedger.StatusCode);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", finToken);
+        var finLedger = await client.GetAsync("/api/expenses/ledger");
+        Assert.Equal(HttpStatusCode.OK, finLedger.StatusCode);
+        var rows = await finLedger.Content.ReadFromJsonAsync<List<ExpenseLedgerDto>>();
+        Assert.NotNull(rows);
+        Assert.Equal(2, rows!.Count);
+        Assert.Contains(rows, x => x.Status == "Pending");
+        Assert.Contains(rows, x => x.Status == "Approved");
+    }
+
     private sealed record LoginResponseDto(string AccessToken, string TokenType, int ExpiresInSeconds);
     private sealed record UserDto(Guid Id, string Email, string Role, bool IsActive);
     private sealed record ExpenseDto(Guid Id, decimal Amount, string Status);
+    private sealed record ExpenseLedgerDto(string Status);
 }

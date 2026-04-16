@@ -23,8 +23,11 @@ public class AuthController(
 {
     [HttpPost("login")]
     [AllowAnonymous]
-    public async Task<ActionResult<LoginResponse>> Login([FromBody] LoginRequest body, CancellationToken ct)
+    public async Task<ActionResult<LoginResponse>> Login([FromBody] LoginRequest? body, CancellationToken ct)
     {
+        if (body is null)
+            return BadRequest(new AuthErrorResponse { Message = "Request body is required." });
+
         if (!ModelState.IsValid)
             return Unauthorized(new AuthErrorResponse { Message = AuthMessages.InvalidCredentials });
 
@@ -72,6 +75,9 @@ public class AuthController(
         {
             Id = user.Id,
             Email = user.Email,
+            DisplayName = string.IsNullOrWhiteSpace(user.DisplayName)
+                ? UserProfileName.DefaultFromEmail(user.Email)
+                : user.DisplayName,
             Role = user.Role.ToString(),
             IsActive = user.IsActive,
         });

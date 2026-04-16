@@ -94,6 +94,12 @@ public class RbacEnforcementTests
         Assert.Equal(
             HttpStatusCode.Unauthorized,
             (await client.PostAsync("/api/invoices/generate", null)).StatusCode);
+        Assert.Equal(
+            HttpStatusCode.Unauthorized,
+            (await client.GetAsync("/api/expenses/ledger")).StatusCode);
+        Assert.Equal(
+            HttpStatusCode.Unauthorized,
+            (await client.GetAsync("/api/quotes")).StatusCode);
     }
 
     [Fact]

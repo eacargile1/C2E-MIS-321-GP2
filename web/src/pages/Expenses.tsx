@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { NavLink } from 'react-router-dom'
 import {
   approveExpense,
   createExpense,
@@ -24,6 +25,7 @@ function todayYmd() {
 
 export default function ExpensesPage({ token, profile }: { token: string; profile: MeProfile }) {
   const canApprove = profile.role === 'Admin' || profile.role === 'Manager'
+  const canFinance = profile.role === 'Admin' || profile.role === 'Finance'
   const [rows, setRows] = useState<ExpenseRow[]>([])
   const [pending, setPending] = useState<ExpenseRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -112,6 +114,11 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
       <div className="card admin-card">
         <h1 className="title admin-title">Expenses</h1>
         <p className="subtitle admin-sub">Signed in as {profile.email} · {profile.role}</p>
+        {canFinance ? (
+          <p className="admin-hint" style={{ marginBottom: 0 }}>
+            Org-wide expense register and client quotes: <NavLink to="/finance">Finance</NavLink>.
+          </p>
+        ) : null}
       </div>
 
       <div className="card admin-card">
