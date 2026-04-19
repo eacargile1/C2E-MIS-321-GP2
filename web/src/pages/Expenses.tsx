@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { NavLink } from 'react-router-dom'
 import {
   approveExpense,
   createExpense,
@@ -28,6 +29,7 @@ function todayYmd() {
 
 export default function ExpensesPage({ token, profile }: { token: string; profile: MeProfile }) {
   const canApprove = profile.role === 'Admin' || profile.role === 'Manager'
+  const canFinance = profile.role === 'Admin' || profile.role === 'Finance'
   const [rows, setRows] = useState<ExpenseRow[]>([])
   const [pending, setPending] = useState<ExpenseRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -147,6 +149,11 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
         {catalogClients.length > 0 ? (
           <p className="admin-hint" style={{ marginTop: 8 }}>
             Client and project must match active directory entries when clients exist in the system.
+          </p>
+        ) : null}
+        {canFinance ? (
+          <p className="admin-hint" style={{ marginTop: 8 }}>
+            Org-wide expense register and client quotes: <NavLink to="/finance">Finance</NavLink>.
           </p>
         ) : null}
       </div>

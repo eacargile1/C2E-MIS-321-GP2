@@ -1,12 +1,16 @@
 using System.Security.Claims;
 using System.Text;
+using C2E.Api;
 using C2E.Api.Authorization;
 using C2E.Api.Data;
 using C2E.Api.Middleware;
 using C2E.Api.Models;
+using C2E.Api.Dtos;
 using C2E.Api.Options;
 using C2E.Api.Services;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
@@ -80,6 +84,28 @@ builder.Services.AddCors(o =>
 
 var app = builder.Build();
 
+app.UseExceptionHandler(exceptionHandlerApp =>
+{
+    exceptionHandlerApp.Run(async context =>
+    {
+        var ex = context.Features.Get<IExceptionHandlerFeature>()?.Error;
+        var log = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("UnhandledException");
+        if (ex != null)
+            log.LogError(ex, "Unhandled exception");
+
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        context.Response.ContentType = "application/json; charset=utf-8";
+        var msg = ex is null
+            ? "Server error."
+            : app.Environment.IsDevelopment()
+                ? $"{ex.GetType().Name}: {ex.Message}"
+                : "An unexpected error occurred.";
+        if (app.Environment.IsDevelopment() && ex?.InnerException is { } ie)
+            msg += $" | {ie.GetType().Name}: {ie.Message}";
+        await context.Response.WriteAsJsonAsync(new AuthErrorResponse { Message = msg });
+    });
+});
+
 await using (var scope = app.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -98,6 +124,7 @@ await using (var scope = app.Services.CreateAsyncScope())
         {
             Id = Guid.NewGuid(),
             Email = normalized,
+            DisplayName = UserProfileName.DefaultFromEmail(normalized),
             PasswordHash = "",
             Role = AppRole.Admin,
             IsActive = true,
@@ -106,12 +133,21 @@ await using (var scope = app.Services.CreateAsyncScope())
         db.Users.Add(user);
         await db.SaveChangesAsync();
     }
+
+    var env = scope.ServiceProvider.GetRequiredService<IWebHostEnvironment>();
+    var cfg = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+    if (env.IsDevelopment() && cfg.GetValue("Seed:DemoFinanceData", false))
+    {
+        var hasher2 = scope.ServiceProvider.GetRequiredService<PasswordHasher<AppUser>>();
+        await DemoFinanceSeed.EnsureAsync(db, hasher2);
+    }
 }
 
 if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 
 // CORS before HTTPS redirect so OPTIONS preflight is not redirected (browser shows "failed to fetch").
+// In non-Development, enable HTTPS redirection after CORS.
 app.UseCors();
 if (!app.Environment.IsDevelopment())
     app.UseHttpsRedirection();

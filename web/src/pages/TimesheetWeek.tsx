@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
-  getResourceTrackerMonth,
   getTimesheetWeek,
   listClients,
   listProjects,
@@ -8,7 +8,6 @@ import {
   type ClientRow,
   type MeProfile,
   type ProjectRow,
-  type ResourceTrackerEmployeeRow,
   type TimesheetLine,
 } from '../api'
 import '../App.css'
@@ -41,8 +40,8 @@ function isYmd(s: string) {
 
 function startOfWeekMonday(d: Date) {
   const x = new Date(d.getFullYear(), d.getMonth(), d.getDate())
-  const day = x.getDay() // 0 Sun ... 6 Sat
-  const diff = (day + 6) % 7 // Mon -> 0, Sun -> 6
+  const day = x.getDay()
+  const diff = (day + 6) % 7
   x.setDate(x.getDate() - diff)
   return x
 }
@@ -53,12 +52,22 @@ function addDays(d: Date, days: number) {
   return x
 }
 
-function startOfMonth(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), 1)
+function mondayFromSearchParams(sp: URLSearchParams): string | null {
+  const w = sp.get('week')
+  if (!w || !isYmd(w)) return null
+  const [y, m, d] = w.split('-').map(Number)
+  const dt = new Date(y!, (m ?? 1) - 1, d ?? 1)
+  if (!Number.isFinite(dt.getTime())) return null
+  if (dt.getDay() !== 1) return null
+  return w
 }
 
-function endOfMonth(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth() + 1, 0)
+function initialWeekStart(): string {
+  if (typeof window !== 'undefined') {
+    const m = mondayFromSearchParams(new URLSearchParams(window.location.search))
+    if (m) return m
+  }
+  return toYmd(startOfWeekMonday(new Date()))
 }
 
 function toDraft(l: TimesheetLine): DraftLine {
@@ -106,11 +115,9 @@ export default function TimesheetWeek({
   token: string
   profile: MeProfile
 }) {
-  const [monthAnchor, setMonthAnchor] = useState(() => startOfMonth(new Date()))
-  const [weekStart, setWeekStart] = useState(() => toYmd(startOfWeekMonday(new Date())))
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [weekStart, setWeekStart] = useState(initialWeekStart)
   const [lines, setLines] = useState<DraftLine[]>([])
-  const [monthRows, setMonthRows] = useState<ResourceTrackerEmployeeRow[]>([])
-  const [monthLoading, setMonthLoading] = useState(true)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [toasts, setToasts] = useState<Toast[]>([])
@@ -118,7 +125,6 @@ export default function TimesheetWeek({
   const [catalogClients, setCatalogClients] = useState<ClientRow[]>([])
   const [catalogProjects, setCatalogProjects] = useState<ProjectRow[]>([])
   const lastLoadId = useRef(0)
-  const lastMonthLoadId = useRef(0)
 
   const weekStartDate = useMemo(() => {
     if (!isYmd(weekStart)) return startOfWeekMonday(new Date())
@@ -128,24 +134,36 @@ export default function TimesheetWeek({
   }, [weekStart])
 
   const weekEndDate = useMemo(() => addDays(weekStartDate, 6), [weekStartDate])
-  const monthLabel = useMemo(
-    () => monthAnchor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
-    [monthAnchor],
-  )
-  const monthStart = useMemo(() => startOfMonth(monthAnchor), [monthAnchor])
-  const monthEnd = useMemo(() => endOfMonth(monthAnchor), [monthAnchor])
-  const monthStartYmd = useMemo(() => toYmd(monthStart), [monthStart])
-  const monthDays = useMemo(() => {
-    const out: Date[] = []
-    for (let d = monthStart; d <= monthEnd; d = addDays(d, 1)) out.push(d)
-    return out
-  }, [monthStart, monthEnd])
+  const weekHumanLabel = useMemo(() => {
+    const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' }
+    return `${weekStartDate.toLocaleDateString(undefined, opts)} – ${weekEndDate.toLocaleDateString(undefined, opts)}`
+  }, [weekStartDate, weekEndDate])
 
   const pushToast = useCallback((message: string, variant: 'ok' | 'err') => {
     const id = Date.now()
     setToasts((t) => [...t, { id, message, variant }])
     window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), TOAST_MS)
   }, [])
+
+  const setWeekNav = useCallback(
+    (ymd: string) => {
+      setWeekStart(ymd)
+      setSearchParams(
+        (prev) => {
+          const n = new URLSearchParams(prev)
+          n.set('week', ymd)
+          return n
+        },
+        { replace: true },
+      )
+    },
+    [setSearchParams],
+  )
+
+  useEffect(() => {
+    const m = mondayFromSearchParams(searchParams)
+    if (m) setWeekStart(m)
+  }, [searchParams])
 
   const refresh = useCallback(async () => {
     const loadId = ++lastLoadId.current
@@ -165,30 +183,10 @@ export default function TimesheetWeek({
     }
   }, [token, weekStart, pushToast])
 
-  const refreshMonth = useCallback(async () => {
-    const loadId = ++lastMonthLoadId.current
-    setMonthLoading(true)
-    try {
-      const rows = await getResourceTrackerMonth(token, monthStartYmd)
-      if (loadId !== lastMonthLoadId.current) return
-      setMonthRows(rows)
-    } catch (e) {
-      if (loadId !== lastMonthLoadId.current) return
-      pushToast(e instanceof Error ? e.message : 'Month load failed', 'err')
-      setMonthRows([])
-    } finally {
-      if (loadId === lastMonthLoadId.current) setMonthLoading(false)
-    }
-  }, [monthStartYmd, token, pushToast])
-
   useEffect(() => {
-    if (!isYmd(weekStart)) setWeekStart(toYmd(startOfWeekMonday(new Date())))
+    if (!isYmd(weekStart)) setWeekNav(toYmd(startOfWeekMonday(new Date())))
     void refresh()
-  }, [refresh, weekStart])
-
-  useEffect(() => {
-    void refreshMonth()
-  }, [refreshMonth])
+  }, [refresh, weekStart, setWeekNav])
 
   useEffect(() => {
     let cancelled = false
@@ -230,17 +228,11 @@ export default function TimesheetWeek({
   }
 
   const updateRow = (idx: number, patch: Partial<DraftLine>) =>
-    setLines((xs) => xs.map((r, i) => (i === idx ? { ...r, ...patch } : r)))
+    setLines((xs) => xs.map((row, i) => (i === idx ? { ...row, ...patch } : row)))
 
-  const setPrevWeek = () => setWeekStart(toYmd(addDays(weekStartDate, -7)))
-  const setNextWeek = () => setWeekStart(toYmd(addDays(weekStartDate, 7)))
-  const setPrevMonth = () => setMonthAnchor((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))
-  const setNextMonth = () => setMonthAnchor((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))
-  const jumpToToday = () => {
-    const now = new Date()
-    setMonthAnchor(startOfMonth(now))
-    setWeekStart(toYmd(startOfWeekMonday(now)))
-  }
+  const setPrevWeek = () => setWeekNav(toYmd(addDays(weekStartDate, -7)))
+  const setNextWeek = () => setWeekNav(toYmd(addDays(weekStartDate, 7)))
+  const jumpToThisWeek = () => setWeekNav(toYmd(startOfWeekMonday(new Date())))
 
   const onSave = async () => {
     setSaving(true)
@@ -269,7 +261,6 @@ export default function TimesheetWeek({
       await putTimesheetWeek(token, weekStart, payload)
       pushToast('Saved', 'ok')
       await refresh()
-      await refreshMonth()
     } catch (e) {
       pushToast(e instanceof Error ? e.message : 'Save failed', 'err')
     } finally {
@@ -280,8 +271,17 @@ export default function TimesheetWeek({
   return (
     <div className="admin-wrap">
       <div className="card admin-card">
-        <h1 className="title admin-title">Resource Tracker / Timesheet</h1>
-        <p className="subtitle admin-sub">Signed in as {profile.email} · {profile.role}</p>
+        <h1 className="title admin-title">Timesheet</h1>
+        <p className="subtitle admin-sub">
+          Signed in as {profile.displayName} · {profile.role}
+        </p>
+        <p className="admin-hint" style={{ marginTop: 8 }}>
+          This week: <strong>{weekHumanLabel}</strong> ·{' '}
+          <Link to="/resource-tracker" style={{ textDecoration: 'underline' }}>
+            Resource tracker
+          </Link>{' '}
+          for the org month view.
+        </p>
         {catalogClients.length > 0 ? (
           <p className="admin-hint" style={{ marginTop: 8 }}>
             Client and project must match active directory entries when your org has clients configured.
@@ -292,87 +292,20 @@ export default function TimesheetWeek({
       <div className="card admin-card">
         <div className="admin-table-head">
           <div>
-            <h2 className="admin-h2">Monthly Availability Grid</h2>
-            <p className="admin-hint">{monthLabel}</p>
-          </div>
-          <div className="admin-header-actions">
-            <button type="button" className="btn secondary btn-sm" onClick={setPrevMonth} disabled={monthLoading || saving}>
-              ← Month
-            </button>
-            <button type="button" className="btn secondary btn-sm" onClick={setNextMonth} disabled={monthLoading || saving}>
-              Month →
-            </button>
-            <button type="button" className="btn secondary btn-sm" onClick={jumpToToday} disabled={monthLoading || saving}>
-              Today
-            </button>
-          </div>
-        </div>
-        <div className="timesheet-legend">
-          <span><i className="lg fully" /> Fully Booked</span>
-          <span><i className="lg soft" /> Soft Booked</span>
-          <span><i className="lg available" /> Available</span>
-          <span><i className="lg pto" /> PTO</span>
-        </div>
-        {monthLoading ? (
-          <p className="admin-hint">Loading month…</p>
-        ) : (
-          <div className="table-scroll">
-            <table className="resource-matrix">
-              <thead>
-                <tr>
-                  <th className="sticky-col">Employee</th>
-                  {monthDays.map((d) => (
-                    <th key={toYmd(d)}>{d.getDate()}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {monthRows.length === 0 ? (
-                  <tr>
-                    <td className="sticky-col">No employees</td>
-                    {monthDays.map((d) => (
-                      <td key={toYmd(d)} className="status-empty">—</td>
-                    ))}
-                  </tr>
-                ) : (
-                  monthRows.map((row) => (
-                    <tr key={row.userId}>
-                      <td className="sticky-col" title={`${row.email} (${row.role})`}>
-                        {row.email}
-                      </td>
-                      {row.days.map((day) => (
-                        <td
-                          key={day.date}
-                          className={`status-${day.status}`}
-                          title={`${row.email} · ${day.date} · ${day.status} · ${day.hours.toFixed(2)}h`}
-                          onClick={() => setWeekStart(toYmd(startOfWeekMonday(new Date(day.date))))}
-                        >
-                          {day.hours > 0 ? day.hours.toFixed(0) : ''}
-                        </td>
-                      ))}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      <div className="card admin-card">
-        <div className="admin-table-head">
-          <div>
-            <h2 className="admin-h2">Weekly Editor</h2>
+            <h2 className="admin-h2">Weekly entry</h2>
             <p className="admin-hint">
               Monday–Sunday · {weekStart} → {toYmd(weekEndDate)}
             </p>
           </div>
           <div className="admin-header-actions">
             <button type="button" className="btn secondary btn-sm" onClick={setPrevWeek} disabled={loading || saving}>
-              ← Prev
+              ← Prev week
+            </button>
+            <button type="button" className="btn secondary btn-sm" onClick={jumpToThisWeek} disabled={loading || saving}>
+              This week
             </button>
             <button type="button" className="btn secondary btn-sm" onClick={setNextWeek} disabled={loading || saving}>
-              Next →
+              Next week →
             </button>
             <button type="button" className="btn secondary btn-sm" onClick={() => void refresh()} disabled={loading || saving}>
               Refresh
@@ -402,7 +335,7 @@ export default function TimesheetWeek({
                   {lines.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="admin-hint">
-                        No lines yet for this week. Use Add line below, or pick a week from the calendar above.
+                        No lines yet for this week. Use Add line below, or open a week from the resource tracker.
                       </td>
                     </tr>
                   ) : null}
@@ -418,111 +351,111 @@ export default function TimesheetWeek({
                         (p) => p.clientName === r.client && p.name === r.project && p.isActive,
                       )
                     return (
-                    <tr key={idx}>
-                      <td>
-                        <input
-                          className="table-input"
-                          type="date"
-                          value={r.workDate}
-                          min={weekStart}
-                          max={toYmd(weekEndDate)}
-                          onChange={(e) => updateRow(idx, { workDate: e.target.value })}
-                          aria-label="Work date"
-                        />
-                      </td>
-                      <td>
-                        {catalogClients.length > 0 && !clientOrphan ? (
-                          <select
-                            className="table-input"
-                            value={r.client}
-                            onChange={(e) => updateRow(idx, { client: e.target.value, project: '' })}
-                            aria-label="Client"
-                          >
-                            <option value="">— Client —</option>
-                            {catalogClients
-                              .filter((c) => c.isActive)
-                              .map((c) => (
-                                <option key={c.id} value={c.name}>
-                                  {c.name}
-                                </option>
-                              ))}
-                          </select>
-                        ) : (
+                      <tr key={idx}>
+                        <td>
                           <input
                             className="table-input"
-                            value={r.client}
-                            onChange={(e) => updateRow(idx, { client: e.target.value })}
-                            aria-label="Client"
+                            type="date"
+                            value={r.workDate}
+                            min={weekStart}
+                            max={toYmd(weekEndDate)}
+                            onChange={(e) => updateRow(idx, { workDate: e.target.value })}
+                            aria-label="Work date"
                           />
-                        )}
-                      </td>
-                      <td>
-                        {catalogClients.length > 0 && !projectOrphan ? (
-                          <select
-                            className="table-input"
-                            value={r.project}
-                            onChange={(e) => updateRow(idx, { project: e.target.value })}
-                            aria-label="Project"
-                            disabled={!r.client.trim()}
-                          >
-                            <option value="">— Project —</option>
-                            {catalogProjects
-                              .filter((p) => p.clientName === r.client && p.isActive)
-                              .map((p) => (
-                                <option key={p.id} value={p.name}>
-                                  {p.name}
-                                </option>
-                              ))}
-                          </select>
-                        ) : (
+                        </td>
+                        <td>
+                          {catalogClients.length > 0 && !clientOrphan ? (
+                            <select
+                              className="table-input"
+                              value={r.client}
+                              onChange={(e) => updateRow(idx, { client: e.target.value, project: '' })}
+                              aria-label="Client"
+                            >
+                              <option value="">— Client —</option>
+                              {catalogClients
+                                .filter((c) => c.isActive)
+                                .map((c) => (
+                                  <option key={c.id} value={c.name}>
+                                    {c.name}
+                                  </option>
+                                ))}
+                            </select>
+                          ) : (
+                            <input
+                              className="table-input"
+                              value={r.client}
+                              onChange={(e) => updateRow(idx, { client: e.target.value })}
+                              aria-label="Client"
+                            />
+                          )}
+                        </td>
+                        <td>
+                          {catalogClients.length > 0 && !projectOrphan ? (
+                            <select
+                              className="table-input"
+                              value={r.project}
+                              onChange={(e) => updateRow(idx, { project: e.target.value })}
+                              aria-label="Project"
+                              disabled={!r.client.trim()}
+                            >
+                              <option value="">— Project —</option>
+                              {catalogProjects
+                                .filter((p) => p.clientName === r.client && p.isActive)
+                                .map((p) => (
+                                  <option key={p.id} value={p.name}>
+                                    {p.name}
+                                  </option>
+                                ))}
+                            </select>
+                          ) : (
+                            <input
+                              className="table-input"
+                              value={r.project}
+                              onChange={(e) => updateRow(idx, { project: e.target.value })}
+                              aria-label="Project"
+                            />
+                          )}
+                        </td>
+                        <td>
                           <input
                             className="table-input"
-                            value={r.project}
-                            onChange={(e) => updateRow(idx, { project: e.target.value })}
-                            aria-label="Project"
+                            value={r.task}
+                            onChange={(e) => updateRow(idx, { task: e.target.value })}
+                            aria-label="Task"
                           />
-                        )}
-                      </td>
-                      <td>
-                        <input
-                          className="table-input"
-                          value={r.task}
-                          onChange={(e) => updateRow(idx, { task: e.target.value })}
-                          aria-label="Task"
-                        />
-                      </td>
-                      <td>
-                        <input
-                          className="table-input"
-                          inputMode="decimal"
-                          value={r.hours}
-                          onChange={(e) => updateRow(idx, { hours: e.target.value })}
-                          aria-label="Hours"
-                          placeholder="e.g. 1.25"
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="checkbox"
-                          checked={r.isBillable}
-                          onChange={(e) => updateRow(idx, { isBillable: e.target.checked })}
-                          aria-label="Billable"
-                        />
-                      </td>
-                      <td>
-                        <input
-                          className="table-input"
-                          value={r.notes}
-                          onChange={(e) => updateRow(idx, { notes: e.target.value })}
-                          aria-label="Notes"
-                        />
-                      </td>
-                      <td className="admin-actions">
-                        <button type="button" className="btn secondary btn-sm" onClick={() => removeRow(idx)} disabled={saving}>
-                          Remove
-                        </button>
-                      </td>
-                    </tr>
+                        </td>
+                        <td>
+                          <input
+                            className="table-input"
+                            inputMode="decimal"
+                            value={r.hours}
+                            onChange={(e) => updateRow(idx, { hours: e.target.value })}
+                            aria-label="Hours"
+                            placeholder="e.g. 1.25"
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={r.isBillable}
+                            onChange={(e) => updateRow(idx, { isBillable: e.target.checked })}
+                            aria-label="Billable"
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className="table-input"
+                            value={r.notes}
+                            onChange={(e) => updateRow(idx, { notes: e.target.value })}
+                            aria-label="Notes"
+                          />
+                        </td>
+                        <td className="admin-actions">
+                          <button type="button" className="btn secondary btn-sm" onClick={() => removeRow(idx)} disabled={saving}>
+                            Remove
+                          </button>
+                        </td>
+                      </tr>
                     )
                   })}
                 </tbody>
@@ -551,4 +484,3 @@ export default function TimesheetWeek({
     </div>
   )
 }
-

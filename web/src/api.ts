@@ -14,20 +14,43 @@ async function parseJsonResponse(res: Response, parseErrorMessage: string): Prom
   }
 }
 
+/** Parses AuthErrorResponse, ProblemDetails, or similar JSON from the API. */
+function messageFromApiJson(data: unknown, status: number, fallback: string): string {
+  if (!data || typeof data !== 'object') return `${fallback} (HTTP ${status})`
+  const r = data as Record<string, unknown>
+  if (typeof r.message === 'string' && r.message.trim()) return r.message
+  if (typeof r.title === 'string' && r.title.trim()) return r.title
+  const errs = r.errors
+  if (errs && typeof errs === 'object' && errs !== null) {
+    for (const v of Object.values(errs)) {
+      if (Array.isArray(v)) {
+        const first = v.find((x) => typeof x === 'string')
+        if (typeof first === 'string' && first.trim()) return first
+      }
+    }
+  }
+  return `${fallback} (HTTP ${status})`
+}
+
 export async function readApiErrorMessage(res: Response, fallback: string): Promise<string> {
   try {
     const text = await res.text()
-    if (!text.trim()) return fallback
-    const data = JSON.parse(text) as { message?: unknown }
-    return typeof data.message === 'string' ? data.message : fallback
+    if (!text.trim()) return `${fallback} (HTTP ${res.status})`
+    try {
+      const data = JSON.parse(text) as unknown
+      return messageFromApiJson(data, res.status, fallback)
+    } catch {
+      return `${fallback} (HTTP ${res.status})`
+    }
   } catch {
-    return fallback
+    return `${fallback} (HTTP ${res.status})`
   }
 }
 
 export type MeProfile = {
   id: string
   email: string
+  displayName: string
   role: string
   isActive: boolean
 }
@@ -35,9 +58,15 @@ export type MeProfile = {
 export type UserRow = {
   id: string
   email: string
+  displayName: string
   role: string
   isActive: boolean
   managerUserId: string | null
+}
+
+function emailLocalPart(email: string) {
+  const i = email.indexOf('@')
+  return i > 0 ? email.slice(0, i) : email
 }
 
 export async function login(email: string, password: string) {
@@ -46,15 +75,19 @@ export async function login(email: string, password: string) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
   })
-  const data = (await parseJsonResponse(res, 'Sign-in failed')) as
-    | { accessToken: string; tokenType: string; expiresInSeconds: number }
-    | { message: string }
-  if (!res.ok) {
-    const msg = 'message' in data && typeof data.message === 'string' ? data.message : 'Sign-in failed'
-    throw new Error(msg)
+  const text = await res.text()
+  let data: unknown
+  try {
+    data = text.trim() ? JSON.parse(text) : null
+  } catch {
+    throw new Error(`Sign-in failed — API returned non-JSON (HTTP ${res.status}). Is ${base} the running API?`)
   }
-  if (!('accessToken' in data) || typeof data.accessToken !== 'string') throw new Error('Sign-in failed')
-  return data
+  if (!res.ok) {
+    throw new Error(messageFromApiJson(data, res.status, 'Sign-in failed'))
+  }
+  const ok = data as Record<string, unknown>
+  if (typeof ok.accessToken !== 'string') throw new Error('Sign-in failed — missing token in response.')
+  return ok as { accessToken: string; tokenType: string; expiresInSeconds: number }
 }
 
 export async function me(token: string): Promise<MeProfile> {
@@ -70,9 +103,14 @@ export async function me(token: string): Promise<MeProfile> {
     typeof data.isActive !== 'boolean'
   )
     throw new Error('Session invalid')
+  const displayName =
+    typeof data.displayName === 'string' && data.displayName.trim().length > 0
+      ? data.displayName.trim()
+      : emailLocalPart(data.email)
   return {
     id: data.id,
     email: data.email,
+    displayName,
     role: data.role,
     isActive: data.isActive,
   }
@@ -85,34 +123,41 @@ function authHeaders(token: string) {
   } as const
 }
 
+function parseUserRow(r: Record<string, unknown>): UserRow {
+  if (
+    typeof r.id !== 'string' ||
+    typeof r.email !== 'string' ||
+    typeof r.role !== 'string' ||
+    typeof r.isActive !== 'boolean'
+  )
+    throw new Error('Could not load users')
+  const displayName =
+    typeof r.displayName === 'string' && r.displayName.trim().length > 0
+      ? r.displayName.trim()
+      : emailLocalPart(r.email)
+  const mid = r.managerUserId
+  const managerUserId =
+    typeof mid === 'string' ? mid : mid === null || typeof mid === 'undefined' ? null : String(mid)
+  return { id: r.id, email: r.email, displayName, role: r.role, isActive: r.isActive, managerUserId }
+}
+
 export async function listUsers(token: string): Promise<UserRow[]> {
   const res = await fetch(`${base}/api/users`, { headers: { Authorization: `Bearer ${token}` } })
   if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load users'))
   const data = (await res.json()) as unknown
   if (!Array.isArray(data)) throw new Error('Could not load users')
-  return data.map((row) => {
-    const r = row as Record<string, unknown>
-    if (
-      typeof r.id !== 'string' ||
-      typeof r.email !== 'string' ||
-      typeof r.role !== 'string' ||
-      typeof r.isActive !== 'boolean'
-    )
-      throw new Error('Could not load users')
-    const mid = r.managerUserId
-    const managerUserId =
-      typeof mid === 'string' ? mid : mid === null || typeof mid === 'undefined' ? null : String(mid)
-    return { id: r.id, email: r.email, role: r.role, isActive: r.isActive, managerUserId }
-  })
+  return data.map((row) => parseUserRow(row as Record<string, unknown>))
 }
 
 export async function createUser(
   token: string,
   email: string,
   password: string,
-  opts?: { managerUserId?: string | null },
+  opts?: { displayName?: string; managerUserId?: string | null },
 ): Promise<UserRow> {
   const body: Record<string, unknown> = { email, password }
+  if (opts?.displayName !== undefined && opts.displayName.trim() !== '')
+    body.displayName = opts.displayName.trim()
   if (opts?.managerUserId !== undefined) body.managerUserId = opts.managerUserId
   const res = await fetch(`${base}/api/users`, {
     method: 'POST',
@@ -121,17 +166,7 @@ export async function createUser(
   })
   if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not create user'))
   const r = (await res.json()) as Record<string, unknown>
-  if (
-    typeof r.id !== 'string' ||
-    typeof r.email !== 'string' ||
-    typeof r.role !== 'string' ||
-    typeof r.isActive !== 'boolean'
-  )
-    throw new Error('Could not create user')
-  const mid = r.managerUserId
-  const managerUserId =
-    typeof mid === 'string' ? mid : mid === null || typeof mid === 'undefined' ? null : String(mid)
-  return { id: r.id, email: r.email, role: r.role, isActive: r.isActive, managerUserId }
+  return parseUserRow(r)
 }
 
 export async function patchUser(
@@ -142,6 +177,7 @@ export async function patchUser(
     password?: string
     isActive?: boolean
     role?: string
+    displayName?: string
     assignManager?: boolean
     managerUserId?: string | null
   },
@@ -153,17 +189,7 @@ export async function patchUser(
   })
   if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not update user'))
   const r = (await res.json()) as Record<string, unknown>
-  if (
-    typeof r.id !== 'string' ||
-    typeof r.email !== 'string' ||
-    typeof r.role !== 'string' ||
-    typeof r.isActive !== 'boolean'
-  )
-    throw new Error('Could not update user')
-  const mid = r.managerUserId
-  const managerUserId =
-    typeof mid === 'string' ? mid : mid === null || typeof mid === 'undefined' ? null : String(mid)
-  return { id: r.id, email: r.email, role: r.role, isActive: r.isActive, managerUserId }
+  return parseUserRow(r)
 }
 
 export type PersonalSummary = {
@@ -472,6 +498,89 @@ export async function rejectExpense(token: string, id: string): Promise<void> {
     headers: { Authorization: `Bearer ${token}` },
   })
   if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not reject expense'))
+}
+
+export async function listFinanceExpenseLedger(token: string): Promise<ExpenseRow[]> {
+  const res = await fetch(`${base}/api/expenses/ledger`, { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load expense register'))
+  const data = (await res.json()) as unknown
+  if (!Array.isArray(data)) throw new Error('Could not load expense register')
+  return data.map(assertExpense)
+}
+
+export type QuoteRow = {
+  id: string
+  clientId: string
+  clientName: string
+  referenceNumber: string
+  title: string
+  scopeSummary: string | null
+  estimatedHours: number
+  hourlyRate: number
+  totalAmount: number
+  status: string
+  validThrough: string | null
+  createdAtUtc: string
+}
+
+function assertQuote(x: unknown): QuoteRow {
+  const r = x as Record<string, unknown>
+  if (
+    typeof r.id !== 'string' ||
+    typeof r.clientId !== 'string' ||
+    typeof r.clientName !== 'string' ||
+    typeof r.referenceNumber !== 'string' ||
+    typeof r.title !== 'string' ||
+    typeof r.estimatedHours !== 'number' ||
+    typeof r.hourlyRate !== 'number' ||
+    typeof r.totalAmount !== 'number' ||
+    typeof r.status !== 'string' ||
+    typeof r.createdAtUtc !== 'string'
+  )
+    throw new Error('Could not load quotes')
+  return {
+    id: r.id,
+    clientId: r.clientId,
+    clientName: r.clientName,
+    referenceNumber: r.referenceNumber,
+    title: r.title,
+    scopeSummary: typeof r.scopeSummary === 'string' ? r.scopeSummary : null,
+    estimatedHours: r.estimatedHours,
+    hourlyRate: r.hourlyRate,
+    totalAmount: r.totalAmount,
+    status: r.status,
+    validThrough: typeof r.validThrough === 'string' ? r.validThrough : null,
+    createdAtUtc: r.createdAtUtc,
+  }
+}
+
+export async function listQuotes(token: string): Promise<QuoteRow[]> {
+  const res = await fetch(`${base}/api/quotes`, { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load quotes'))
+  const data = (await res.json()) as unknown
+  if (!Array.isArray(data)) throw new Error('Could not load quotes')
+  return data.map(assertQuote)
+}
+
+export async function createQuote(
+  token: string,
+  body: {
+    clientId: string
+    title: string
+    scopeSummary?: string
+    estimatedHours: number
+    hourlyRate: number
+    validThrough?: string
+    status?: 'Draft' | 'Sent'
+  },
+): Promise<QuoteRow> {
+  const res = await fetch(`${base}/api/quotes`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not create quote'))
+  return assertQuote(await res.json())
 }
 
 export type TimesheetLine = {

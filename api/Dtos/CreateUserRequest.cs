@@ -12,5 +12,9 @@ public class CreateUserRequest
     [MinLength(8)]
     public required string Password { get; init; }
 
+    /// <summary>Optional; defaults to the email local-part when omitted or whitespace.</summary>
+    [MaxLength(80)]
+    public string? DisplayName { get; init; }
+
     public Guid? ManagerUserId { get; init; }
 }

@@ -14,8 +14,9 @@ namespace C2E.Api.Data.Migrations
             migrationBuilder.AddColumn<Guid>(
                 name: "ManagerUserId",
                 table: "Users",
-                type: "uuid",
-                nullable: true);
+                type: "char(36)",
+                nullable: true,
+                collation: "ascii_general_ci");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Users_ManagerUserId",

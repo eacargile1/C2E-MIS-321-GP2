@@ -4,8 +4,10 @@ import { getTimesheetWeek, listClients, listProjects, login, me, type MeProfile 
 import AdminUsers from './pages/AdminUsers'
 import ClientsPage from './pages/Clients'
 import ExpensesPage from './pages/Expenses'
+import FinancePage from './pages/Finance'
 import ProjectsPage from './pages/Projects'
 import ReportsPage from './pages/Reports'
+import ResourceTracker from './pages/ResourceTracker'
 import TimesheetWeek from './pages/TimesheetWeek'
 import './App.css'
 
@@ -27,6 +29,7 @@ function weekStartMonday(d: Date) {
 
 function HomeDashboard({ session }: { session: Session }) {
   const isAdmin = session.profile.role === 'Admin'
+  const isFinanceHub = session.profile.role === 'Admin' || session.profile.role === 'Finance'
   const [kpis, setKpis] = useState({
     activeClients: 0,
     activeProjects: 0,
@@ -66,7 +69,7 @@ function HomeDashboard({ session }: { session: Session }) {
       <section className="card admin-card">
         <h1 className="title admin-title">Home Dashboard</h1>
         <p className="subtitle admin-sub">
-          Welcome back, {session.profile.email} ({session.profile.role})
+          Welcome back, {session.profile.displayName} ({session.profile.role})
         </p>
         <p className="admin-hint" style={{ marginBottom: 0 }}>
           Use top navigation for full modules, and use quick actions below for the most common day-to-day tasks.
@@ -93,8 +96,12 @@ function HomeDashboard({ session }: { session: Session }) {
           <h2 className="admin-h2">Quick Actions</h2>
           <div className="quick-action-grid">
             <NavLink to="/timesheet" className="quick-action-tile qa-timesheet">
-              <span className="quick-action-title">Add Timesheet Line</span>
-              <span className="quick-action-sub">Log today&apos;s work quickly</span>
+              <span className="quick-action-title">Timesheet</span>
+              <span className="quick-action-sub">Log hours by client, project, and task</span>
+            </NavLink>
+            <NavLink to="/resource-tracker" className="quick-action-tile qa-projects">
+              <span className="quick-action-title">Resource tracker</span>
+              <span className="quick-action-sub">Org month view from logged hours</span>
             </NavLink>
             <NavLink to="/expenses" className="quick-action-tile qa-projects">
               <span className="quick-action-title">Track Expense</span>
@@ -108,6 +115,12 @@ function HomeDashboard({ session }: { session: Session }) {
               <span className="quick-action-title">Create Project</span>
               <span className="quick-action-sub">Start a new engagement</span>
             </NavLink>
+            {isFinanceHub ? (
+              <NavLink to="/finance" className="quick-action-tile qa-clients">
+                <span className="quick-action-title">Finance hub</span>
+                <span className="quick-action-sub">Register, quotes, pipeline</span>
+              </NavLink>
+            ) : null}
             {isAdmin ? (
               <NavLink to="/admin/users" className="quick-action-tile qa-users">
                 <span className="quick-action-title">Add User</span>
@@ -124,6 +137,9 @@ function HomeDashboard({ session }: { session: Session }) {
               <NavLink to="/timesheet">Timesheet</NavLink>
             </li>
             <li>
+              <NavLink to="/resource-tracker">Resource tracker</NavLink>
+            </li>
+            <li>
               <NavLink to="/expenses">Expenses</NavLink>
             </li>
             <li>
@@ -135,6 +151,11 @@ function HomeDashboard({ session }: { session: Session }) {
             <li>
               <NavLink to="/reports">My Reports</NavLink>
             </li>
+            {isFinanceHub ? (
+              <li>
+                <NavLink to="/finance">Finance</NavLink>
+              </li>
+            ) : null}
             {isAdmin ? (
               <li>
                 <NavLink to="/admin/users">User Management</NavLink>
@@ -148,11 +169,12 @@ function HomeDashboard({ session }: { session: Session }) {
         <h2 className="admin-h2">Current Delivery Scope</h2>
         <ul className="dashboard-list">
           <li>Authentication and role-based access controls</li>
-          <li>Timesheet weekly entry workflow</li>
+          <li>Timesheet weekly entry and org resource tracker (split views)</li>
           <li>Client management directory</li>
           <li>Project management directory with filters and edits</li>
           <li>Personal reports (time + expense totals by month)</li>
           {isAdmin ? <li>User administration and role assignment</li> : null}
+          {isFinanceHub ? <li>Finance register and client quoting</li> : null}
         </ul>
       </section>
     </div>
@@ -228,6 +250,7 @@ function AuthenticatedLayout({
 }) {
   if (!session) return <Navigate to="/login" replace />
   const isAdmin = session.profile.role === 'Admin'
+  const isFinanceHub = session.profile.role === 'Admin' || session.profile.role === 'Finance'
   const [density, setDensity] = useState<'comfortable' | 'compact'>(() => {
     return localStorage.getItem('c2e-density') === 'compact' ? 'compact' : 'comfortable'
   })
@@ -249,7 +272,10 @@ function AuthenticatedLayout({
             Home
           </NavLink>
           <NavLink to="/timesheet" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
-            Resource Tracker
+            Timesheet
+          </NavLink>
+          <NavLink to="/resource-tracker" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
+            Resource tracker
           </NavLink>
           <NavLink to="/expenses" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
             Expenses
@@ -263,6 +289,11 @@ function AuthenticatedLayout({
           <NavLink to="/reports" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
             Reports
           </NavLink>
+          {isFinanceHub ? (
+            <NavLink to="/finance" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
+              Finance
+            </NavLink>
+          ) : null}
           {isAdmin ? (
             <NavLink to="/admin/users" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
               User Management
@@ -273,7 +304,7 @@ function AuthenticatedLayout({
           <button type="button" className="btn secondary btn-sm" onClick={toggleDensity}>
             {density === 'comfortable' ? 'Compact view' : 'Comfortable view'}
           </button>
-          <span>{session.profile.email}</span>
+          <span>{session.profile.displayName}</span>
           <button type="button" className="btn secondary btn-sm" onClick={onSignOut}>
             Sign out
           </button>
@@ -297,6 +328,11 @@ function TimesheetRoute({ session }: { session: Session | null }) {
   return <TimesheetWeek token={session.token} profile={session.profile} />
 }
 
+function ResourceTrackerRoute({ session }: { session: Session | null }) {
+  if (!session) return <Navigate to="/login" replace />
+  return <ResourceTracker token={session.token} profile={session.profile} />
+}
+
 function ClientsRoute({ session }: { session: Session | null }) {
   if (!session) return <Navigate to="/login" replace />
   return <ClientsPage token={session.token} profile={session.profile} />
@@ -317,6 +353,12 @@ function ReportsRoute({ session }: { session: Session | null }) {
   return <ReportsPage token={session.token} profile={session.profile} />
 }
 
+function FinanceRoute({ session }: { session: Session | null }) {
+  if (!session) return <Navigate to="/login" replace />
+  if (session.profile.role !== 'Admin' && session.profile.role !== 'Finance') return <Navigate to="/" replace />
+  return <FinancePage token={session.token} profile={session.profile} />
+}
+
 function AppRoutes() {
   const [session, setSession] = useState<Session | null>(null)
   const signOut = useCallback(() => setSession(null), [])
@@ -327,10 +369,12 @@ function AppRoutes() {
         <Route path="/" element={session ? <HomeDashboard session={session} /> : <Navigate to="/login" replace />} />
         <Route path="/admin/users" element={<AdminUsersRoute session={session} onSignOut={signOut} />} />
         <Route path="/timesheet" element={<TimesheetRoute session={session} />} />
+        <Route path="/resource-tracker" element={<ResourceTrackerRoute session={session} />} />
         <Route path="/expenses" element={<ExpensesRoute session={session} />} />
         <Route path="/clients" element={<ClientsRoute session={session} />} />
         <Route path="/projects" element={<ProjectsRoute session={session} />} />
         <Route path="/reports" element={<ReportsRoute session={session} />} />
+        <Route path="/finance" element={<FinanceRoute session={session} />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

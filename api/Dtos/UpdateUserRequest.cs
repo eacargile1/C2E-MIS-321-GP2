@@ -14,6 +14,9 @@ public class UpdateUserRequest
 
     public string? Role { get; init; }
 
+    [MaxLength(80)]
+    public string? DisplayName { get; init; }
+
     /// <summary>When true, <see cref="ManagerUserId"/> is applied (including null to clear). When false/null, manager is unchanged.</summary>
     public bool? AssignManager { get; init; }
 

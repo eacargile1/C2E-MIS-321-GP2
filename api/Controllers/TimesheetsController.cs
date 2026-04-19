@@ -37,7 +37,7 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
 
         var lines = await db.TimesheetLines
             .AsNoTracking()
-            .Where(l => l.WorkDate >= start && l.WorkDate < end)
+            .Where(l => !l.IsDeleted && l.WorkDate >= start && l.WorkDate < end)
             .GroupBy(l => new { l.UserId, l.WorkDate })
             .Select(g => new { g.Key.UserId, g.Key.WorkDate, Hours = g.Sum(x => x.Hours) })
             .ToListAsync(ct);
@@ -146,7 +146,6 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
 
     /// <summary>
     /// User-scoped week endpoint to support 403/404 semantics for non-owners (AC4/DoD).
-    /// Upsert-only (no implicit deletes when a line is omitted).
     /// </summary>
     [HttpPut("users/{userId:guid}/week")]
     [Authorize]
@@ -201,7 +200,7 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
     private async Task<List<TimesheetLineResponse>> GetWeekForUser(Guid userId, DateOnly start, DateOnly end, CancellationToken ct) =>
         await db.TimesheetLines
             .AsNoTracking()
-            .Where(l => l.UserId == userId && l.WorkDate >= start && l.WorkDate < end)
+            .Where(l => !l.IsDeleted && l.UserId == userId && l.WorkDate >= start && l.WorkDate < end)
             .OrderBy(l => l.WorkDate)
             .ThenBy(l => l.Client)
             .ThenBy(l => l.Project)
@@ -264,7 +263,7 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
         }
 
         var existing = await db.TimesheetLines
-            .Where(l => l.UserId == userId && l.WorkDate >= start && l.WorkDate < end)
+            .Where(l => !l.IsDeleted && l.UserId == userId && l.WorkDate >= start && l.WorkDate < end)
             .ToListAsync(ct);
 
         var byKey = existing.ToDictionary(
@@ -303,6 +302,16 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
                     UpdatedAtUtc = now,
                 });
             }
+        }
+
+        foreach (var existingRow in existing)
+        {
+            var key = (existingRow.WorkDate, existingRow.Client, existingRow.Project, existingRow.Task);
+            if (incomingKeys.Contains(key)) continue;
+
+            existingRow.IsDeleted = true;
+            existingRow.DeletedAtUtc = now;
+            existingRow.UpdatedAtUtc = now;
         }
 
         try
