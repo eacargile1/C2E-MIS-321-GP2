@@ -45,7 +45,8 @@ export default function ResourceTracker({
   profile: MeProfile
 }) {
   const nav = useNavigate()
-  const canPlan = profile.role === 'Admin' || profile.role === 'Manager'
+  const canPlan =
+    profile.role === 'Admin' || profile.role === 'Manager' || profile.role === 'Partner'
 
   const [monthAnchor, setMonthAnchor] = useState(() => startOfMonth(new Date()))
   const [monthRows, setMonthRows] = useState<ResourceTrackerEmployeeRow[]>([])
@@ -115,8 +116,8 @@ export default function ResourceTracker({
         </p>
         {canPlan ? (
           <p className="admin-hint" style={{ marginTop: 8 }}>
-            <strong>Forecasting / plan edits</strong> for managers will attach here once staffing and plan data are
-            modeled in the API; today the grid stays read-only for every role.
+            <strong>Forecasting / plan edits</strong> for partners and managers will attach here once staffing and plan
+            data are modeled in the API; today the grid stays read-only for every role.
           </p>
         ) : null}
       </div>

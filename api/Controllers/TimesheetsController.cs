@@ -74,6 +74,166 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>IC weekly submission status for billable-hour sign-off (None until submitted).</summary>
+    [HttpGet("week/status")]
+    [Authorize]
+    public async Task<ActionResult<TimesheetWeekStatusResponse>> GetWeekStatus(
+        [FromQuery] string weekStart,
+        CancellationToken ct)
+    {
+        if (!TryParseDateOnly(weekStart, out var start))
+            return BadRequest(new AuthErrorResponse { Message = "Invalid weekStart. Use YYYY-MM-DD." });
+        if (start.DayOfWeek != DayOfWeek.Monday)
+            return BadRequest(new AuthErrorResponse { Message = "weekStart must be a Monday." });
+        if (!TryGetUserId(out var userId)) return Unauthorized();
+
+        var weekEnd = start.AddDays(7);
+        var (total, billable) = await SumWeekHoursAsync(userId, start, weekEnd, ct);
+        var appr = await db.TimesheetWeekApprovals.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.UserId == userId && x.WeekStartMonday == start, ct);
+        var status = appr is null ? "None" : appr.Status.ToString();
+        return Ok(new TimesheetWeekStatusResponse
+        {
+            WeekStart = start.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            Status = status,
+            TotalHours = total,
+            BillableHours = billable,
+            SubmittedAtUtc = appr?.SubmittedAtUtc,
+            ReviewedAtUtc = appr?.ReviewedAtUtc,
+        });
+    }
+
+    /// <summary>IC submits the current week for manager approval (billable hours).</summary>
+    [HttpPost("week/submit")]
+    [Authorize]
+    public async Task<IActionResult> SubmitWeekForApproval([FromQuery] string weekStart, CancellationToken ct)
+    {
+        if (!TryParseDateOnly(weekStart, out var start))
+            return BadRequest(new AuthErrorResponse { Message = "Invalid weekStart. Use YYYY-MM-DD." });
+        if (start.DayOfWeek != DayOfWeek.Monday)
+            return BadRequest(new AuthErrorResponse { Message = "weekStart must be a Monday." });
+        if (!TryGetUserId(out var userId)) return Unauthorized();
+
+        var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (user is null) return Unauthorized();
+        if (user.Role != AppRole.IC)
+            return BadRequest(new AuthErrorResponse { Message = "Only IC accounts submit weekly timesheets for approval." });
+
+        var existing = await db.TimesheetWeekApprovals.FirstOrDefaultAsync(x => x.UserId == userId && x.WeekStartMonday == start, ct);
+        if (existing is { Status: TimesheetWeekApprovalStatus.Pending })
+            return BadRequest(new AuthErrorResponse { Message = "This week is already pending approval." });
+        if (existing is { Status: TimesheetWeekApprovalStatus.Approved })
+            return BadRequest(new AuthErrorResponse { Message = "This week is already approved." });
+
+        if (existing is not null)
+            db.TimesheetWeekApprovals.Remove(existing);
+
+        var now = DateTime.UtcNow;
+        db.TimesheetWeekApprovals.Add(new TimesheetWeekApproval
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            WeekStartMonday = start,
+            Status = TimesheetWeekApprovalStatus.Pending,
+            SubmittedAtUtc = now,
+        });
+        await db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    /// <summary>Pending IC week submissions for manager/admin review.</summary>
+    [HttpGet("approvals/pending-weeks")]
+    [Authorize(Roles = RbacRoleSets.AdminAndManager)]
+    public async Task<ActionResult<IReadOnlyList<PendingTimesheetWeekResponse>>> ListPendingTimesheetWeeks(CancellationToken ct)
+    {
+        if (!TryGetUserId(out var reviewerId)) return Unauthorized();
+
+        var q = db.TimesheetWeekApprovals.AsNoTracking()
+            .Where(a => a.Status == TimesheetWeekApprovalStatus.Pending);
+        if (User.IsInRole(nameof(AppRole.Manager)) && !User.IsInRole(nameof(AppRole.Admin)))
+            q = q.Where(a => db.Users.Any(u => u.Id == a.UserId && u.ManagerUserId == reviewerId));
+
+        var rows = await q.Join(db.Users.AsNoTracking(), a => a.UserId, u => u.Id, (a, u) => new { a, u.Email })
+            .OrderBy(x => x.a.SubmittedAtUtc)
+            .ToListAsync(ct);
+
+        var result = new List<PendingTimesheetWeekResponse>(rows.Count);
+        foreach (var x in rows)
+        {
+            var weekEnd = x.a.WeekStartMonday.AddDays(7);
+            var (total, billable) = await SumWeekHoursAsync(x.a.UserId, x.a.WeekStartMonday, weekEnd, ct);
+            result.Add(new PendingTimesheetWeekResponse
+            {
+                UserId = x.a.UserId,
+                UserEmail = x.Email,
+                WeekStart = x.a.WeekStartMonday.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                TotalHours = total,
+                BillableHours = billable,
+                SubmittedAtUtc = x.a.SubmittedAtUtc,
+            });
+        }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Full timesheet lines for an IC week that is <see cref="TimesheetWeekApprovalStatus.Pending"/> (manager = direct report only).
+    /// </summary>
+    [HttpGet("approvals/week/{userId:guid}/pending-review")]
+    [Authorize(Roles = RbacRoleSets.AdminAndManager)]
+    public async Task<ActionResult<TimesheetPendingWeekReviewResponse>> GetPendingWeekForReview(
+        [FromRoute] Guid userId,
+        [FromQuery] string weekStart,
+        CancellationToken ct)
+    {
+        if (!TryParseDateOnly(weekStart, out var start))
+            return BadRequest(new AuthErrorResponse { Message = "Invalid weekStart. Use YYYY-MM-DD." });
+        if (start.DayOfWeek != DayOfWeek.Monday)
+            return BadRequest(new AuthErrorResponse { Message = "weekStart must be a Monday." });
+        if (!TryGetUserId(out var reviewerId)) return Unauthorized();
+
+        var target = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (target is null) return NotFound();
+        if (target.Role != AppRole.IC)
+            return BadRequest(new AuthErrorResponse { Message = "Only IC timesheets use weekly approval." });
+
+        if (User.IsInRole(nameof(AppRole.Manager)) && !User.IsInRole(nameof(AppRole.Admin)))
+        {
+            if (target.ManagerUserId != reviewerId)
+                return Forbid();
+        }
+
+        var approval = await db.TimesheetWeekApprovals.AsNoTracking()
+            .FirstOrDefaultAsync(
+                x => x.UserId == userId && x.WeekStartMonday == start && x.Status == TimesheetWeekApprovalStatus.Pending,
+                ct);
+        if (approval is null)
+            return NotFound(new AuthErrorResponse { Message = "No pending submission for that week." });
+
+        var end = start.AddDays(7);
+        var lines = await GetWeekForUser(userId, start, end, ct);
+        var budgetBars = await BuildProjectBudgetBarsAsync(lines, ct);
+        return Ok(new TimesheetPendingWeekReviewResponse
+        {
+            UserId = userId,
+            UserEmail = target.Email,
+            WeekStart = start.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            SubmittedAtUtc = approval.SubmittedAtUtc,
+            Lines = lines,
+            ProjectBudgetBars = budgetBars,
+        });
+    }
+
+    [HttpPost("approvals/week/{userId:guid}/approve")]
+    [Authorize(Roles = RbacRoleSets.AdminAndManager)]
+    public Task<IActionResult> ApproveTimesheetWeek([FromRoute] Guid userId, [FromQuery] string weekStart, CancellationToken ct) =>
+        ReviewTimesheetWeekAsync(userId, weekStart, TimesheetWeekApprovalStatus.Approved, ct);
+
+    [HttpPost("approvals/week/{userId:guid}/reject")]
+    [Authorize(Roles = RbacRoleSets.AdminAndManager)]
+    public Task<IActionResult> RejectTimesheetWeek([FromRoute] Guid userId, [FromQuery] string weekStart, CancellationToken ct) =>
+        ReviewTimesheetWeekAsync(userId, weekStart, TimesheetWeekApprovalStatus.Rejected, ct);
+
     /// <summary>Employee weekly timesheet lines (FR5). Week is Monday–Sunday (7 days starting at weekStart).</summary>
     [HttpGet("week")]
     [Authorize]
@@ -111,9 +271,16 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
         var end = start.AddDays(7);
         if (!TryGetUserId(out var userId)) return Unauthorized();
 
+        if (!await EnsureIcTimesheetEditableAsync(userId, start, ct))
+            return BadRequest(new AuthErrorResponse
+            {
+                Message = "This week is pending manager approval and cannot be edited until it is approved or rejected.",
+            });
+
         try
         {
             await UpsertWeekForUser(userId, start, end, body, ct);
+            await ClearIcWeekApprovalAfterSuccessfulEditAsync(userId, start, ct);
             return NoContent();
         }
         catch (InvalidOperationException ex)
@@ -167,15 +334,89 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
             return BadRequest(new AuthErrorResponse { Message = "weekStart must be a Monday." });
 
         var end = start.AddDays(7);
+        if (!await EnsureIcTimesheetEditableAsync(userId, start, ct))
+            return BadRequest(new AuthErrorResponse
+            {
+                Message = "This week is pending manager approval and cannot be edited until it is approved or rejected.",
+            });
+
         try
         {
             await UpsertWeekForUser(userId, start, end, body, ct);
+            await ClearIcWeekApprovalAfterSuccessfulEditAsync(userId, start, ct);
             return NoContent();
         }
         catch (InvalidOperationException ex)
         {
             return BadRequest(new AuthErrorResponse { Message = ex.Message });
         }
+    }
+
+    private async Task<IActionResult> ReviewTimesheetWeekAsync(
+        Guid targetUserId,
+        string weekStart,
+        TimesheetWeekApprovalStatus nextStatus,
+        CancellationToken ct)
+    {
+        if (!TryParseDateOnly(weekStart, out var start))
+            return BadRequest(new AuthErrorResponse { Message = "Invalid weekStart. Use YYYY-MM-DD." });
+        if (start.DayOfWeek != DayOfWeek.Monday)
+            return BadRequest(new AuthErrorResponse { Message = "weekStart must be a Monday." });
+        if (!TryGetUserId(out var reviewerId)) return Unauthorized();
+
+        var row = await db.TimesheetWeekApprovals.FirstOrDefaultAsync(
+            x => x.UserId == targetUserId && x.WeekStartMonday == start && x.Status == TimesheetWeekApprovalStatus.Pending,
+            ct);
+        if (row is null) return NotFound();
+
+        if (User.IsInRole(nameof(AppRole.Manager)) && !User.IsInRole(nameof(AppRole.Admin)))
+        {
+            var sub = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == targetUserId, ct);
+            if (sub?.ManagerUserId != reviewerId)
+                return Forbid();
+        }
+
+        row.Status = nextStatus;
+        row.ReviewedByUserId = reviewerId;
+        row.ReviewedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    private async Task<(decimal total, decimal billable)> SumWeekHoursAsync(
+        Guid userId,
+        DateOnly start,
+        DateOnly endExclusive,
+        CancellationToken ct)
+    {
+        var lines = await db.TimesheetLines.AsNoTracking()
+            .Where(l => !l.IsDeleted && l.UserId == userId && l.WorkDate >= start && l.WorkDate < endExclusive)
+            .Select(l => new { l.Hours, l.IsBillable })
+            .ToListAsync(ct);
+        var total = lines.Sum(x => x.Hours);
+        var billable = lines.Where(x => x.IsBillable).Sum(x => x.Hours);
+        return (total, billable);
+    }
+
+    private async Task<bool> EnsureIcTimesheetEditableAsync(Guid userId, DateOnly weekStart, CancellationToken ct)
+    {
+        var isIc = await db.Users.AsNoTracking().AnyAsync(u => u.Id == userId && u.Role == AppRole.IC, ct);
+        if (!isIc) return true;
+        return !await db.TimesheetWeekApprovals.AnyAsync(
+            x => x.UserId == userId && x.WeekStartMonday == weekStart && x.Status == TimesheetWeekApprovalStatus.Pending,
+            ct);
+    }
+
+    private async Task ClearIcWeekApprovalAfterSuccessfulEditAsync(Guid userId, DateOnly weekStart, CancellationToken ct)
+    {
+        var isIc = await db.Users.AsNoTracking().AnyAsync(u => u.Id == userId && u.Role == AppRole.IC, ct);
+        if (!isIc) return;
+        var rows = await db.TimesheetWeekApprovals
+            .Where(x => x.UserId == userId && x.WeekStartMonday == weekStart && x.Status != TimesheetWeekApprovalStatus.Pending)
+            .ToListAsync(ct);
+        if (rows.Count == 0) return;
+        db.TimesheetWeekApprovals.RemoveRange(rows);
+        await db.SaveChangesAsync(ct);
     }
 
     private bool TryGetUserId(out Guid id)
@@ -326,6 +567,140 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
         {
             throw new InvalidOperationException("Could not save timesheet.");
         }
+    }
+
+    private static DateOnly WeekStartMondayForWorkDate(DateOnly workDate)
+    {
+        var offset = ((int)workDate.DayOfWeek + 6) % 7;
+        return workDate.AddDays(-offset);
+    }
+
+    private async Task<IReadOnlyList<ProjectBudgetBarDto>> BuildProjectBudgetBarsAsync(
+        IReadOnlyList<TimesheetLineResponse> pendingLines,
+        CancellationToken ct)
+    {
+        var billablePairs = pendingLines
+            .Where(l => l.IsBillable && l.Client.Trim().Length > 0 && l.Project.Trim().Length > 0)
+            .Select(l => (Client: l.Client.Trim(), Project: l.Project.Trim()))
+            .Distinct()
+            .ToList();
+        if (billablePairs.Count == 0)
+            return [];
+
+        var catalog = await db.Projects
+            .AsNoTracking()
+            .Include(p => p.Client)
+            .Where(p => p.IsActive && p.Client != null && p.Client.IsActive)
+            .ToListAsync(ct);
+
+        var bars = new List<ProjectBudgetBarDto>(billablePairs.Count);
+        foreach (var (cName, pName) in billablePairs)
+        {
+            var proj = catalog.FirstOrDefault(p =>
+                p.Client is not null &&
+                string.Equals(p.Client.Name, cName, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(p.Name, pName, StringComparison.OrdinalIgnoreCase));
+
+            var pendingHours = pendingLines
+                .Where(l =>
+                    l.IsBillable &&
+                    string.Equals(l.Client.Trim(), cName, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(l.Project.Trim(), pName, StringComparison.OrdinalIgnoreCase))
+                .Sum(l => l.Hours);
+
+            if (proj is null)
+            {
+                bars.Add(new ProjectBudgetBarDto
+                {
+                    ClientName = cName,
+                    ProjectName = pName,
+                    BudgetAmount = 0,
+                    DefaultHourlyRate = null,
+                    ConsumedBillableAmount = 0,
+                    PendingSubmissionBillableAmount = 0,
+                    PendingBillableHours = pendingHours,
+                    CatalogMatched = false,
+                });
+                continue;
+            }
+
+            var clientEntity = proj.Client!;
+            var canonicalClient = clientEntity.Name;
+            var canonicalProject = proj.Name;
+            var hourly = clientEntity.DefaultBillingRate;
+            var rate = hourly ?? 0m;
+
+            var consumedHours = await SumConsumedBillableHoursForProjectAsync(canonicalClient, canonicalProject, ct);
+            var consumedDollars = consumedHours * rate;
+            var pendingDollars = pendingHours * rate;
+
+            bars.Add(new ProjectBudgetBarDto
+            {
+                ClientName = canonicalClient,
+                ProjectName = canonicalProject,
+                BudgetAmount = proj.BudgetAmount,
+                DefaultHourlyRate = hourly,
+                ConsumedBillableAmount = consumedDollars,
+                PendingSubmissionBillableAmount = pendingDollars,
+                PendingBillableHours = pendingHours,
+                CatalogMatched = true,
+            });
+        }
+
+        return bars
+            .OrderBy(b => b.ClientName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(b => b.ProjectName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Billable hours on a project: non-IC lines always; IC lines only when that calendar week is manager-approved.
+    /// </summary>
+    private async Task<decimal> SumConsumedBillableHoursForProjectAsync(
+        string clientName,
+        string projectName,
+        CancellationToken ct)
+    {
+        var lines = await (
+            from l in db.TimesheetLines.AsNoTracking()
+            join u in db.Users.AsNoTracking() on l.UserId equals u.Id
+            where !l.IsDeleted && l.IsBillable && l.Client == clientName && l.Project == projectName
+            select new { l.UserId, l.WorkDate, l.Hours, u.Role }
+        ).ToListAsync(ct);
+
+        if (lines.Count == 0)
+            return 0m;
+
+        var icUserIds = lines.Where(x => x.Role == AppRole.IC).Select(x => x.UserId).Distinct().ToList();
+        HashSet<(Guid UserId, DateOnly WeekStart)>? approvedIcWeeks = null;
+        if (icUserIds.Count > 0)
+        {
+            var approvedRows = await db.TimesheetWeekApprovals.AsNoTracking()
+                .Where(a =>
+                    a.Status == TimesheetWeekApprovalStatus.Approved &&
+                    icUserIds.Contains(a.UserId))
+                .Select(a => new { a.UserId, a.WeekStartMonday })
+                .ToListAsync(ct);
+            approvedIcWeeks = approvedRows
+                .Select(a => (a.UserId, a.WeekStartMonday))
+                .ToHashSet();
+        }
+
+        decimal sumHours = 0;
+        foreach (var x in lines)
+        {
+            if (x.Role == AppRole.IC)
+            {
+                if (approvedIcWeeks is null) continue;
+                var mon = WeekStartMondayForWorkDate(x.WorkDate);
+                if (!approvedIcWeeks.Contains((x.UserId, mon)))
+                    continue;
+            }
+
+            sumHours += x.Hours;
+        }
+
+        return sumHours;
     }
 
     private static string? FirstModelError(ModelStateDictionary modelState)

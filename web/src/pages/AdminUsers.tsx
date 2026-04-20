@@ -6,7 +6,7 @@ type Toast = { id: number; message: string; variant: 'ok' | 'err' }
 
 const TOAST_MS = 4000
 
-const APP_ROLES = ['IC', 'Manager', 'Finance', 'Admin'] as const
+const APP_ROLES = ['IC', 'Manager', 'Partner', 'Finance', 'Admin'] as const
 
 export default function AdminUsers({
   token,

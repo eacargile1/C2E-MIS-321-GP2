@@ -103,13 +103,15 @@ public class RbacEnforcementTests
     }
 
     [Fact]
-    public async Task Organization_timesheets_IC_and_Finance_ok()
+    public async Task Organization_timesheets_IC_Finance_and_Partner_ok()
     {
         using var factory = Factory();
         var client = factory.CreateClient();
         var icToken = await CreateUserAndGetTokenAsync(client, "ic.ts@local.test", "IcTsPass1!");
         var financeToken = await CreateUserWithRoleAsync(
             client, "fin.ts@local.test", "FinTsPass1!", "Finance");
+        var partnerToken = await CreateUserWithRoleAsync(
+            client, "par.ts@local.test", "ParTsPass1!", "Partner");
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
         var icRes = await client.GetAsync("/api/timesheets/organization?monthStart=2026-03-01");
@@ -118,6 +120,10 @@ public class RbacEnforcementTests
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", financeToken);
         var ok = await client.GetAsync("/api/timesheets/organization?monthStart=2026-03-01");
         Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", partnerToken);
+        var parRes = await client.GetAsync("/api/timesheets/organization?monthStart=2026-03-01");
+        Assert.Equal(HttpStatusCode.OK, parRes.StatusCode);
     }
 
     [Fact]
@@ -143,20 +149,36 @@ public class RbacEnforcementTests
     }
 
     [Fact]
-    public async Task Create_client_Finance_forbidden_Admin_ok()
+    public async Task Create_client_Finance_and_Partner_ok_Manager_and_IC_forbidden()
     {
         using var factory = Factory();
         var client = factory.CreateClient();
         var financeToken = await CreateUserWithRoleAsync(
             client, "fin.cl@local.test", "FinClPass1!", "Finance");
+        var partnerToken = await CreateUserWithRoleAsync(
+            client, "par.cl@local.test", "ParClPass1!", "Partner");
+        var mgrToken = await CreateUserWithRoleAsync(
+            client, "mgr.cl@local.test", "MgrClPass1!", "Manager");
+        var icToken = await CreateUserAndGetTokenAsync(client, "ic.cl@local.test", "IcClPass1!");
         var adminToken = await AdminTokenAsync(client);
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", financeToken);
-        await AssertForbiddenJsonAsync(await client.PostAsJsonAsync("/api/clients", new { name = "x" }));
+        var finCreate = await client.PostAsJsonAsync("/api/clients", new { name = "FinCo" });
+        Assert.Equal(HttpStatusCode.Created, finCreate.StatusCode);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", partnerToken);
+        var parCreate = await client.PostAsJsonAsync("/api/clients", new { name = "ParCo" });
+        Assert.Equal(HttpStatusCode.Created, parCreate.StatusCode);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", mgrToken);
+        await AssertForbiddenJsonAsync(await client.PostAsJsonAsync("/api/clients", new { name = "MgrCo" }));
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
+        await AssertForbiddenJsonAsync(await client.PostAsJsonAsync("/api/clients", new { name = "IcCo" }));
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
-        var created = await client.PostAsJsonAsync("/api/clients", new { name = "x" });
-        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var adminCreate = await client.PostAsJsonAsync("/api/clients", new { name = "AdminCo" });
+        Assert.Equal(HttpStatusCode.Created, adminCreate.StatusCode);
     }
 
     [Fact]

@@ -91,7 +91,10 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
             var roleTrimmed = body.Role.Trim();
             if (roleTrimmed.Length == 0 ||
                 !Enum.GetNames<AppRole>().Any(n => string.Equals(n, roleTrimmed, StringComparison.OrdinalIgnoreCase)))
-                return BadRequest(new AuthErrorResponse { Message = "Invalid role. Use IC, Admin, Manager, or Finance." });
+                return BadRequest(new AuthErrorResponse
+                {
+                    Message = $"Invalid role. Use one of: {string.Join(", ", Enum.GetNames<AppRole>())}.",
+                });
             newRole = Enum.Parse<AppRole>(roleTrimmed, ignoreCase: true);
         }
 

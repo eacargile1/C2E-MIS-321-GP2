@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using MySqlConnector;
 
 namespace C2E.Api.Controllers;
 
@@ -31,32 +32,57 @@ public class AuthController(
         if (!ModelState.IsValid)
             return Unauthorized(new AuthErrorResponse { Message = AuthMessages.InvalidCredentials });
 
-        var normalized = body.Email.Trim().ToLowerInvariant();
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Email == normalized, ct);
-        if (user is null)
-            return Unauthorized(new AuthErrorResponse { Message = AuthMessages.InvalidCredentials });
-
-        var verify = passwordHasher.VerifyHashedPassword(user, user.PasswordHash, body.Password);
-        if (verify == PasswordVerificationResult.Failed)
-            return Unauthorized(new AuthErrorResponse { Message = AuthMessages.InvalidCredentials });
-
-        if (!user.IsActive)
-            return Unauthorized(new AuthErrorResponse { Message = AuthMessages.InvalidCredentials });
-
-        if (verify == PasswordVerificationResult.SuccessRehashNeeded)
+        try
         {
-            user.PasswordHash = passwordHasher.HashPassword(user, body.Password);
-            await db.SaveChangesAsync(ct);
+            var normalized = body.Email.Trim().ToLowerInvariant();
+            var user = await db.Users.FirstOrDefaultAsync(u => u.Email == normalized, ct);
+            if (user is null)
+                return Unauthorized(new AuthErrorResponse { Message = AuthMessages.InvalidCredentials });
+
+            var verify = passwordHasher.VerifyHashedPassword(user, user.PasswordHash, body.Password);
+            if (verify == PasswordVerificationResult.Failed)
+                return Unauthorized(new AuthErrorResponse { Message = AuthMessages.InvalidCredentials });
+
+            if (!user.IsActive)
+                return Unauthorized(new AuthErrorResponse { Message = AuthMessages.InvalidCredentials });
+
+            if (verify == PasswordVerificationResult.SuccessRehashNeeded)
+            {
+                user.PasswordHash = passwordHasher.HashPassword(user, body.Password);
+                await db.SaveChangesAsync(ct);
+            }
+
+            var accessToken = jwt.CreateAccessToken(user);
+            var minutes = Math.Max(1, jwtOptions.Value.AccessTokenMinutes);
+            return Ok(new LoginResponse
+            {
+                AccessToken = accessToken,
+                TokenType = "Bearer",
+                ExpiresInSeconds = minutes * 60,
+            });
+        }
+        catch (Exception ex) when (IsMySqlConnectionSaturation(ex))
+        {
+            return StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                new AuthErrorResponse
+                {
+                    Message =
+                        "Database is at its connection limit—wait a few seconds and try again. If this persists, ask your host to raise max_user_connections or reduce concurrent app instances.",
+                });
+        }
+    }
+
+    private static bool IsMySqlConnectionSaturation(Exception ex)
+    {
+        for (Exception? e = ex; e != null; e = e.InnerException)
+        {
+            if (e is MySqlException mx &&
+                mx.Message.Contains("max_user_connections", StringComparison.OrdinalIgnoreCase))
+                return true;
         }
 
-        var accessToken = jwt.CreateAccessToken(user);
-        var minutes = Math.Max(1, jwtOptions.Value.AccessTokenMinutes);
-        return Ok(new LoginResponse
-        {
-            AccessToken = accessToken,
-            TokenType = "Bearer",
-            ExpiresInSeconds = minutes * 60,
-        });
+        return false;
     }
 
     [HttpGet("me")]

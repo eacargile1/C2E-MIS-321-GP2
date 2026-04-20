@@ -197,6 +197,24 @@ public class UsersAdminTests
     }
 
     [Fact]
+    public async Task Users_patch_role_IC_to_Partner_ok()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        var create = await client.PostAsJsonAsync(
+            "/api/users",
+            new { email = "to.partner@local.test", password = "ToPartner1!" });
+        var created = (await create.Content.ReadFromJsonAsync<UserDto>())!;
+
+        var p1 = await client.PatchAsJsonAsync($"/api/users/{created.Id}", new { role = "Partner" });
+        Assert.Equal(HttpStatusCode.OK, p1.StatusCode);
+        var u1 = await p1.Content.ReadFromJsonAsync<UserDto>();
+        Assert.Equal("Partner", u1?.Role);
+    }
+
+    [Fact]
     public async Task Users_patch_role_case_insensitive_returns_canonical_names()
     {
         using var factory = Factory();
@@ -262,7 +280,8 @@ public class UsersAdminTests
             new { role = "0" });
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
         var err = await res.Content.ReadFromJsonAsync<AuthErrorDto>();
-        Assert.Equal("Invalid role. Use IC, Admin, Manager, or Finance.", err?.Message);
+        var expectedInvalidRole = $"Invalid role. Use one of: {string.Join(", ", Enum.GetNames<AppRole>())}.";
+        Assert.Equal(expectedInvalidRole, err?.Message);
     }
 
     [Fact]
@@ -282,7 +301,8 @@ public class UsersAdminTests
             new { role = "NotARole" });
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
         var err = await res.Content.ReadFromJsonAsync<AuthErrorDto>();
-        Assert.Equal("Invalid role. Use IC, Admin, Manager, or Finance.", err?.Message);
+        var expectedInvalidRole = $"Invalid role. Use one of: {string.Join(", ", Enum.GetNames<AppRole>())}.";
+        Assert.Equal(expectedInvalidRole, err?.Message);
     }
 
     [Fact]

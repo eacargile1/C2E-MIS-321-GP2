@@ -1,14 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
+  approveTimesheetWeek,
   getTimesheetWeek,
+  getTimesheetWeekStatus,
   listClients,
+  listPendingTimesheetWeekApprovals,
   listProjects,
   putTimesheetWeek,
+  rejectTimesheetWeek,
+  submitTimesheetWeekForApproval,
   type ClientRow,
   type MeProfile,
+  type PendingTimesheetWeek,
   type ProjectRow,
   type TimesheetLine,
+  type TimesheetWeekStatusPayload,
 } from '../api'
 import '../App.css'
 
@@ -124,7 +131,15 @@ export default function TimesheetWeek({
   const [persistedKeys, setPersistedKeys] = useState<Set<string>>(() => new Set())
   const [catalogClients, setCatalogClients] = useState<ClientRow[]>([])
   const [catalogProjects, setCatalogProjects] = useState<ProjectRow[]>([])
+  const [weekApproval, setWeekApproval] = useState<TimesheetWeekStatusPayload | null>(null)
+  const [pendingTeamWeeks, setPendingTeamWeeks] = useState<PendingTimesheetWeek[]>([])
+  const [submittingWeek, setSubmittingWeek] = useState(false)
+  const [reviewBusyKey, setReviewBusyKey] = useState<string | null>(null)
   const lastLoadId = useRef(0)
+
+  const isIc = profile.role === 'IC'
+  const isReviewer = profile.role === 'Admin' || profile.role === 'Manager'
+  const weekLockedForIc = isIc && weekApproval?.status === 'Pending'
 
   const weekStartDate = useMemo(() => {
     if (!isYmd(weekStart)) return startOfWeekMonday(new Date())
@@ -169,13 +184,18 @@ export default function TimesheetWeek({
     const loadId = ++lastLoadId.current
     setLoading(true)
     try {
-      const rows = await getTimesheetWeek(token, weekStart)
+      const [rows, status] = await Promise.all([
+        getTimesheetWeek(token, weekStart),
+        getTimesheetWeekStatus(token, weekStart),
+      ])
       if (loadId !== lastLoadId.current) return
+      setWeekApproval(status)
       setPersistedKeys(new Set(rows.map(keyOf)))
       setLines(rows.map(toDraft))
     } catch (e) {
       if (loadId !== lastLoadId.current) return
       pushToast(e instanceof Error ? e.message : 'Load failed', 'err')
+      setWeekApproval(null)
       setPersistedKeys(new Set())
       setLines([])
     } finally {
@@ -183,10 +203,27 @@ export default function TimesheetWeek({
     }
   }, [token, weekStart, pushToast])
 
+  const refreshPendingTeamWeeks = useCallback(async () => {
+    if (!isReviewer) {
+      setPendingTeamWeeks([])
+      return
+    }
+    try {
+      const rows = await listPendingTimesheetWeekApprovals(token)
+      setPendingTeamWeeks(rows)
+    } catch {
+      setPendingTeamWeeks([])
+    }
+  }, [isReviewer, token])
+
   useEffect(() => {
     if (!isYmd(weekStart)) setWeekNav(toYmd(startOfWeekMonday(new Date())))
     void refresh()
   }, [refresh, weekStart, setWeekNav])
+
+  useEffect(() => {
+    void refreshPendingTeamWeeks()
+  }, [refreshPendingTeamWeeks])
 
   useEffect(() => {
     let cancelled = false
@@ -261,6 +298,7 @@ export default function TimesheetWeek({
       await putTimesheetWeek(token, weekStart, payload)
       pushToast('Saved', 'ok')
       await refresh()
+      void refreshPendingTeamWeeks()
     } catch (e) {
       pushToast(e instanceof Error ? e.message : 'Save failed', 'err')
     } finally {
@@ -282,6 +320,45 @@ export default function TimesheetWeek({
           </Link>{' '}
           for the org month view.
         </p>
+        {weekApproval && isIc ? (
+          <p className="admin-hint" style={{ marginTop: 10 }}>
+            Approval: <strong>{weekApproval.status}</strong>
+            {weekApproval.status === 'Pending'
+              ? ' — this week is locked until your manager approves or rejects it.'
+              : null}
+            {weekApproval.status === 'Approved'
+              ? ' — billable hours are signed off. Editing clears approval until you submit again.'
+              : null}
+            {weekApproval.status === 'Rejected'
+              ? ' — you can edit and save, then submit again when ready.'
+              : null}
+            {weekApproval.status === 'None' ? ' — submit when the week is ready for manager review.' : null}
+          </p>
+        ) : null}
+        {isIc && weekApproval && (weekApproval.status === 'None' || weekApproval.status === 'Rejected') ? (
+          <div className="admin-header-actions" style={{ marginTop: 10 }}>
+            <button
+              type="button"
+              className="btn primary btn-sm"
+              disabled={submittingWeek || loading || saving}
+              onClick={async () => {
+                setSubmittingWeek(true)
+                try {
+                  await submitTimesheetWeekForApproval(token, weekStart)
+                  pushToast('Submitted for approval', 'ok')
+                  await refresh()
+                  void refreshPendingTeamWeeks()
+                } catch (e) {
+                  pushToast(e instanceof Error ? e.message : 'Submit failed', 'err')
+                } finally {
+                  setSubmittingWeek(false)
+                }
+              }}
+            >
+              {submittingWeek ? 'Submitting…' : 'Submit week for approval'}
+            </button>
+          </div>
+        ) : null}
         {catalogClients.length > 0 ? (
           <p className="admin-hint" style={{ marginTop: 8 }}>
             Client and project must match active directory entries when your org has clients configured.
@@ -307,7 +384,12 @@ export default function TimesheetWeek({
             <button type="button" className="btn secondary btn-sm" onClick={setNextWeek} disabled={loading || saving}>
               Next week →
             </button>
-            <button type="button" className="btn secondary btn-sm" onClick={() => void refresh()} disabled={loading || saving}>
+            <button
+              type="button"
+              className="btn secondary btn-sm"
+              onClick={() => void refresh()}
+              disabled={loading || saving}
+            >
               Refresh
             </button>
           </div>
@@ -361,6 +443,7 @@ export default function TimesheetWeek({
                             max={toYmd(weekEndDate)}
                             onChange={(e) => updateRow(idx, { workDate: e.target.value })}
                             aria-label="Work date"
+                            disabled={weekLockedForIc}
                           />
                         </td>
                         <td>
@@ -370,6 +453,7 @@ export default function TimesheetWeek({
                               value={r.client}
                               onChange={(e) => updateRow(idx, { client: e.target.value, project: '' })}
                               aria-label="Client"
+                              disabled={weekLockedForIc}
                             >
                               <option value="">— Client —</option>
                               {catalogClients
@@ -386,6 +470,7 @@ export default function TimesheetWeek({
                               value={r.client}
                               onChange={(e) => updateRow(idx, { client: e.target.value })}
                               aria-label="Client"
+                              disabled={weekLockedForIc}
                             />
                           )}
                         </td>
@@ -396,7 +481,7 @@ export default function TimesheetWeek({
                               value={r.project}
                               onChange={(e) => updateRow(idx, { project: e.target.value })}
                               aria-label="Project"
-                              disabled={!r.client.trim()}
+                              disabled={!r.client.trim() || weekLockedForIc}
                             >
                               <option value="">— Project —</option>
                               {catalogProjects
@@ -413,6 +498,7 @@ export default function TimesheetWeek({
                               value={r.project}
                               onChange={(e) => updateRow(idx, { project: e.target.value })}
                               aria-label="Project"
+                              disabled={weekLockedForIc}
                             />
                           )}
                         </td>
@@ -422,6 +508,7 @@ export default function TimesheetWeek({
                             value={r.task}
                             onChange={(e) => updateRow(idx, { task: e.target.value })}
                             aria-label="Task"
+                            disabled={weekLockedForIc}
                           />
                         </td>
                         <td>
@@ -432,6 +519,7 @@ export default function TimesheetWeek({
                             onChange={(e) => updateRow(idx, { hours: e.target.value })}
                             aria-label="Hours"
                             placeholder="e.g. 1.25"
+                            disabled={weekLockedForIc}
                           />
                         </td>
                         <td>
@@ -440,6 +528,7 @@ export default function TimesheetWeek({
                             checked={r.isBillable}
                             onChange={(e) => updateRow(idx, { isBillable: e.target.checked })}
                             aria-label="Billable"
+                            disabled={weekLockedForIc}
                           />
                         </td>
                         <td>
@@ -448,10 +537,16 @@ export default function TimesheetWeek({
                             value={r.notes}
                             onChange={(e) => updateRow(idx, { notes: e.target.value })}
                             aria-label="Notes"
+                            disabled={weekLockedForIc}
                           />
                         </td>
                         <td className="admin-actions">
-                          <button type="button" className="btn secondary btn-sm" onClick={() => removeRow(idx)} disabled={saving}>
+                          <button
+                            type="button"
+                            className="btn secondary btn-sm"
+                            onClick={() => removeRow(idx)}
+                            disabled={saving || weekLockedForIc}
+                          >
                             Remove
                           </button>
                         </td>
@@ -463,16 +558,107 @@ export default function TimesheetWeek({
             </div>
 
             <div className="admin-header-actions" style={{ marginTop: '0.75rem' }}>
-              <button type="button" className="btn secondary btn-sm" onClick={addRow} disabled={saving}>
+              <button type="button" className="btn secondary btn-sm" onClick={addRow} disabled={saving || weekLockedForIc}>
                 Add line
               </button>
-              <button type="button" className="btn primary btn-sm" onClick={() => void onSave()} disabled={saving}>
+              <button
+                type="button"
+                className="btn primary btn-sm"
+                onClick={() => void onSave()}
+                disabled={saving || weekLockedForIc}
+              >
                 {saving ? 'Saving…' : 'Save'}
               </button>
             </div>
           </>
         )}
       </div>
+
+      {isReviewer ? (
+        <div className="card admin-card">
+          <h2 className="admin-h2">Team timesheet approvals</h2>
+          <p className="admin-hint">IC weeks submitted for billable-hour sign-off. Same list appears on Home.</p>
+          {pendingTeamWeeks.length === 0 ? (
+            <p className="admin-hint" style={{ marginBottom: 0 }}>
+              Nothing pending.
+            </p>
+          ) : (
+            <div className="table-scroll">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Consultant</th>
+                    <th>Week</th>
+                    <th>Billable h</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingTeamWeeks.map((t) => {
+                    const key = `${t.userId}:${t.weekStart}`
+                    const busy = reviewBusyKey === key
+                    return (
+                      <tr key={key}>
+                        <td>{t.userEmail}</td>
+                        <td>{t.weekStart}</td>
+                        <td>{t.billableHours.toFixed(2)}</td>
+                        <td className="admin-actions">
+                          <Link
+                            className="btn secondary btn-sm"
+                            style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+                            to={`/timesheet/review?userId=${encodeURIComponent(t.userId)}&week=${encodeURIComponent(t.weekStart)}`}
+                          >
+                            Review
+                          </Link>
+                          <button
+                            type="button"
+                            className="btn secondary btn-sm"
+                            disabled={busy}
+                            onClick={async () => {
+                              setReviewBusyKey(key)
+                              try {
+                                await approveTimesheetWeek(token, t.userId, t.weekStart)
+                                pushToast('Timesheet approved', 'ok')
+                                await refreshPendingTeamWeeks()
+                              } catch (e) {
+                                pushToast(e instanceof Error ? e.message : 'Approve failed', 'err')
+                              } finally {
+                                setReviewBusyKey(null)
+                              }
+                            }}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            className="btn secondary btn-sm"
+                            disabled={busy}
+                            onClick={async () => {
+                              if (!window.confirm(`Reject ${t.userEmail} for week ${t.weekStart}?`)) return
+                              setReviewBusyKey(key)
+                              try {
+                                await rejectTimesheetWeek(token, t.userId, t.weekStart)
+                                pushToast('Timesheet rejected', 'ok')
+                                await refreshPendingTeamWeeks()
+                              } catch (e) {
+                                pushToast(e instanceof Error ? e.message : 'Reject failed', 'err')
+                              } finally {
+                                setReviewBusyKey(null)
+                              }
+                            }}
+                          >
+                            Reject
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : null}
 
       <div className="toast-stack" aria-live="polite">
         {toasts.map((t) => (

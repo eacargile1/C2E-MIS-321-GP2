@@ -7,6 +7,7 @@ import {
   listMyExpenses,
   listPendingExpenseApprovals,
   listProjects,
+  listTeamExpenses,
   rejectExpense,
   type ClientRow,
   type ExpenseRow,
@@ -30,7 +31,9 @@ function todayYmd() {
 export default function ExpensesPage({ token, profile }: { token: string; profile: MeProfile }) {
   const canApprove = profile.role === 'Admin' || profile.role === 'Manager'
   const canFinance = profile.role === 'Admin' || profile.role === 'Finance'
+  const canSeeTeamExpenseDetail = profile.role === 'Admin' || profile.role === 'Manager'
   const [rows, setRows] = useState<ExpenseRow[]>([])
+  const [teamRows, setTeamRows] = useState<ExpenseRow[]>([])
   const [pending, setPending] = useState<ExpenseRow[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -54,20 +57,20 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      const mine = await listMyExpenses(token)
+      const [mine, team, pend] = await Promise.all([
+        listMyExpenses(token),
+        canSeeTeamExpenseDetail ? listTeamExpenses(token) : Promise.resolve([] as ExpenseRow[]),
+        canApprove ? listPendingExpenseApprovals(token) : Promise.resolve([] as ExpenseRow[]),
+      ])
       setRows(mine)
-      if (canApprove) {
-        const pend = await listPendingExpenseApprovals(token)
-        setPending(pend)
-      } else {
-        setPending([])
-      }
+      setTeamRows(team)
+      setPending(pend)
     } catch (e) {
       pushToast(e instanceof Error ? e.message : 'Load failed', 'err')
     } finally {
       setLoading(false)
     }
-  }, [canApprove, pushToast, token])
+  }, [canApprove, canSeeTeamExpenseDetail, pushToast, token])
 
   useEffect(() => {
     void refresh()
@@ -154,6 +157,13 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
         {canFinance ? (
           <p className="admin-hint" style={{ marginTop: 8 }}>
             Org-wide expense register and client quotes: <NavLink to="/finance">Finance</NavLink>.
+          </p>
+        ) : null}
+        {canSeeTeamExpenseDetail ? (
+          <p className="admin-hint" style={{ marginTop: 8 }}>
+            {profile.role === 'Admin'
+              ? 'Team view shows every submitted expense in the org (all statuses).'
+              : 'Team view lists full line detail for your direct reports (all clients and statuses).'}
           </p>
         ) : null}
       </div>
@@ -266,6 +276,48 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
           </div>
         )}
       </div>
+
+      {canSeeTeamExpenseDetail ? (
+        <div className="card admin-card">
+          <h2 className="admin-h2">{profile.role === 'Admin' ? 'Org expense lines' : 'Team expense detail'}</h2>
+          {loading ? (
+            <p className="admin-hint">Loading…</p>
+          ) : teamRows.length === 0 ? (
+            <p className="admin-hint">No team expenses to show.</p>
+          ) : (
+            <div className="table-scroll">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>User</th>
+                    <th>Date</th>
+                    <th>Client / Project</th>
+                    <th>Category</th>
+                    <th>Description</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {teamRows.map((r) => (
+                    <tr key={r.id}>
+                      <td>{r.userEmail}</td>
+                      <td>{r.expenseDate}</td>
+                      <td>
+                        {r.client} / {r.project}
+                      </td>
+                      <td>{r.category}</td>
+                      <td>{r.description}</td>
+                      <td>{usd.format(r.amount)}</td>
+                      <td>{r.status}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : null}
 
       {canApprove ? (
         <div className="card admin-card">

@@ -180,6 +180,332 @@ public class TimesheetWeekTests
         Assert.Equal(2m, lines1![0].Hours);
     }
 
+    [Fact]
+    public async Task IC_cannot_save_week_while_pending_approval()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        var token = await CreateIcUserAndGetTokenAsync(client, "ic.pending@local.test", "IcPendPa1!");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        const string weekStart = "2026-04-06";
+        var putOk = await client.PutAsJsonAsync(
+            $"/api/timesheets/week?weekStart={weekStart}",
+            new[]
+            {
+                new
+                {
+                    workDate = "2026-04-06",
+                    client = "Acme",
+                    project = "Website",
+                    task = "Build",
+                    hours = 3m,
+                    isBillable = true,
+                    notes = (string?)null,
+                },
+            });
+        Assert.Equal(HttpStatusCode.NoContent, putOk.StatusCode);
+
+        var submit = await client.PostAsync($"/api/timesheets/week/submit?weekStart={weekStart}", null);
+        Assert.Equal(HttpStatusCode.NoContent, submit.StatusCode);
+
+        var putBlocked = await client.PutAsJsonAsync(
+            $"/api/timesheets/week?weekStart={weekStart}",
+            new[]
+            {
+                new
+                {
+                    workDate = "2026-04-06",
+                    client = "Acme",
+                    project = "Website",
+                    task = "Build",
+                    hours = 4m,
+                    isBillable = true,
+                    notes = (string?)null,
+                },
+            });
+        Assert.Equal(HttpStatusCode.BadRequest, putBlocked.StatusCode);
+    }
+
+    [Fact]
+    public async Task Manager_pending_weeks_only_direct_reports()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        var icId = await CreateUserWithRoleReturnIdAsync(client, "ic.ts.mgr@local.test", "IcTsMgrP1!", "IC");
+        var mgrAId = await CreateUserWithRoleReturnIdAsync(client, "mgr.ts.a@local.test", "MgrTsA1!", "Manager");
+        var mgrBId = await CreateUserWithRoleReturnIdAsync(client, "mgr.ts.b@local.test", "MgrTsB1!", "Manager");
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        Assert.True((await client.PatchAsJsonAsync($"/api/users/{icId}", new { assignManager = true, managerUserId = mgrAId }))
+            .IsSuccessStatusCode);
+        client.DefaultRequestHeaders.Authorization = null;
+
+        const string weekStart = "2026-04-06";
+        var icToken = await LoginTokenAsync(client, "ic.ts.mgr@local.test", "IcTsMgrP1!");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
+        await client.PutAsJsonAsync(
+            $"/api/timesheets/week?weekStart={weekStart}",
+            new[]
+            {
+                new
+                {
+                    workDate = "2026-04-06",
+                    client = "Acme",
+                    project = "Website",
+                    task = "Build",
+                    hours = 2m,
+                    isBillable = true,
+                    notes = (string?)null,
+                },
+            });
+        var submit = await client.PostAsync($"/api/timesheets/week/submit?weekStart={weekStart}", null);
+        Assert.Equal(HttpStatusCode.NoContent, submit.StatusCode);
+        client.DefaultRequestHeaders.Authorization = null;
+
+        var mgrBToken = await LoginTokenAsync(client, "mgr.ts.b@local.test", "MgrTsB1!");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", mgrBToken);
+        var bList = await client.GetAsync("/api/timesheets/approvals/pending-weeks");
+        Assert.Equal(HttpStatusCode.OK, bList.StatusCode);
+        var bRows = await bList.Content.ReadFromJsonAsync<List<PendingTimesheetWeekDto>>();
+        Assert.NotNull(bRows);
+        Assert.Empty(bRows!);
+
+        var mgrAToken = await LoginTokenAsync(client, "mgr.ts.a@local.test", "MgrTsA1!");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", mgrAToken);
+        var aList = await client.GetAsync("/api/timesheets/approvals/pending-weeks");
+        Assert.Equal(HttpStatusCode.OK, aList.StatusCode);
+        var aRows = await aList.Content.ReadFromJsonAsync<List<PendingTimesheetWeekDto>>();
+        Assert.NotNull(aRows);
+        Assert.Single(aRows!);
+        Assert.Equal(icId, aRows[0].UserId);
+        Assert.Equal(weekStart, aRows[0].WeekStart);
+    }
+
+    [Fact]
+    public async Task Manager_approve_then_IC_edit_clears_approval_row()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        var icId = await CreateUserWithRoleReturnIdAsync(client, "ic.ts.apr@local.test", "IcTsApr1!", "IC");
+        var mgrId = await CreateUserWithRoleReturnIdAsync(client, "mgr.ts.apr@local.test", "MgrTsApr1!", "Manager");
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        Assert.True((await client.PatchAsJsonAsync($"/api/users/{icId}", new { assignManager = true, managerUserId = mgrId }))
+            .IsSuccessStatusCode);
+        client.DefaultRequestHeaders.Authorization = null;
+
+        const string weekStart = "2026-04-06";
+        var icToken = await LoginTokenAsync(client, "ic.ts.apr@local.test", "IcTsApr1!");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
+        await client.PutAsJsonAsync(
+            $"/api/timesheets/week?weekStart={weekStart}",
+            new[]
+            {
+                new
+                {
+                    workDate = "2026-04-06",
+                    client = "Acme",
+                    project = "Website",
+                    task = "Build",
+                    hours = 5m,
+                    isBillable = true,
+                    notes = (string?)null,
+                },
+            });
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsync($"/api/timesheets/week/submit?weekStart={weekStart}", null)).StatusCode);
+
+        var mgrToken = await LoginTokenAsync(client, "mgr.ts.apr@local.test", "MgrTsApr1!");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", mgrToken);
+        var approve = await client.PostAsync($"/api/timesheets/approvals/week/{icId}/approve?weekStart={weekStart}", null);
+        Assert.Equal(HttpStatusCode.NoContent, approve.StatusCode);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
+        var stApproved = await client.GetAsync($"/api/timesheets/week/status?weekStart={weekStart}");
+        stApproved.EnsureSuccessStatusCode();
+        var st1 = await stApproved.Content.ReadFromJsonAsync<TimesheetWeekStatusDto>();
+        Assert.NotNull(st1);
+        Assert.Equal("Approved", st1!.Status);
+
+        var putAfter = await client.PutAsJsonAsync(
+            $"/api/timesheets/week?weekStart={weekStart}",
+            new[]
+            {
+                new
+                {
+                    workDate = "2026-04-06",
+                    client = "Acme",
+                    project = "Website",
+                    task = "Build",
+                    hours = 6m,
+                    isBillable = true,
+                    notes = (string?)null,
+                },
+            });
+        Assert.Equal(HttpStatusCode.NoContent, putAfter.StatusCode);
+
+        var stCleared = await client.GetAsync($"/api/timesheets/week/status?weekStart={weekStart}");
+        stCleared.EnsureSuccessStatusCode();
+        var st2 = await stCleared.Content.ReadFromJsonAsync<TimesheetWeekStatusDto>();
+        Assert.NotNull(st2);
+        Assert.Equal("None", st2!.Status);
+    }
+
+    [Fact]
+    public async Task Non_IC_cannot_submit_week_for_approval()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        var mgrToken = await CreateUserWithRoleAsync(client, "mgr.nosub@local.test", "MgrNoSub1!", "Manager");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", mgrToken);
+        var r = await client.PostAsync("/api/timesheets/week/submit?weekStart=2026-04-06", null);
+        Assert.Equal(HttpStatusCode.BadRequest, r.StatusCode);
+    }
+
+    [Fact]
+    public async Task Manager_pending_review_returns_full_lines_for_direct_report()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        var icId = await CreateUserWithRoleReturnIdAsync(client, "ic.review@local.test", "IcReview1!", "IC");
+        var mgrId = await CreateUserWithRoleReturnIdAsync(client, "mgr.review@local.test", "MgrReview1!", "Manager");
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        Assert.True((await client.PatchAsJsonAsync($"/api/users/{icId}", new { assignManager = true, managerUserId = mgrId }))
+            .IsSuccessStatusCode);
+        client.DefaultRequestHeaders.Authorization = null;
+
+        const string weekStart = "2026-04-06";
+        var icToken = await LoginTokenAsync(client, "ic.review@local.test", "IcReview1!");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
+        await client.PutAsJsonAsync(
+            $"/api/timesheets/week?weekStart={weekStart}",
+            new[]
+            {
+                new
+                {
+                    workDate = "2026-04-07",
+                    client = "Acme",
+                    project = "Website",
+                    task = "Design review",
+                    hours = 2.5m,
+                    isBillable = true,
+                    notes = (string?)"Client asked for extra mockups",
+                },
+            });
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsync($"/api/timesheets/week/submit?weekStart={weekStart}", null)).StatusCode);
+        client.DefaultRequestHeaders.Authorization = null;
+
+        var mgrToken = await LoginTokenAsync(client, "mgr.review@local.test", "MgrReview1!");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", mgrToken);
+        var review = await client.GetAsync($"/api/timesheets/approvals/week/{icId}/pending-review?weekStart={weekStart}");
+        Assert.Equal(HttpStatusCode.OK, review.StatusCode);
+        var body = await review.Content.ReadFromJsonAsync<PendingWeekReviewDto>();
+        Assert.NotNull(body);
+        Assert.Equal("ic.review@local.test", body!.UserEmail);
+        Assert.Single(body.Lines);
+        Assert.Equal("Acme", body.Lines[0].Client);
+        Assert.Equal("Website", body.Lines[0].Project);
+        Assert.Equal("Design review", body.Lines[0].Task);
+        Assert.Equal(2.5m, body.Lines[0].Hours);
+        Assert.True(body.Lines[0].IsBillable);
+        Assert.Equal("Client asked for extra mockups", body.Lines[0].Notes);
+    }
+
+    [Fact]
+    public async Task Manager_pending_review_forbidden_for_non_direct_report()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        var icId = await CreateUserWithRoleReturnIdAsync(client, "ic.nomgr@local.test", "IcNoMgr1!", "IC");
+        var mgrAId = await CreateUserWithRoleReturnIdAsync(client, "mgr.a.rev@local.test", "MgrARev1!", "Manager");
+        var mgrBId = await CreateUserWithRoleReturnIdAsync(client, "mgr.b.rev@local.test", "MgrBRev1!", "Manager");
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        Assert.True((await client.PatchAsJsonAsync($"/api/users/{icId}", new { assignManager = true, managerUserId = mgrAId }))
+            .IsSuccessStatusCode);
+        client.DefaultRequestHeaders.Authorization = null;
+
+        const string weekStart = "2026-04-06";
+        var icToken = await LoginTokenAsync(client, "ic.nomgr@local.test", "IcNoMgr1!");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
+        await client.PutAsJsonAsync(
+            $"/api/timesheets/week?weekStart={weekStart}",
+            new[]
+            {
+                new
+                {
+                    workDate = "2026-04-06",
+                    client = "Acme",
+                    project = "Website",
+                    task = "T",
+                    hours = 1m,
+                    isBillable = true,
+                    notes = (string?)null,
+                },
+            });
+        await client.PostAsync($"/api/timesheets/week/submit?weekStart={weekStart}", null);
+        client.DefaultRequestHeaders.Authorization = null;
+
+        var mgrBToken = await LoginTokenAsync(client, "mgr.b.rev@local.test", "MgrBRev1!");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", mgrBToken);
+        var review = await client.GetAsync($"/api/timesheets/approvals/week/{icId}/pending-review?weekStart={weekStart}");
+        Assert.Equal(HttpStatusCode.Forbidden, review.StatusCode);
+    }
+
+    [Fact]
+    public async Task Manager_pending_review_not_found_when_not_pending()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        var icId = await CreateUserWithRoleReturnIdAsync(client, "ic.nopend@local.test", "IcNoPen1!", "IC");
+        var mgrId = await CreateUserWithRoleReturnIdAsync(client, "mgr.nopend@local.test", "MgrNoPen1!", "Manager");
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        Assert.True((await client.PatchAsJsonAsync($"/api/users/{icId}", new { assignManager = true, managerUserId = mgrId }))
+            .IsSuccessStatusCode);
+        client.DefaultRequestHeaders.Authorization = null;
+
+        const string weekStart = "2026-04-06";
+        var mgrToken = await LoginTokenAsync(client, "mgr.nopend@local.test", "MgrNoPen1!");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", mgrToken);
+        var review = await client.GetAsync($"/api/timesheets/approvals/week/{icId}/pending-review?weekStart={weekStart}");
+        Assert.Equal(HttpStatusCode.NotFound, review.StatusCode);
+    }
+
+    private static async Task<Guid> CreateUserWithRoleReturnIdAsync(
+        HttpClient client,
+        string email,
+        string password,
+        string role)
+    {
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        var create = await client.PostAsJsonAsync("/api/users", new { email, password });
+        create.EnsureSuccessStatusCode();
+        var created = await create.Content.ReadFromJsonAsync<UserDto>();
+        var patch = await client.PatchAsJsonAsync($"/api/users/{created!.Id}", new { role });
+        patch.EnsureSuccessStatusCode();
+        client.DefaultRequestHeaders.Authorization = null;
+        return created.Id;
+    }
+
+    private static async Task<string> CreateUserWithRoleAsync(
+        HttpClient client,
+        string email,
+        string password,
+        string role)
+    {
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        var create = await client.PostAsJsonAsync("/api/users", new { email, password });
+        create.EnsureSuccessStatusCode();
+        var created = await create.Content.ReadFromJsonAsync<UserDto>();
+        var patch = await client.PatchAsJsonAsync($"/api/users/{created!.Id}", new { role });
+        patch.EnsureSuccessStatusCode();
+        client.DefaultRequestHeaders.Authorization = null;
+        return await LoginTokenAsync(client, email, password);
+    }
+
     private sealed record LoginResponseDto(string AccessToken, string TokenType, int ExpiresInSeconds);
 
     private sealed record MeDto(string Id, string Email, string Role, bool IsActive);
@@ -192,5 +518,124 @@ public class TimesheetWeekTests
         decimal Hours,
         bool IsBillable,
         string? Notes);
+
+    private sealed record UserDto(Guid Id, string Email, string Role, bool IsActive);
+
+    private sealed record PendingTimesheetWeekDto(Guid UserId, string UserEmail, string WeekStart, decimal TotalHours, decimal BillableHours);
+
+    private sealed record TimesheetWeekStatusDto(string WeekStart, string Status, decimal TotalHours, decimal BillableHours);
+
+    private sealed record PendingWeekReviewLineDto(
+        string WorkDate,
+        string Client,
+        string Project,
+        string Task,
+        decimal Hours,
+        bool IsBillable,
+        string? Notes);
+
+    private sealed record ProjectBudgetBarTestDto(
+        string ClientName,
+        string ProjectName,
+        decimal BudgetAmount,
+        decimal? DefaultHourlyRate,
+        decimal ConsumedBillableAmount,
+        decimal PendingSubmissionBillableAmount,
+        decimal PendingBillableHours,
+        bool CatalogMatched);
+
+    private sealed record PendingWeekReviewDto(
+        Guid UserId,
+        string UserEmail,
+        string WeekStart,
+        DateTime SubmittedAtUtc,
+        List<PendingWeekReviewLineDto> Lines,
+        List<ProjectBudgetBarTestDto>? ProjectBudgetBars = null);
+
+    [Fact]
+    public async Task Manager_pending_review_includes_project_budget_bars()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        var icId = await CreateUserWithRoleReturnIdAsync(client, "ic.budget@local.test", "IcBudget1!", "IC");
+        var mgrId = await CreateUserWithRoleReturnIdAsync(client, "mgr.budget@local.test", "MgrBudget1!", "Manager");
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        Assert.True((await client.PatchAsJsonAsync($"/api/users/{icId}", new { assignManager = true, managerUserId = mgrId }))
+            .IsSuccessStatusCode);
+
+        var clientRes = await client.PostAsJsonAsync(
+            "/api/clients",
+            new { name = "BudgetCo", defaultBillingRate = 100m });
+        clientRes.EnsureSuccessStatusCode();
+        var createdClient = await clientRes.Content.ReadFromJsonAsync<CreatedEntityIdDto>();
+        var projRes = await client.PostAsJsonAsync(
+            "/api/projects",
+            new { name = "BudgetProj", clientId = createdClient!.Id, budgetAmount = 10_000m });
+        projRes.EnsureSuccessStatusCode();
+        client.DefaultRequestHeaders.Authorization = null;
+
+        const string week1 = "2026-04-06";
+        const string week2 = "2026-04-13";
+        var icToken = await LoginTokenAsync(client, "ic.budget@local.test", "IcBudget1!");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
+        await client.PutAsJsonAsync(
+            $"/api/timesheets/week?weekStart={week1}",
+            new[]
+            {
+                new
+                {
+                    workDate = "2026-04-06",
+                    client = "BudgetCo",
+                    project = "BudgetProj",
+                    task = "Week1",
+                    hours = 2m,
+                    isBillable = true,
+                    notes = (string?)null,
+                },
+            });
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsync($"/api/timesheets/week/submit?weekStart={week1}", null)).StatusCode);
+
+        var mgrToken = await LoginTokenAsync(client, "mgr.budget@local.test", "MgrBudget1!");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", mgrToken);
+        Assert.Equal(
+            HttpStatusCode.NoContent,
+            (await client.PostAsync($"/api/timesheets/approvals/week/{icId}/approve?weekStart={week1}", null)).StatusCode);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
+
+        await client.PutAsJsonAsync(
+            $"/api/timesheets/week?weekStart={week2}",
+            new[]
+            {
+                new
+                {
+                    workDate = "2026-04-13",
+                    client = "BudgetCo",
+                    project = "BudgetProj",
+                    task = "Week2",
+                    hours = 1m,
+                    isBillable = true,
+                    notes = (string?)null,
+                },
+            });
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsync($"/api/timesheets/week/submit?weekStart={week2}", null)).StatusCode);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", mgrToken);
+
+        var review = await client.GetAsync($"/api/timesheets/approvals/week/{icId}/pending-review?weekStart={week2}");
+        Assert.Equal(HttpStatusCode.OK, review.StatusCode);
+        var body = await review.Content.ReadFromJsonAsync<PendingWeekReviewDto>();
+        Assert.NotNull(body);
+        Assert.NotNull(body!.ProjectBudgetBars);
+        Assert.Single(body.ProjectBudgetBars!);
+        var bar = body.ProjectBudgetBars[0];
+        Assert.True(bar.CatalogMatched);
+        Assert.Equal(10_000m, bar.BudgetAmount);
+        Assert.Equal(100m, bar.DefaultHourlyRate);
+        Assert.Equal(200m, bar.ConsumedBillableAmount);
+        Assert.Equal(100m, bar.PendingSubmissionBillableAmount);
+        Assert.Equal(1m, bar.PendingBillableHours);
+    }
+
+    private sealed record CreatedEntityIdDto(Guid Id);
 }
 

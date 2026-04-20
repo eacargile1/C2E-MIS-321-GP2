@@ -30,7 +30,7 @@ if (jwt.AccessTokenMinutes < 1)
     throw new InvalidOperationException("Jwt:AccessTokenMinutes must be at least 1.");
 
 var dbConnectivity = DatabaseConnectivity.Resolve(builder.Configuration);
-builder.Services.AddAppDbContext(dbConnectivity);
+builder.Services.AddAppDbContext(dbConnectivity, builder.Configuration);
 builder.Services.AddSingleton<PasswordHasher<AppUser>>();
 builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
 
@@ -84,6 +84,15 @@ builder.Services.AddCors(o =>
 
 var app = builder.Build();
 
+if (dbConnectivity.Kind == AppDatabaseKind.MySql)
+{
+    var pool = app.Configuration.GetValue("Database:MySqlMaxPoolSize", 4);
+    var startupLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+    startupLog.LogInformation(
+        "MySQL EF pool MaximumPoolSize={Pool}. If you still see max_user_connections, another process likely shares this DB user (second dotnet run, deployed site, Workbench) — stop extras or lower Database:MySqlMaxPoolSize.",
+        pool);
+}
+
 app.UseExceptionHandler(exceptionHandlerApp =>
 {
     exceptionHandlerApp.Run(async context =>
@@ -114,33 +123,19 @@ await using (var scope = app.Services.CreateAsyncScope())
     else
         await db.Database.MigrateAsync();
 
-    if (!await db.Users.AnyAsync())
-    {
-        var hasher = scope.ServiceProvider.GetRequiredService<PasswordHasher<AppUser>>();
-        var seedEmail = builder.Configuration["Seed:DevUserEmail"] ?? "dev@c2e.local";
-        var seedPassword = builder.Configuration["Seed:DevUserPassword"] ?? "ChangeMe!1";
-        var normalized = seedEmail.Trim().ToLowerInvariant();
-        var user = new AppUser
-        {
-            Id = Guid.NewGuid(),
-            Email = normalized,
-            DisplayName = UserProfileName.DefaultFromEmail(normalized),
-            PasswordHash = "",
-            Role = AppRole.Admin,
-            IsActive = true,
-        };
-        user.PasswordHash = hasher.HashPassword(user, seedPassword);
-        db.Users.Add(user);
-        await db.SaveChangesAsync();
-    }
-
     var env = scope.ServiceProvider.GetRequiredService<IWebHostEnvironment>();
     var cfg = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+    var hasher = scope.ServiceProvider.GetRequiredService<PasswordHasher<AppUser>>();
+    var seedEmail = builder.Configuration["Seed:DevUserEmail"] ?? "dev@c2e.local";
+    var seedPassword = builder.Configuration["Seed:DevUserPassword"] ?? "ChangeMe!1";
+
+    if (!await db.Users.AnyAsync())
+        await DevRoleAccountsSeed.SeedWhenEmptyAsync(db, hasher, seedEmail, seedPassword);
+
+    if (env.IsDevelopment() && cfg.GetValue("Seed:EnsureDevRoleAccounts", false))
+        await DevRoleAccountsSeed.EnsureAdditionalDevRoleUsersAsync(db, hasher, seedPassword);
     if (env.IsDevelopment() && cfg.GetValue("Seed:DemoFinanceData", false))
-    {
-        var hasher2 = scope.ServiceProvider.GetRequiredService<PasswordHasher<AppUser>>();
-        await DemoFinanceSeed.EnsureAsync(db, hasher2);
-    }
+        await DemoFinanceSeed.EnsureAsync(db, hasher);
 }
 
 if (app.Environment.IsDevelopment())

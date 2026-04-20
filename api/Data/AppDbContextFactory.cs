@@ -30,7 +30,8 @@ public sealed class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
         if (connectivity.Kind == AppDatabaseKind.MySql)
         {
             var cs = connectivity.MySqlConnectionString!;
-            optionsBuilder.UseMySql(cs, ServerVersion.AutoDetect(cs));
+            var serverVersion = DbContextRegistration.ResolveConfiguredMySqlServerVersion(configuration);
+            optionsBuilder.UseMySql(cs, serverVersion);
         }
         else if (connectivity.Kind == AppDatabaseKind.InMemory && explicitInMemory)
         {

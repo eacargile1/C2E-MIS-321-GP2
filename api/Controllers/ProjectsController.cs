@@ -55,7 +55,7 @@ public sealed class ProjectsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = RbacRoleSets.AdminAndManager)]
+    [Authorize(Roles = RbacRoleSets.AdminManagerPartnerFinance)]
     public async Task<ActionResult<ProjectResponse>> Create([FromBody] CreateProjectRequest body, CancellationToken ct)
     {
         if (!ModelState.IsValid)
@@ -88,7 +88,7 @@ public sealed class ProjectsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPatch("{id:guid}")]
-    [Authorize(Roles = RbacRoleSets.AdminAndManager)]
+    [Authorize(Roles = RbacRoleSets.AdminPartnerFinance)]
     public async Task<ActionResult<ProjectResponse>> Patch(Guid id, [FromBody] PatchProjectRequest body, CancellationToken ct)
     {
         if (!ModelState.IsValid)

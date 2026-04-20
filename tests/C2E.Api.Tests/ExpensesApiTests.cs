@@ -90,6 +90,54 @@ public class ExpensesApiTests
     }
 
     [Fact]
+    public async Task Partner_cannot_open_expense_approval_queue()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        var partnerToken = await CreateUserWithRoleAsync(client, "par.exp@local.test", "ParExpPa1!", "Partner");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", partnerToken);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/expenses/approvals/pending")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/expenses/team")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Team_expenses_manager_sees_direct_report_lines_ic_forbidden()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        var icId = await CreateUserWithRoleReturnIdAsync(client, "ic.team@local.test", "IcTeamPa1!", "IC");
+        var mgrId = await CreateUserWithRoleReturnIdAsync(client, "mgr.team@local.test", "MgrTeamP1!", "Manager");
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        Assert.True((await client.PatchAsJsonAsync($"/api/users/{icId}", new { assignManager = true, managerUserId = mgrId }))
+            .IsSuccessStatusCode);
+        client.DefaultRequestHeaders.Authorization = null;
+
+        var icToken = await LoginTokenAsync(client, "ic.team@local.test", "IcTeamPa1!");
+        var mgrToken = await LoginTokenAsync(client, "mgr.team@local.test", "MgrTeamP1!");
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
+        await client.PostAsJsonAsync("/api/expenses", new
+        {
+            expenseDate = "2026-04-01",
+            client = "Valent",
+            project = "VAL023",
+            category = "Travel",
+            description = "Flight",
+            amount = 199m,
+        });
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/expenses/team")).StatusCode);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", mgrToken);
+        var team = await client.GetAsync("/api/expenses/team");
+        Assert.Equal(HttpStatusCode.OK, team.StatusCode);
+        var teamRows = await team.Content.ReadFromJsonAsync<List<ExpenseDto>>();
+        var only = Assert.Single(teamRows!);
+        Assert.Equal(199m, only.Amount);
+        Assert.Equal("Pending", only.Status);
+    }
+
+    [Fact]
     public async Task Manager_can_approve_pending_expense_but_ic_cannot_open_approval_queue()
     {
         using var factory = Factory();

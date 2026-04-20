@@ -79,7 +79,7 @@ public sealed class ClientsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = RbacRoleSets.AdminOnly)]
+    [Authorize(Roles = RbacRoleSets.AdminPartnerFinance)]
     public async Task<ActionResult<ClientResponse>> Create([FromBody] CreateClientRequest body, CancellationToken ct)
     {
         if (!ModelState.IsValid)
@@ -105,7 +105,7 @@ public sealed class ClientsController(AppDbContext db) : ControllerBase
         };
         db.Clients.Add(entity);
         await db.SaveChangesAsync(ct);
-        return CreatedAtAction(nameof(Get), new { id = entity.Id }, Map(entity, includeBilling: true));
+        return CreatedAtAction(nameof(Get), new { id = entity.Id }, Map(entity, CanViewBillingRates()));
     }
 
     [HttpPatch("{id:guid}")]

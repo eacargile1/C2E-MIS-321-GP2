@@ -21,7 +21,13 @@ export default function ProjectsPage({
   token: string
   profile: MeProfile
 }) {
-  const canManage = profile.role === 'Admin' || profile.role === 'Manager'
+  const canCreateProject =
+    profile.role === 'Admin' ||
+    profile.role === 'Manager' ||
+    profile.role === 'Partner' ||
+    profile.role === 'Finance'
+  const canEditProject =
+    profile.role === 'Admin' || profile.role === 'Partner' || profile.role === 'Finance'
   const canShowInactive = profile.role === 'Admin'
 
   const [rows, setRows] = useState<ProjectRow[]>([])
@@ -73,7 +79,7 @@ export default function ProjectsPage({
 
   const onCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!canManage) return
+    if (!canCreateProject) return
     const budget = Number(createBudget)
     if (!Number.isFinite(budget)) {
       pushToast('Budget must be a number.', 'err')
@@ -103,7 +109,7 @@ export default function ProjectsPage({
   }
 
   const saveEdit = async (id: string) => {
-    if (!canManage) return
+    if (!canEditProject) return
     const budget = Number(editBudget)
     if (!Number.isFinite(budget)) {
       pushToast('Budget must be a number.', 'err')
@@ -169,7 +175,7 @@ export default function ProjectsPage({
         </div>
       </div>
 
-      {canManage ? (
+      {canCreateProject ? (
         <div className="card admin-card">
           <h2 className="admin-h2">New project</h2>
           <form className="form admin-form-grid" onSubmit={onCreate}>
@@ -219,7 +225,7 @@ export default function ProjectsPage({
                   <th>Client</th>
                   <th>Budget</th>
                   <th>Status</th>
-                  {canManage ? <th /> : null}
+                  {canEditProject ? <th /> : null}
                 </tr>
               </thead>
               <tbody>
@@ -269,7 +275,7 @@ export default function ProjectsPage({
                         'Inactive'
                       )}
                     </td>
-                    {canManage ? (
+                    {canEditProject ? (
                       <td>
                         {editingId === p.id ? (
                           <>

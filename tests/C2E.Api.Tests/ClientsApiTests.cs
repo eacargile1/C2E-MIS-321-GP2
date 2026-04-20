@@ -143,6 +143,17 @@ public class ClientsApiTests
     }
 
     [Fact]
+    public async Task Partner_can_create_client()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        var partnerToken = await CreateUserWithRoleAsync(client, "par.cl2@local.test", "ParCl2Pa1!", "Partner");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", partnerToken);
+        var res = await client.PostAsJsonAsync("/api/clients", new { name = "FromPartnerCo" });
+        Assert.Equal(HttpStatusCode.Created, res.StatusCode);
+    }
+
+    [Fact]
     public async Task Non_admin_get_inactive_client_returns_404()
     {
         using var factory = Factory();

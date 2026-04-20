@@ -16,4 +16,14 @@ public static class RbacRoleSets
 
     /// <summary>Project create/edit and staffing actions allowed for Admin + Manager.</summary>
     public const string AdminAndManager = $"{nameof(AppRole.Admin)},{nameof(AppRole.Manager)}";
+
+    /// <summary>Resource planning / forecast UX tier (Partner joins delivery leadership).</summary>
+    public const string AdminManagerPartner = $"{nameof(AppRole.Admin)},{nameof(AppRole.Manager)},{nameof(AppRole.Partner)}";
+
+    /// <summary>Client directory create (IC excluded; managers escalate to Partner/Finance).</summary>
+    public const string AdminPartnerFinance = $"{nameof(AppRole.Admin)},{nameof(AppRole.Partner)},{nameof(AppRole.Finance)}";
+
+    /// <summary>Project create (IC excluded); managers can add projects but cannot PATCH catalog fields.</summary>
+    public const string AdminManagerPartnerFinance =
+        $"{nameof(AppRole.Admin)},{nameof(AppRole.Manager)},{nameof(AppRole.Partner)},{nameof(AppRole.Finance)}";
 }

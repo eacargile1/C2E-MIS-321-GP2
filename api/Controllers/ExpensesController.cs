@@ -44,6 +44,27 @@ public sealed class ExpensesController(AppDbContext db) : ControllerBase
         return Ok(rows.Select(x => Map(x, users)).ToList());
     }
 
+    /// <summary>
+    /// Admin: all org expenses (all statuses). Manager: direct reports only (same detail as <see cref="ListMine"/>).
+    /// </summary>
+    [HttpGet("team")]
+    [Authorize(Roles = RbacRoleSets.AdminAndManager)]
+    public async Task<ActionResult<IReadOnlyList<ExpenseResponse>>> ListTeam(CancellationToken ct)
+    {
+        if (!TryGetUserId(out var userId)) return Unauthorized();
+        var users = await db.Users.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Email, ct);
+
+        var q = db.ExpenseEntries.AsNoTracking().AsQueryable();
+        if (!User.IsInRole(nameof(AppRole.Admin)))
+            q = q.Where(x => db.Users.Any(u => u.Id == x.UserId && u.ManagerUserId == userId));
+
+        var rows = await q
+            .OrderByDescending(x => x.ExpenseDate)
+            .ThenByDescending(x => x.CreatedAtUtc)
+            .ToListAsync(ct);
+        return Ok(rows.Select(x => Map(x, users)).ToList());
+    }
+
     [HttpPost]
     public async Task<ActionResult<ExpenseResponse>> Create([FromBody] CreateExpenseRequest body, CancellationToken ct)
     {

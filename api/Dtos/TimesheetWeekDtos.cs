@@ -54,3 +54,52 @@ public sealed class ResourceTrackerEmployeeRowResponse
     public required IReadOnlyList<ResourceTrackerDayResponse> Days { get; init; }
 }
 
+public sealed class TimesheetWeekStatusResponse
+{
+    public required string WeekStart { get; init; }
+    /// <summary>None, Pending, Approved, or Rejected (None when no submission exists).</summary>
+    public required string Status { get; init; }
+    public required decimal TotalHours { get; init; }
+    public required decimal BillableHours { get; init; }
+    public DateTime? SubmittedAtUtc { get; init; }
+    public DateTime? ReviewedAtUtc { get; init; }
+}
+
+public sealed class PendingTimesheetWeekResponse
+{
+    public required Guid UserId { get; init; }
+    public required string UserEmail { get; init; }
+    public required string WeekStart { get; init; }
+    public required decimal TotalHours { get; init; }
+    public required decimal BillableHours { get; init; }
+    public required DateTime SubmittedAtUtc { get; init; }
+}
+
+/// <summary>Budget context for a catalog-matched project on the IC review screen.</summary>
+public sealed class ProjectBudgetBarDto
+{
+    public required string ClientName { get; init; }
+    public required string ProjectName { get; init; }
+    public decimal BudgetAmount { get; init; }
+    public decimal? DefaultHourlyRate { get; init; }
+    /// <summary>
+    /// Billable dollars already counted: non-IC billable lines on this project, plus IC lines only in manager-approved weeks.
+    /// </summary>
+    public decimal ConsumedBillableAmount { get; init; }
+    /// <summary>Billable dollars from this pending submission for this client/project.</summary>
+    public decimal PendingSubmissionBillableAmount { get; init; }
+    public decimal PendingBillableHours { get; init; }
+    public bool CatalogMatched { get; init; }
+}
+
+/// <summary>IC lines + metadata for manager/admin review of a pending weekly submission.</summary>
+public sealed class TimesheetPendingWeekReviewResponse
+{
+    public required Guid UserId { get; init; }
+    public required string UserEmail { get; init; }
+    public required string WeekStart { get; init; }
+    public required DateTime SubmittedAtUtc { get; init; }
+    public required IReadOnlyList<TimesheetLineResponse> Lines { get; init; }
+    public IReadOnlyList<ProjectBudgetBarDto> ProjectBudgetBars { get; init; } = [];
+}
+

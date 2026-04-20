@@ -463,6 +463,15 @@ export async function listMyExpenses(token: string): Promise<ExpenseRow[]> {
   return data.map(assertExpense)
 }
 
+/** Admin: all org expenses. Manager: direct reports only (all statuses, full line detail). */
+export async function listTeamExpenses(token: string): Promise<ExpenseRow[]> {
+  const res = await fetch(`${base}/api/expenses/team`, { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load team expenses'))
+  const data = (await res.json()) as unknown
+  if (!Array.isArray(data)) throw new Error('Could not load team expenses')
+  return data.map(assertExpense)
+}
+
 export async function createExpense(
   token: string,
   body: { expenseDate: string; client: string; project: string; category: string; description: string; amount: number },
@@ -633,6 +642,192 @@ export async function putTimesheetWeek(token: string, weekStart: string, lines: 
     body: JSON.stringify(lines),
   })
   if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not save timesheet'))
+}
+
+export type TimesheetWeekApprovalStatus = 'None' | 'Pending' | 'Approved' | 'Rejected'
+
+export type TimesheetWeekStatusPayload = {
+  weekStart: string
+  status: TimesheetWeekApprovalStatus
+  totalHours: number
+  billableHours: number
+  submittedAtUtc: string | null
+  reviewedAtUtc: string | null
+}
+
+function assertTimesheetWeekStatus(x: unknown): TimesheetWeekStatusPayload {
+  const r = x as Record<string, unknown>
+  if (
+    typeof r.weekStart !== 'string' ||
+    typeof r.status !== 'string' ||
+    typeof r.totalHours !== 'number' ||
+    typeof r.billableHours !== 'number'
+  )
+    throw new Error('Could not load timesheet week status')
+  const st = r.status
+  if (st !== 'None' && st !== 'Pending' && st !== 'Approved' && st !== 'Rejected')
+    throw new Error('Could not load timesheet week status')
+  return {
+    weekStart: r.weekStart,
+    status: st,
+    totalHours: r.totalHours,
+    billableHours: r.billableHours,
+    submittedAtUtc: typeof r.submittedAtUtc === 'string' ? r.submittedAtUtc : null,
+    reviewedAtUtc: typeof r.reviewedAtUtc === 'string' ? r.reviewedAtUtc : null,
+  }
+}
+
+export async function getTimesheetWeekStatus(token: string, weekStart: string): Promise<TimesheetWeekStatusPayload> {
+  const res = await fetch(`${base}/api/timesheets/week/status?weekStart=${encodeURIComponent(weekStart)}`, {
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load timesheet week status'))
+  return assertTimesheetWeekStatus(await res.json())
+}
+
+export async function submitTimesheetWeekForApproval(token: string, weekStart: string): Promise<void> {
+  const res = await fetch(`${base}/api/timesheets/week/submit?weekStart=${encodeURIComponent(weekStart)}`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not submit timesheet for approval'))
+}
+
+export type PendingTimesheetWeek = {
+  userId: string
+  userEmail: string
+  weekStart: string
+  totalHours: number
+  billableHours: number
+  submittedAtUtc: string
+}
+
+function assertPendingTimesheetWeek(x: unknown): PendingTimesheetWeek {
+  const r = x as Record<string, unknown>
+  if (
+    typeof r.userId !== 'string' ||
+    typeof r.userEmail !== 'string' ||
+    typeof r.weekStart !== 'string' ||
+    typeof r.totalHours !== 'number' ||
+    typeof r.billableHours !== 'number' ||
+    typeof r.submittedAtUtc !== 'string'
+  )
+    throw new Error('Could not load pending timesheet approvals')
+  return {
+    userId: r.userId,
+    userEmail: r.userEmail,
+    weekStart: r.weekStart,
+    totalHours: r.totalHours,
+    billableHours: r.billableHours,
+    submittedAtUtc: r.submittedAtUtc,
+  }
+}
+
+export async function listPendingTimesheetWeekApprovals(token: string): Promise<PendingTimesheetWeek[]> {
+  const res = await fetch(`${base}/api/timesheets/approvals/pending-weeks`, {
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load pending timesheet approvals'))
+  const data = (await res.json()) as unknown
+  if (!Array.isArray(data)) throw new Error('Could not load pending timesheet approvals')
+  return data.map(assertPendingTimesheetWeek)
+}
+
+export async function approveTimesheetWeek(token: string, userId: string, weekStart: string): Promise<void> {
+  const res = await fetch(
+    `${base}/api/timesheets/approvals/week/${encodeURIComponent(userId)}/approve?weekStart=${encodeURIComponent(weekStart)}`,
+    { method: 'POST', headers: authHeaders(token) },
+  )
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not approve timesheet week'))
+}
+
+export async function rejectTimesheetWeek(token: string, userId: string, weekStart: string): Promise<void> {
+  const res = await fetch(
+    `${base}/api/timesheets/approvals/week/${encodeURIComponent(userId)}/reject?weekStart=${encodeURIComponent(weekStart)}`,
+    { method: 'POST', headers: authHeaders(token) },
+  )
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not reject timesheet week'))
+}
+
+export type ProjectBudgetBar = {
+  clientName: string
+  projectName: string
+  budgetAmount: number
+  defaultHourlyRate: number | null
+  consumedBillableAmount: number
+  pendingSubmissionBillableAmount: number
+  pendingBillableHours: number
+  catalogMatched: boolean
+}
+
+function assertProjectBudgetBar(x: unknown): ProjectBudgetBar {
+  const r = x as Record<string, unknown>
+  if (
+    typeof r.clientName !== 'string' ||
+    typeof r.projectName !== 'string' ||
+    typeof r.budgetAmount !== 'number' ||
+    typeof r.consumedBillableAmount !== 'number' ||
+    typeof r.pendingSubmissionBillableAmount !== 'number' ||
+    typeof r.pendingBillableHours !== 'number' ||
+    typeof r.catalogMatched !== 'boolean'
+  )
+    throw new Error('Could not load project budget bar')
+  const rate = r.defaultHourlyRate
+  return {
+    clientName: r.clientName,
+    projectName: r.projectName,
+    budgetAmount: r.budgetAmount,
+    defaultHourlyRate: typeof rate === 'number' ? rate : null,
+    consumedBillableAmount: r.consumedBillableAmount,
+    pendingSubmissionBillableAmount: r.pendingSubmissionBillableAmount,
+    pendingBillableHours: r.pendingBillableHours,
+    catalogMatched: r.catalogMatched,
+  }
+}
+
+export type TimesheetPendingWeekReview = {
+  userId: string
+  userEmail: string
+  weekStart: string
+  submittedAtUtc: string
+  lines: TimesheetLine[]
+  projectBudgetBars: ProjectBudgetBar[]
+}
+
+function assertTimesheetPendingWeekReview(x: unknown): TimesheetPendingWeekReview {
+  const r = x as Record<string, unknown>
+  const userId = typeof r.userId === 'string' ? r.userId : ''
+  if (
+    !userId ||
+    typeof r.userEmail !== 'string' ||
+    typeof r.weekStart !== 'string' ||
+    typeof r.submittedAtUtc !== 'string' ||
+    !Array.isArray(r.lines)
+  )
+    throw new Error('Could not load timesheet for review')
+  const barsRaw = r.projectBudgetBars
+  const projectBudgetBars = Array.isArray(barsRaw) ? barsRaw.map(assertProjectBudgetBar) : []
+  return {
+    userId,
+    userEmail: r.userEmail,
+    weekStart: r.weekStart,
+    submittedAtUtc: r.submittedAtUtc,
+    lines: r.lines.map(assertTimesheetLine),
+    projectBudgetBars,
+  }
+}
+
+export async function getPendingTimesheetWeekForReview(
+  token: string,
+  userId: string,
+  weekStart: string,
+): Promise<TimesheetPendingWeekReview> {
+  const res = await fetch(
+    `${base}/api/timesheets/approvals/week/${encodeURIComponent(userId)}/pending-review?weekStart=${encodeURIComponent(weekStart)}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load timesheet for review'))
+  return assertTimesheetPendingWeekReview(await res.json())
 }
 
 export type ResourceTrackerDay = {

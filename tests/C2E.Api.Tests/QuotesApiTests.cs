@@ -95,6 +95,16 @@ public class QuotesApiTests
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/quotes")).StatusCode);
     }
 
+    [Fact]
+    public async Task Partner_cannot_access_quotes()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        var partnerToken = await CreateUserWithRoleAsync(client, "par.q@local.test", "ParQPass1!", "Partner");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", partnerToken);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/quotes")).StatusCode);
+    }
+
     private sealed record LoginResponseDto(string AccessToken, string TokenType, int ExpiresInSeconds);
     private sealed record UserDto(Guid Id, string Email, string Role, bool IsActive);
     private sealed record ClientIdDto(Guid Id);

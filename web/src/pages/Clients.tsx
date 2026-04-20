@@ -16,6 +16,9 @@ export default function ClientsPage({
 }) {
   const isAdmin = profile.role === 'Admin'
   const canSeeRates = profile.role === 'Admin' || profile.role === 'Finance'
+  const canCreateClient =
+    profile.role === 'Admin' || profile.role === 'Partner' || profile.role === 'Finance'
+  const canEditClient = isAdmin
 
   const [rows, setRows] = useState<ClientRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -54,13 +57,13 @@ export default function ClientsPage({
 
   const onCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!isAdmin) return
+    if (!canCreateClient) return
     try {
       const rateNum = createRate.trim() === '' ? undefined : Number(createRate)
       await createClient(token, {
         name: createName.trim(),
         contactEmail: createEmail.trim() || undefined,
-        defaultBillingRate: Number.isFinite(rateNum) ? rateNum : undefined,
+        defaultBillingRate: canSeeRates && Number.isFinite(rateNum) ? rateNum : undefined,
       })
       setCreateName('')
       setCreateEmail('')
@@ -79,7 +82,7 @@ export default function ClientsPage({
   }
 
   const saveEdit = async (id: string) => {
-    if (!isAdmin) return
+    if (!canEditClient) return
     try {
       await patchClient(token, id, { name: editName.trim(), isActive: editActive })
       setEditingId(null)
@@ -124,10 +127,14 @@ export default function ClientsPage({
         </div>
       </div>
 
-      {isAdmin ? (
+      {canCreateClient ? (
         <div className="card admin-card">
           <h2 className="admin-h2">New client</h2>
-          <p className="admin-hint">Billing rate is visible only to Admin and Finance (per PRD).</p>
+          <p className="admin-hint">
+            {canSeeRates
+              ? 'Billing rate is visible only to Admin and Finance (per PRD).'
+              : 'Partner creates the shell client; Admin or Finance can set billing rate when ready.'}
+          </p>
           <form className="form admin-form-grid" onSubmit={onCreate}>
             <label className="field">
               <span>Name</span>
@@ -137,10 +144,12 @@ export default function ClientsPage({
               <span>Contact email</span>
               <input type="email" value={createEmail} onChange={(e) => setCreateEmail(e.target.value)} />
             </label>
-            <label className="field">
-              <span>Default $/hr</span>
-              <input inputMode="decimal" value={createRate} onChange={(e) => setCreateRate(e.target.value)} />
-            </label>
+            {canSeeRates ? (
+              <label className="field">
+                <span>Default $/hr</span>
+                <input inputMode="decimal" value={createRate} onChange={(e) => setCreateRate(e.target.value)} />
+              </label>
+            ) : null}
             <button type="submit" className="btn primary">
               Create
             </button>
@@ -162,7 +171,7 @@ export default function ClientsPage({
                   <th>Contact</th>
                   {canSeeRates ? <th>$/hr</th> : null}
                   <th>Status</th>
-                  {isAdmin ? <th /> : null}
+                  {canEditClient ? <th /> : null}
                 </tr>
               </thead>
               <tbody>
@@ -193,7 +202,7 @@ export default function ClientsPage({
                         'Inactive'
                       )}
                     </td>
-                    {isAdmin ? (
+                    {canEditClient ? (
                       <td>
                         {editingId === c.id ? (
                           <>

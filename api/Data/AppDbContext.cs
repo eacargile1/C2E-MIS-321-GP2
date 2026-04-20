@@ -9,6 +9,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Client> Clients => Set<Client>();
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<TimesheetLine> TimesheetLines => Set<TimesheetLine>();
+    public DbSet<TimesheetWeekApproval> TimesheetWeekApprovals => Set<TimesheetWeekApproval>();
     public DbSet<ExpenseEntry> ExpenseEntries => Set<ExpenseEntry>();
     public DbSet<ClientQuote> ClientQuotes => Set<ClientQuote>();
 
@@ -66,6 +67,22 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.Project).HasMaxLength(120);
             e.Property(x => x.Task).HasMaxLength(200);
             e.Property(x => x.Notes).HasMaxLength(1000);
+        });
+
+        modelBuilder.Entity<TimesheetWeekApproval>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.UserId, x.WeekStartMonday }).IsUnique();
+            e.HasIndex(x => x.Status);
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(24);
+            e.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.ReviewedBy)
+                .WithMany()
+                .HasForeignKey(x => x.ReviewedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<ExpenseEntry>(e =>
