@@ -21,4 +21,5 @@ public sealed class Client
     public DateTime UpdatedAtUtc { get; set; }
 
     public ICollection<Project> Projects { get; set; } = new List<Project>();
+    public ICollection<ClientEmployeeAssignment> EmployeeAssignments { get; set; } = new List<ClientEmployeeAssignment>();
 }

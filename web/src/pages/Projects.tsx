@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
+  assignEmployeeToProject,
   createProject,
+  listAssignableEmployees,
   listClients,
+  listProjectAssignments,
   listProjects,
   patchProject,
+  unassignEmployeeFromProject,
   type ClientRow,
   type MeProfile,
   type ProjectRow,
 } from '../api'
+import AssignmentManager from '../components/AssignmentManager'
 import '../App.css'
 
 type Toast = { id: number; message: string; variant: 'ok' | 'err' }
@@ -28,6 +33,7 @@ export default function ProjectsPage({
   const canEditProject =
     profile.role === 'Admin' || profile.role === 'Partner' || profile.role === 'Finance'
   const canShowInactive = profile.role === 'Admin'
+  const canManageAssignments = profile.role === 'Admin' || profile.role === 'Partner'
 
   const [rows, setRows] = useState<ProjectRow[]>([])
   const [clients, setClients] = useState<ClientRow[]>([])
@@ -303,6 +309,18 @@ export default function ProjectsPage({
           </div>
         )}
       </div>
+
+      <AssignmentManager
+        token={token}
+        title="Project staffing assignments"
+        targetLabel="Project"
+        targetOptions={rows.map((p) => ({ id: p.id, name: p.name, isActive: p.isActive }))}
+        loadAssignableEmployees={listAssignableEmployees}
+        loadAssignments={listProjectAssignments}
+        assign={assignEmployeeToProject}
+        unassign={unassignEmployeeFromProject}
+        canManage={canManageAssignments}
+      />
 
       <div className="toast-stack" aria-live="polite">
         {toasts.map((t) => (

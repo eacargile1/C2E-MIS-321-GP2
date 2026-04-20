@@ -257,10 +257,67 @@ public class RbacEnforcementTests
         Assert.Equal(HttpStatusCode.NoContent, adminRes.StatusCode);
     }
 
+    [Fact]
+    public async Task Employee_assignment_Manager_forbidden_Partner_and_Admin_ok()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        var adminToken = await AdminTokenAsync(client);
+        var managerToken = await CreateUserWithRoleAsync(
+            client, "mgr.assign@local.test", "MgrAssignPass1!", "Manager");
+        var partnerToken = await CreateUserWithRoleAsync(
+            client, "par.assign@local.test", "ParAssignPass1!", "Partner");
+        var employeeToken = await CreateUserAndGetTokenAsync(client, "ic.assign@local.test", "IcAssignPass1!");
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+        var newClient = await client.PostAsJsonAsync("/api/clients", new { name = "Assign Client A" });
+        newClient.EnsureSuccessStatusCode();
+        var newClientBody = await newClient.Content.ReadFromJsonAsync<ClientDto>();
+
+        var newProject = await client.PostAsJsonAsync("/api/projects", new
+        {
+            name = "Assign Project A",
+            clientId = newClientBody!.Id,
+            budgetAmount = 5000m,
+        });
+        newProject.EnsureSuccessStatusCode();
+        var newProjectBody = await newProject.Content.ReadFromJsonAsync<ProjectDto>();
+
+        var employeeUserId = await ReadOwnUserIdAsync(client, employeeToken);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", managerToken);
+        await AssertForbiddenJsonAsync(await client.PutAsync(
+            $"/api/assignments/clients/{newClientBody.Id}/employees/{employeeUserId}",
+            null));
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", partnerToken);
+        var partnerAssignClient = await client.PutAsync(
+            $"/api/assignments/clients/{newClientBody.Id}/employees/{employeeUserId}",
+            null);
+        Assert.Equal(HttpStatusCode.NoContent, partnerAssignClient.StatusCode);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+        var adminAssignProject = await client.PutAsync(
+            $"/api/assignments/projects/{newProjectBody!.Id}/employees/{employeeUserId}",
+            null);
+        Assert.Equal(HttpStatusCode.NoContent, adminAssignProject.StatusCode);
+    }
+
+    private static async Task<Guid> ReadOwnUserIdAsync(HttpClient client, string token)
+    {
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var meRes = await client.GetAsync("/api/auth/me");
+        meRes.EnsureSuccessStatusCode();
+        var me = await meRes.Content.ReadFromJsonAsync<MeDto>();
+        return me!.Id;
+    }
+
     private sealed record LoginResponseDto(string AccessToken, string TokenType, int ExpiresInSeconds);
 
     private sealed record AuthErrorDto(string Message);
 
     private sealed record UserDto(Guid Id, string Email, string Role, bool IsActive);
     private sealed record ClientDto(Guid Id, string Name, bool IsActive);
+    private sealed record ProjectDto(Guid Id, string Name, Guid ClientId, bool IsActive);
+    private sealed record MeDto(Guid Id, string Email, string Role, bool IsActive);
 }

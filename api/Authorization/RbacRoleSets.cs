@@ -21,6 +21,9 @@ public static class RbacRoleSets
     /// <summary>Approval/review actions owned by delivery leadership (Admin + Manager).</summary>
     public const string AdminAndManager = $"{nameof(AppRole.Admin)},{nameof(AppRole.Manager)}";
 
+    /// <summary>Staffing assignment actions reserved for leadership with client ownership authority.</summary>
+    public const string AdminAndPartner = $"{nameof(AppRole.Admin)},{nameof(AppRole.Partner)}";
+
     /// <summary>Resource planning / forecast UX tier (Partner joins delivery leadership).</summary>
     public const string AdminManagerPartner = $"{nameof(AppRole.Admin)},{nameof(AppRole.Manager)},{nameof(AppRole.Partner)}";
 

@@ -14,4 +14,6 @@ public class AppUser
     public Guid? ManagerUserId { get; set; }
     public AppUser? Manager { get; set; }
     public ICollection<AppUser> DirectReports { get; set; } = new List<AppUser>();
+    public ICollection<ClientEmployeeAssignment> ClientAssignments { get; set; } = new List<ClientEmployeeAssignment>();
+    public ICollection<ProjectEmployeeAssignment> ProjectAssignments { get; set; } = new List<ProjectEmployeeAssignment>();
 }

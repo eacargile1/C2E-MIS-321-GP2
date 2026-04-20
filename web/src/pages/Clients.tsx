@@ -1,5 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
-import { createClient, listClients, patchClient, type ClientRow, type MeProfile } from '../api'
+import {
+  assignEmployeeToClient,
+  createClient,
+  listAssignableEmployees,
+  listClientAssignments,
+  listClients,
+  patchClient,
+  unassignEmployeeFromClient,
+  type ClientRow,
+  type MeProfile,
+} from '../api'
+import AssignmentManager from '../components/AssignmentManager'
 import '../App.css'
 
 type Toast = { id: number; message: string; variant: 'ok' | 'err' }
@@ -19,6 +30,7 @@ export default function ClientsPage({
   const canCreateClient =
     profile.role === 'Admin' || profile.role === 'Partner' || profile.role === 'Finance'
   const canEditClient = isAdmin
+  const canManageAssignments = profile.role === 'Admin' || profile.role === 'Partner'
 
   const [rows, setRows] = useState<ClientRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -227,6 +239,18 @@ export default function ClientsPage({
           </div>
         )}
       </div>
+
+      <AssignmentManager
+        token={token}
+        title="Client staffing assignments"
+        targetLabel="Client"
+        targetOptions={rows.map((c) => ({ id: c.id, name: c.name, isActive: c.isActive }))}
+        loadAssignableEmployees={listAssignableEmployees}
+        loadAssignments={listClientAssignments}
+        assign={assignEmployeeToClient}
+        unassign={unassignEmployeeFromClient}
+        canManage={canManageAssignments}
+      />
 
       <div className="toast-stack" aria-live="polite">
         {toasts.map((t) => (

@@ -8,6 +8,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<AppUser> Users => Set<AppUser>();
     public DbSet<Client> Clients => Set<Client>();
     public DbSet<Project> Projects => Set<Project>();
+    public DbSet<ClientEmployeeAssignment> ClientEmployeeAssignments => Set<ClientEmployeeAssignment>();
+    public DbSet<ProjectEmployeeAssignment> ProjectEmployeeAssignments => Set<ProjectEmployeeAssignment>();
     public DbSet<TimesheetLine> TimesheetLines => Set<TimesheetLine>();
     public DbSet<TimesheetWeekApproval> TimesheetWeekApprovals => Set<TimesheetWeekApproval>();
     public DbSet<ExpenseEntry> ExpenseEntries => Set<ExpenseEntry>();
@@ -40,6 +42,34 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .WithMany(c => c.Projects)
                 .HasForeignKey(x => x.ClientId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ClientEmployeeAssignment>(e =>
+        {
+            e.HasKey(x => new { x.ClientId, x.UserId });
+            e.HasIndex(x => x.UserId);
+            e.HasOne(x => x.Client)
+                .WithMany(c => c.EmployeeAssignments)
+                .HasForeignKey(x => x.ClientId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.User)
+                .WithMany(u => u.ClientAssignments)
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ProjectEmployeeAssignment>(e =>
+        {
+            e.HasKey(x => new { x.ProjectId, x.UserId });
+            e.HasIndex(x => x.UserId);
+            e.HasOne(x => x.Project)
+                .WithMany(p => p.EmployeeAssignments)
+                .HasForeignKey(x => x.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.User)
+                .WithMany(u => u.ProjectAssignments)
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<AppUser>(e =>

@@ -355,6 +355,90 @@ export type ProjectRow = {
   isActive: boolean
 }
 
+export type AssignmentRow = {
+  userId: string
+  email: string
+  displayName: string
+  role: string
+}
+
+function assertAssignment(x: unknown): AssignmentRow {
+  const r = x as Record<string, unknown>
+  if (
+    typeof r.userId !== 'string' ||
+    typeof r.email !== 'string' ||
+    typeof r.displayName !== 'string' ||
+    typeof r.role !== 'string'
+  )
+    throw new Error('Could not load assignments')
+  return {
+    userId: r.userId,
+    email: r.email,
+    displayName: r.displayName,
+    role: r.role,
+  }
+}
+
+async function readAssignmentRows(res: Response): Promise<AssignmentRow[]> {
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load assignments'))
+  const data = (await res.json()) as unknown
+  if (!Array.isArray(data)) throw new Error('Could not load assignments')
+  return data.map(assertAssignment)
+}
+
+export async function listAssignableEmployees(token: string): Promise<AssignmentRow[]> {
+  const res = await fetch(`${base}/api/assignments/employees`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return readAssignmentRows(res)
+}
+
+export async function listClientAssignments(token: string, clientId: string): Promise<AssignmentRow[]> {
+  const res = await fetch(`${base}/api/assignments/clients/${encodeURIComponent(clientId)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return readAssignmentRows(res)
+}
+
+export async function assignEmployeeToClient(token: string, clientId: string, userId: string): Promise<void> {
+  const res = await fetch(
+    `${base}/api/assignments/clients/${encodeURIComponent(clientId)}/employees/${encodeURIComponent(userId)}`,
+    { method: 'PUT', headers: { Authorization: `Bearer ${token}` } },
+  )
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not assign employee to client'))
+}
+
+export async function unassignEmployeeFromClient(token: string, clientId: string, userId: string): Promise<void> {
+  const res = await fetch(
+    `${base}/api/assignments/clients/${encodeURIComponent(clientId)}/employees/${encodeURIComponent(userId)}`,
+    { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
+  )
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not unassign employee from client'))
+}
+
+export async function listProjectAssignments(token: string, projectId: string): Promise<AssignmentRow[]> {
+  const res = await fetch(`${base}/api/assignments/projects/${encodeURIComponent(projectId)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return readAssignmentRows(res)
+}
+
+export async function assignEmployeeToProject(token: string, projectId: string, userId: string): Promise<void> {
+  const res = await fetch(
+    `${base}/api/assignments/projects/${encodeURIComponent(projectId)}/employees/${encodeURIComponent(userId)}`,
+    { method: 'PUT', headers: { Authorization: `Bearer ${token}` } },
+  )
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not assign employee to project'))
+}
+
+export async function unassignEmployeeFromProject(token: string, projectId: string, userId: string): Promise<void> {
+  const res = await fetch(
+    `${base}/api/assignments/projects/${encodeURIComponent(projectId)}/employees/${encodeURIComponent(userId)}`,
+    { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
+  )
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not unassign employee from project'))
+}
+
 function assertProject(x: unknown): ProjectRow {
   const r = x as Record<string, unknown>
   const id = typeof r.id === 'string' ? r.id : r.id != null ? String(r.id) : ''
