@@ -12,7 +12,7 @@ namespace C2E.Api.Controllers;
 
 [ApiController]
 [Route("api/quotes")]
-[Authorize(Roles = RbacRoleSets.AdminAndFinance)]
+[Authorize(Roles = RbacRoleSets.AdminFinanceManager)]
 public sealed class QuotesController(AppDbContext db) : ControllerBase
 {
     [HttpGet]
@@ -27,6 +27,7 @@ public sealed class QuotesController(AppDbContext db) : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Roles = RbacRoleSets.AdminAndFinance)]
     public async Task<ActionResult<QuoteResponse>> Create([FromBody] CreateQuoteRequest body, CancellationToken ct)
     {
         if (!ModelState.IsValid)

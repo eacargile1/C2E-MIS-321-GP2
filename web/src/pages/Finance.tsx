@@ -24,6 +24,7 @@ function statusClass(status: string) {
 }
 
 export default function FinancePage({ token, profile }: { token: string; profile: MeProfile }) {
+  const canCreateQuote = profile.role === 'Admin' || profile.role === 'Finance'
   const [ledger, setLedger] = useState<ExpenseRow[]>([])
   const [quotes, setQuotes] = useState<QuoteRow[]>([])
   const [clients, setClients] = useState<ClientRow[]>([])
@@ -267,58 +268,78 @@ export default function FinancePage({ token, profile }: { token: string; profile
           )}
         </div>
 
-        <div className="card admin-card">
-          <h2 className="admin-h2">New quote</h2>
-          <form className="form admin-form-grid" onSubmit={(e) => void onCreateQuote(e)}>
-            <label className="field">
-              <span>Client</span>
-              <select value={qClientId} onChange={(e) => setQClientId(e.target.value)} required>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                    {c.defaultBillingRate != null ? ` · ${usd.format(c.defaultBillingRate)}/hr` : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              <span>Title</span>
-              <input value={qTitle} onChange={(e) => setQTitle(e.target.value)} placeholder="e.g. Q2 analytics pilot" required />
-            </label>
-            <label className="field" style={{ gridColumn: '1 / -1' }}>
-              <span>Scope summary</span>
-              <textarea
-                className="fin-textarea"
-                rows={3}
-                value={qScope}
-                onChange={(e) => setQScope(e.target.value)}
-                placeholder="Deliverables, assumptions, exclusions…"
-              />
-            </label>
-            <label className="field">
-              <span>Estimated hours</span>
-              <input inputMode="decimal" value={qHours} onChange={(e) => setQHours(e.target.value)} required />
-            </label>
-            <label className="field">
-              <span>Hourly rate ($)</span>
-              <input inputMode="decimal" value={qRate} onChange={(e) => setQRate(e.target.value)} placeholder="from client default" required />
-            </label>
-            <label className="field">
-              <span>Valid through</span>
-              <input type="date" value={qValid} onChange={(e) => setQValid(e.target.value)} />
-            </label>
-            <label className="field">
-              <span>Status</span>
-              <select value={qStatus} onChange={(e) => setQStatus(e.target.value as 'Draft' | 'Sent')}>
-                <option value="Draft">Draft</option>
-                <option value="Sent">Sent</option>
-              </select>
-            </label>
-            <button type="submit" className="btn primary" disabled={busy || clients.length === 0}>
-              Generate quote
-            </button>
-          </form>
-        </div>
+        {canCreateQuote ? (
+          <div className="card admin-card">
+            <h2 className="admin-h2">New quote</h2>
+            <form className="form admin-form-grid" onSubmit={(e) => void onCreateQuote(e)}>
+              <label className="field">
+                <span>Client</span>
+                <select value={qClientId} onChange={(e) => setQClientId(e.target.value)} required>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                      {c.defaultBillingRate != null ? ` · ${usd.format(c.defaultBillingRate)}/hr` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Title</span>
+                <input
+                  value={qTitle}
+                  onChange={(e) => setQTitle(e.target.value)}
+                  placeholder="e.g. Q2 analytics pilot"
+                  required
+                />
+              </label>
+              <label className="field" style={{ gridColumn: '1 / -1' }}>
+                <span>Scope summary</span>
+                <textarea
+                  className="fin-textarea"
+                  rows={3}
+                  value={qScope}
+                  onChange={(e) => setQScope(e.target.value)}
+                  placeholder="Deliverables, assumptions, exclusions…"
+                />
+              </label>
+              <label className="field">
+                <span>Estimated hours</span>
+                <input inputMode="decimal" value={qHours} onChange={(e) => setQHours(e.target.value)} required />
+              </label>
+              <label className="field">
+                <span>Hourly rate ($)</span>
+                <input
+                  inputMode="decimal"
+                  value={qRate}
+                  onChange={(e) => setQRate(e.target.value)}
+                  placeholder="from client default"
+                  required
+                />
+              </label>
+              <label className="field">
+                <span>Valid through</span>
+                <input type="date" value={qValid} onChange={(e) => setQValid(e.target.value)} />
+              </label>
+              <label className="field">
+                <span>Status</span>
+                <select value={qStatus} onChange={(e) => setQStatus(e.target.value as 'Draft' | 'Sent')}>
+                  <option value="Draft">Draft</option>
+                  <option value="Sent">Sent</option>
+                </select>
+              </label>
+              <button type="submit" className="btn primary" disabled={busy || clients.length === 0}>
+                Generate quote
+              </button>
+            </form>
+          </div>
+        ) : (
+          <div className="card admin-card">
+            <h2 className="admin-h2">Quote authoring</h2>
+            <p className="admin-hint" style={{ marginBottom: 0 }}>
+              Managers can view financial quotes here, but only Admin or Finance can create new quotes.
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="toast-stack" aria-live="polite">

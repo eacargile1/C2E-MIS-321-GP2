@@ -14,9 +14,9 @@ namespace C2E.Api.Controllers;
 [Authorize]
 public sealed class ClientsController(AppDbContext db) : ControllerBase
 {
-    /// <summary>Default hourly billing rates per active client (Admin/Finance).</summary>
+    /// <summary>Default hourly billing rates per active client (Admin/Finance/Manager).</summary>
     [HttpGet("billing-rates")]
-    [Authorize(Roles = RbacRoleSets.AdminAndFinance)]
+    [Authorize(Roles = RbacRoleSets.AdminFinanceManager)]
     public async Task<ActionResult<IReadOnlyList<ClientBillingRateItemDto>>> GetBillingRates(CancellationToken ct)
     {
         var rows = await db.Clients
@@ -150,7 +150,9 @@ public sealed class ClientsController(AppDbContext db) : ControllerBase
     }
 
     private bool CanViewBillingRates() =>
-        User.IsInRole(nameof(AppRole.Admin)) || User.IsInRole(nameof(AppRole.Finance));
+        User.IsInRole(nameof(AppRole.Admin)) ||
+        User.IsInRole(nameof(AppRole.Finance)) ||
+        User.IsInRole(nameof(AppRole.Manager));
 
     private static ClientResponse Map(Models.Client c, bool includeBilling) =>
         new()

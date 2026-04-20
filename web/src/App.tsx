@@ -84,7 +84,7 @@ function HomeDashboard({ session }: { session: Session }) {
   const isFinanceHub = role === 'Admin' || role === 'Finance'
   const isReviewer = role === 'Admin' || role === 'Manager'
   const quickCreateClient = role === 'Admin' || role === 'Partner' || role === 'Finance'
-  const quickCreateProject = role !== 'IC'
+  const quickCreateProject = role === 'Admin' || role === 'Partner' || role === 'Finance'
   const [kpis, setKpis] = useState({
     activeClients: 0,
     activeProjects: 0,
@@ -241,7 +241,7 @@ function HomeDashboard({ session }: { session: Session }) {
             {isIcOnly ? null : quickCreateProject ? (
               <NavLink to="/projects" className="quick-action-tile qa-projects">
                 <span className="quick-action-title">Create project</span>
-                <span className="quick-action-sub">Start an engagement (everyone except IC)</span>
+                <span className="quick-action-sub">Start an engagement (Admin, Partner, or Finance)</span>
               </NavLink>
             ) : (
               <NavLink to="/projects" className="quick-action-tile qa-projects">
@@ -443,7 +443,7 @@ function HomeDashboard({ session }: { session: Session }) {
             <li>Authentication and role-based access controls</li>
             <li>
               Timesheet weekly entry and org resource tracker (split views); Partner and Finance create clients;
-              Admin/Manager/Partner/Finance can add projects; editing project records is Admin, Partner, or Finance only
+              Admin/Partner/Finance can add projects; managers are project view-only; editing project records is Admin, Partner, or Finance only
             </li>
             <li>Client management directory</li>
             <li>Project directory (filters; edits per role as above)</li>
@@ -485,8 +485,9 @@ function LoginPage({ onSignedIn }: { onSignedIn: (s: Session) => void }) {
 
   return (
     <main className="shell">
-      <div className="card">
-        <h1 className="title">C2E</h1>
+      <div className="card login-card">
+        <img className="login-logo" src="/g2e-logo.png" alt="G2E logo" />
+        <h1 className="title">Log in to your account</h1>
         <p className="subtitle">Sign in with your work email</p>
         <form
           className="form"
@@ -552,7 +553,9 @@ function AuthenticatedLayout({
   return (
     <div className={`app-shell density-${density}`}>
       <header className="topbar">
-        <div className="topbar-brand">C2E</div>
+        <div className="topbar-brand">
+          <img className="topbar-brand-img" src="/g2e-wordmark.png" alt="G2E" />
+        </div>
         <nav className="topbar-tabs" aria-label="Primary navigation">
           <NavLink to="/" end className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
             Home
@@ -661,7 +664,8 @@ function ReportsRoute({ session }: { session: Session | null }) {
 
 function FinanceRoute({ session }: { session: Session | null }) {
   if (!session) return <Navigate to="/login" replace />
-  if (session.profile.role !== 'Admin' && session.profile.role !== 'Finance') return <Navigate to="/" replace />
+  if (session.profile.role !== 'Admin' && session.profile.role !== 'Finance')
+    return <Navigate to="/" replace />
   return <FinancePage token={session.token} profile={session.profile} />
 }
 

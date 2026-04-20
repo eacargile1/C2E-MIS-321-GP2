@@ -55,7 +55,7 @@ public sealed class ProjectsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = RbacRoleSets.AdminManagerPartnerFinance)]
+    [Authorize(Roles = RbacRoleSets.AdminPartnerFinance)]
     public async Task<ActionResult<ProjectResponse>> Create([FromBody] CreateProjectRequest body, CancellationToken ct)
     {
         if (!ModelState.IsValid)

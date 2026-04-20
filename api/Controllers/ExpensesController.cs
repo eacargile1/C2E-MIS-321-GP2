@@ -18,7 +18,7 @@ public sealed class ExpensesController(AppDbContext db) : ControllerBase
 {
     /// <summary>Full expense register for finance ops (all users, all approval states).</summary>
     [HttpGet("ledger")]
-    [Authorize(Roles = RbacRoleSets.AdminAndFinance)]
+    [Authorize(Roles = RbacRoleSets.AdminFinanceManager)]
     public async Task<ActionResult<IReadOnlyList<ExpenseResponse>>> ListLedger(CancellationToken ct)
     {
         var users = await db.Users.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Email, ct);

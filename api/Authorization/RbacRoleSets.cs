@@ -8,13 +8,17 @@ namespace C2E.Api.Authorization;
 /// </summary>
 public static class RbacRoleSets
 {
-    /// <summary>Org-wide timesheets (FR10), employee billing rates read, generate invoice (stub).</summary>
+    /// <summary>Org-wide timesheets (FR10), finance register/quotes read, employee billing rates read.</summary>
+    public const string AdminFinanceManager =
+        $"{nameof(AppRole.Admin)},{nameof(AppRole.Finance)},{nameof(AppRole.Manager)}";
+
+    /// <summary>Finance operations requiring Finance/Admin authority (e.g., quote create, invoice generate).</summary>
     public const string AdminAndFinance = $"{nameof(AppRole.Admin)},{nameof(AppRole.Finance)}";
 
     /// <summary>Create client (stub); matrix: Admin-only for client create/edit.</summary>
     public const string AdminOnly = nameof(AppRole.Admin);
 
-    /// <summary>Project create/edit and staffing actions allowed for Admin + Manager.</summary>
+    /// <summary>Approval/review actions owned by delivery leadership (Admin + Manager).</summary>
     public const string AdminAndManager = $"{nameof(AppRole.Admin)},{nameof(AppRole.Manager)}";
 
     /// <summary>Resource planning / forecast UX tier (Partner joins delivery leadership).</summary>
@@ -22,10 +26,6 @@ public static class RbacRoleSets
 
     /// <summary>Client directory create (IC excluded; managers escalate to Partner/Finance).</summary>
     public const string AdminPartnerFinance = $"{nameof(AppRole.Admin)},{nameof(AppRole.Partner)},{nameof(AppRole.Finance)}";
-
-    /// <summary>Project create (IC excluded); managers can add projects but cannot PATCH catalog fields.</summary>
-    public const string AdminManagerPartnerFinance =
-        $"{nameof(AppRole.Admin)},{nameof(AppRole.Manager)},{nameof(AppRole.Partner)},{nameof(AppRole.Finance)}";
 
     /// <summary>IC accounts are limited to own timesheet + expense submission; no org-wide views or reporting modules.</summary>
     public const string NonIc =

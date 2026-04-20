@@ -144,7 +144,7 @@ public class RbacEnforcementTests
     }
 
     [Fact]
-    public async Task Billing_rates_IC_and_Manager_forbidden_Finance_ok()
+    public async Task Billing_rates_IC_forbidden_Manager_and_Finance_ok()
     {
         using var factory = Factory();
         var client = factory.CreateClient();
@@ -158,11 +158,47 @@ public class RbacEnforcementTests
         await AssertForbiddenJsonAsync(await client.GetAsync("/api/clients/billing-rates"));
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", mgrToken);
-        await AssertForbiddenJsonAsync(await client.GetAsync("/api/clients/billing-rates"));
+        var mgrOk = await client.GetAsync("/api/clients/billing-rates");
+        Assert.Equal(HttpStatusCode.OK, mgrOk.StatusCode);
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", financeToken);
         var ok = await client.GetAsync("/api/clients/billing-rates");
         Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+    }
+
+    [Fact]
+    public async Task Create_project_Manager_forbidden_Partner_ok()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        var adminToken = await AdminTokenAsync(client);
+        var managerToken = await CreateUserWithRoleAsync(
+            client, "mgr.proj@local.test", "MgrProjPass1!", "Manager");
+        var partnerToken = await CreateUserWithRoleAsync(
+            client, "par.proj@local.test", "ParProjPass1!", "Partner");
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+        var newClient = await client.PostAsJsonAsync("/api/clients", new { name = "Proj Client A" });
+        newClient.EnsureSuccessStatusCode();
+        var newClientBody = await newClient.Content.ReadFromJsonAsync<ClientDto>();
+        Assert.NotNull(newClientBody);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", managerToken);
+        await AssertForbiddenJsonAsync(await client.PostAsJsonAsync("/api/projects", new
+        {
+            name = "Manager cannot create",
+            clientId = newClientBody!.Id,
+            budgetAmount = 1000m,
+        }));
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", partnerToken);
+        var partnerCreate = await client.PostAsJsonAsync("/api/projects", new
+        {
+            name = "Partner can create",
+            clientId = newClientBody.Id,
+            budgetAmount = 1000m,
+        });
+        Assert.Equal(HttpStatusCode.Created, partnerCreate.StatusCode);
     }
 
     [Fact]
@@ -226,4 +262,5 @@ public class RbacEnforcementTests
     private sealed record AuthErrorDto(string Message);
 
     private sealed record UserDto(Guid Id, string Email, string Role, bool IsActive);
+    private sealed record ClientDto(Guid Id, string Name, bool IsActive);
 }

@@ -23,7 +23,6 @@ export default function ProjectsPage({
 }) {
   const canCreateProject =
     profile.role === 'Admin' ||
-    profile.role === 'Manager' ||
     profile.role === 'Partner' ||
     profile.role === 'Finance'
   const canEditProject =
