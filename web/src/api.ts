@@ -256,25 +256,37 @@ export type ClientRow = {
   projects: { id: string; name: string }[]
 }
 
+function parseFiniteNumber(x: unknown): number | null {
+  if (typeof x === 'number' && Number.isFinite(x)) return x
+  if (typeof x === 'string' && x.trim() !== '') {
+    const n = Number(x)
+    if (Number.isFinite(n)) return n
+  }
+  return null
+}
+
 function assertClient(x: unknown): ClientRow {
   const r = x as Record<string, unknown>
   if (typeof r.id !== 'string' || typeof r.name !== 'string' || typeof r.isActive !== 'boolean')
     throw new Error('Could not load client')
-  const projects = r.projects
-  if (!Array.isArray(projects)) throw new Error('Could not load client')
+  const projectsRaw = r.projects
+  const projects = Array.isArray(projectsRaw) ? projectsRaw : []
+  const rate = parseFiniteNumber(r.defaultBillingRate)
   return {
     id: r.id,
     name: r.name,
     contactName: typeof r.contactName === 'string' ? r.contactName : null,
     contactEmail: typeof r.contactEmail === 'string' ? r.contactEmail : null,
     contactPhone: typeof r.contactPhone === 'string' ? r.contactPhone : null,
-    defaultBillingRate: typeof r.defaultBillingRate === 'number' ? r.defaultBillingRate : null,
+    defaultBillingRate: rate,
     notes: typeof r.notes === 'string' ? r.notes : null,
     isActive: r.isActive,
     projects: projects.map((p) => {
       const o = p as Record<string, unknown>
-      if (typeof o.id !== 'string' || typeof o.name !== 'string') throw new Error('Could not load client')
-      return { id: o.id, name: o.name }
+      const id = typeof o.id === 'string' ? o.id : o.id != null ? String(o.id) : ''
+      const name = typeof o.name === 'string' ? o.name : o.name != null ? String(o.name) : ''
+      if (!id) throw new Error('Could not load client')
+      return { id, name }
     }),
   }
 }
@@ -345,21 +357,24 @@ export type ProjectRow = {
 
 function assertProject(x: unknown): ProjectRow {
   const r = x as Record<string, unknown>
+  const id = typeof r.id === 'string' ? r.id : r.id != null ? String(r.id) : ''
+  const clientId = typeof r.clientId === 'string' ? r.clientId : r.clientId != null ? String(r.clientId) : ''
+  const budget = parseFiniteNumber(r.budgetAmount)
   if (
-    typeof r.id !== 'string' ||
+    !id ||
     typeof r.name !== 'string' ||
-    typeof r.clientId !== 'string' ||
+    !clientId ||
     typeof r.clientName !== 'string' ||
-    typeof r.budgetAmount !== 'number' ||
+    budget === null ||
     typeof r.isActive !== 'boolean'
   )
     throw new Error('Could not load project')
   return {
-    id: r.id,
+    id,
     name: r.name,
-    clientId: r.clientId,
+    clientId,
     clientName: r.clientName,
-    budgetAmount: r.budgetAmount,
+    budgetAmount: budget,
     isActive: r.isActive,
   }
 }

@@ -89,10 +89,11 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
           setCatalogClients(c)
           setCatalogProjects(p)
         }
-      } catch {
+      } catch (e) {
         if (!cancelled) {
           setCatalogClients([])
           setCatalogProjects([])
+          pushToast(e instanceof Error ? e.message : 'Could not load client/project directory', 'err')
         }
       }
     }
@@ -100,7 +101,7 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
     return () => {
       cancelled = true
     }
-  }, [token, profile.role])
+  }, [token, profile.role, pushToast])
 
   const onCreate = async (e: React.FormEvent) => {
     e.preventDefault()

@@ -163,10 +163,10 @@ public sealed class ClientsController(AppDbContext db) : ControllerBase
             DefaultBillingRate = includeBilling ? c.DefaultBillingRate : null,
             Notes = c.Notes,
             IsActive = c.IsActive,
-            Projects = c.Projects
+            Projects = (c.Projects ?? Array.Empty<Project>())
                 .Where(p => p.IsActive)
                 .OrderBy(p => p.Name)
-                .Select(p => new ClientProjectStubDto { Id = p.Id, Name = p.Name })
+                .Select(p => new ClientProjectStubDto { Id = p.Id, Name = p.Name ?? "" })
                 .ToList(),
         };
 

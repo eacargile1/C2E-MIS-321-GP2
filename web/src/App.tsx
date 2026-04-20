@@ -79,6 +79,7 @@ function timesheetWeekStatusVariant(s: TimesheetWeekStatusPayload['status']): 'a
 
 function HomeDashboard({ session }: { session: Session }) {
   const role = session.profile.role
+  const isIcOnly = role === 'IC'
   const isAdmin = role === 'Admin'
   const isFinanceHub = role === 'Admin' || role === 'Finance'
   const isReviewer = role === 'Admin' || role === 'Manager'
@@ -128,8 +129,12 @@ function HomeDashboard({ session }: { session: Session }) {
         icTimesheetWeek,
         pendingTimesheetWeeks,
       ] = await Promise.all([
-        listClients(session.token, undefined, isAdmin),
-        listProjects(session.token, { includeInactive: isAdmin }),
+        isIcOnly
+          ? Promise.resolve([] as Awaited<ReturnType<typeof listClients>>)
+          : listClients(session.token, undefined, isAdmin),
+        isIcOnly
+          ? Promise.resolve([] as Awaited<ReturnType<typeof listProjects>>)
+          : listProjects(session.token, { includeInactive: isAdmin }),
         getTimesheetWeek(session.token, weekStart),
         listMyExpenses(session.token),
         isReviewer ? listPendingExpenseApprovals(session.token) : Promise.resolve([] as ExpenseRow[]),
@@ -165,7 +170,7 @@ function HomeDashboard({ session }: { session: Session }) {
         pendingTimesheetWeeks: [],
       })
     }
-  }, [isAdmin, isFinanceHub, isReviewer, role, session.token, weekStart])
+  }, [isAdmin, isFinanceHub, isIcOnly, isReviewer, role, session.token, weekStart])
 
   useEffect(() => {
     void loadDashboard()
@@ -179,19 +184,25 @@ function HomeDashboard({ session }: { session: Session }) {
           Welcome back, {session.profile.displayName} ({session.profile.role})
         </p>
         <p className="admin-hint" style={{ marginBottom: 0 }}>
-          Use top navigation for full modules; quick actions and the status panel summarize common follow-ups.
+          {isIcOnly
+            ? 'Use Timesheet and Expenses in the header to log hours and submit expenses.'
+            : 'Use top navigation for full modules; quick actions and the status panel summarize common follow-ups.'}
         </p>
       </section>
 
       <section className="dashboard-kpis">
-        <article className="card admin-card kpi-card">
-          <p className="kpi-label">Active Clients</p>
-          <p className="kpi-value">{kpis.loading ? '--' : kpis.activeClients}</p>
-        </article>
-        <article className="card admin-card kpi-card">
-          <p className="kpi-label">Active Projects</p>
-          <p className="kpi-value">{kpis.loading ? '--' : kpis.activeProjects}</p>
-        </article>
+        {isIcOnly ? null : (
+          <>
+            <article className="card admin-card kpi-card">
+              <p className="kpi-label">Active Clients</p>
+              <p className="kpi-value">{kpis.loading ? '--' : kpis.activeClients}</p>
+            </article>
+            <article className="card admin-card kpi-card">
+              <p className="kpi-label">Active Projects</p>
+              <p className="kpi-value">{kpis.loading ? '--' : kpis.activeProjects}</p>
+            </article>
+          </>
+        )}
         <article className="card admin-card kpi-card">
           <p className="kpi-label">Hours This Week</p>
           <p className="kpi-value">{kpis.loading ? '--' : kpis.weekHours.toFixed(2)}</p>
@@ -206,15 +217,17 @@ function HomeDashboard({ session }: { session: Session }) {
               <span className="quick-action-title">Timesheet</span>
               <span className="quick-action-sub">Log hours by client, project, and task</span>
             </NavLink>
-            <NavLink to="/resource-tracker" className="quick-action-tile qa-projects">
-              <span className="quick-action-title">Resource tracker</span>
-              <span className="quick-action-sub">Org month view from logged hours</span>
-            </NavLink>
+            {isIcOnly ? null : (
+              <NavLink to="/resource-tracker" className="quick-action-tile qa-projects">
+                <span className="quick-action-title">Resource tracker</span>
+                <span className="quick-action-sub">Org month view from logged hours</span>
+              </NavLink>
+            )}
             <NavLink to="/expenses" className="quick-action-tile qa-projects">
               <span className="quick-action-title">Track Expense</span>
               <span className="quick-action-sub">Submit expenses for approval</span>
             </NavLink>
-            {quickCreateClient ? (
+            {isIcOnly ? null : quickCreateClient ? (
               <NavLink to="/clients" className="quick-action-tile qa-clients">
                 <span className="quick-action-title">Create client</span>
                 <span className="quick-action-sub">Add a customer (Partner, Finance, or Admin)</span>
@@ -225,7 +238,7 @@ function HomeDashboard({ session }: { session: Session }) {
                 <span className="quick-action-sub">Browse directory; new clients are created by Partner or Finance</span>
               </NavLink>
             )}
-            {quickCreateProject ? (
+            {isIcOnly ? null : quickCreateProject ? (
               <NavLink to="/projects" className="quick-action-tile qa-projects">
                 <span className="quick-action-title">Create project</span>
                 <span className="quick-action-sub">Start an engagement (everyone except IC)</span>
@@ -420,19 +433,25 @@ function HomeDashboard({ session }: { session: Session }) {
 
       <section className="card admin-card">
         <h2 className="admin-h2">Current Delivery Scope</h2>
-        <ul className="dashboard-list">
-          <li>Authentication and role-based access controls</li>
-          <li>
-            Timesheet weekly entry and org resource tracker (split views); IC browses clients/projects only; Partner and
-            Finance create clients; Admin/Manager/Partner/Finance can add projects; editing project records is Admin,
-            Partner, or Finance only
-          </li>
-          <li>Client management directory</li>
-          <li>Project directory (filters; edits per role as above)</li>
-          <li>Personal reports (time + expense totals by month)</li>
-          {isAdmin ? <li>User administration and role assignment</li> : null}
-          {isFinanceHub ? <li>Finance register and client quoting</li> : null}
-        </ul>
+        {isIcOnly ? (
+          <ul className="dashboard-list">
+            <li>Your weekly timesheet (this account type cannot view org-wide resource or directory modules)</li>
+            <li>Expense submission and tracking your own reimbursement requests</li>
+          </ul>
+        ) : (
+          <ul className="dashboard-list">
+            <li>Authentication and role-based access controls</li>
+            <li>
+              Timesheet weekly entry and org resource tracker (split views); Partner and Finance create clients;
+              Admin/Manager/Partner/Finance can add projects; editing project records is Admin, Partner, or Finance only
+            </li>
+            <li>Client management directory</li>
+            <li>Project directory (filters; edits per role as above)</li>
+            <li>Personal reports (time + expense totals by month)</li>
+            {isAdmin ? <li>User administration and role assignment</li> : null}
+            {isFinanceHub ? <li>Finance register and client quoting</li> : null}
+          </ul>
+        )}
       </section>
     </div>
   )
@@ -469,7 +488,16 @@ function LoginPage({ onSignedIn }: { onSignedIn: (s: Session) => void }) {
       <div className="card">
         <h1 className="title">C2E</h1>
         <p className="subtitle">Sign in with your work email</p>
-        <form className="form" onSubmit={onSubmit}>
+        <form
+          className="form"
+          onSubmit={onSubmit}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter' || busy) return
+            if ((e.target as HTMLElement).tagName !== 'INPUT') return
+            e.preventDefault()
+            ;(e.currentTarget as HTMLFormElement).requestSubmit()
+          }}
+        >
           <label className="field">
             <span>Email</span>
             <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
@@ -506,6 +534,7 @@ function AuthenticatedLayout({
   onSignOut: () => void
 }) {
   if (!session) return <Navigate to="/login" replace />
+  const isIcOnly = session.profile.role === 'IC'
   const isAdmin = session.profile.role === 'Admin'
   const isFinanceHub = session.profile.role === 'Admin' || session.profile.role === 'Finance'
   const [density, setDensity] = useState<'comfortable' | 'compact'>(() => {
@@ -531,21 +560,29 @@ function AuthenticatedLayout({
           <NavLink to="/timesheet" end className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
             Timesheet
           </NavLink>
-          <NavLink to="/resource-tracker" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
-            Resource tracker
-          </NavLink>
+          {isIcOnly ? null : (
+            <NavLink to="/resource-tracker" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
+              Resource tracker
+            </NavLink>
+          )}
           <NavLink to="/expenses" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
             Expenses
           </NavLink>
-          <NavLink to="/clients" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
-            Clients
-          </NavLink>
-          <NavLink to="/projects" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
-            Projects
-          </NavLink>
-          <NavLink to="/reports" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
-            Reports
-          </NavLink>
+          {isIcOnly ? null : (
+            <NavLink to="/clients" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
+              Clients
+            </NavLink>
+          )}
+          {isIcOnly ? null : (
+            <NavLink to="/projects" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
+              Projects
+            </NavLink>
+          )}
+          {isIcOnly ? null : (
+            <NavLink to="/reports" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
+              Reports
+            </NavLink>
+          )}
           {isFinanceHub ? (
             <NavLink to="/finance" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
               Finance
@@ -595,11 +632,13 @@ function TimesheetApprovalReviewRoute({ session }: { session: Session | null }) 
 
 function ResourceTrackerRoute({ session }: { session: Session | null }) {
   if (!session) return <Navigate to="/login" replace />
+  if (session.profile.role === 'IC') return <Navigate to="/" replace />
   return <ResourceTracker token={session.token} profile={session.profile} />
 }
 
 function ClientsRoute({ session }: { session: Session | null }) {
   if (!session) return <Navigate to="/login" replace />
+  if (session.profile.role === 'IC') return <Navigate to="/" replace />
   return <ClientsPage token={session.token} profile={session.profile} />
 }
 
@@ -610,11 +649,13 @@ function ExpensesRoute({ session }: { session: Session | null }) {
 
 function ProjectsRoute({ session }: { session: Session | null }) {
   if (!session) return <Navigate to="/login" replace />
+  if (session.profile.role === 'IC') return <Navigate to="/" replace />
   return <ProjectsPage token={session.token} profile={session.profile} />
 }
 
 function ReportsRoute({ session }: { session: Session | null }) {
   if (!session) return <Navigate to="/login" replace />
+  if (session.profile.role === 'IC') return <Navigate to="/" replace />
   return <ReportsPage token={session.token} profile={session.profile} />
 }
 

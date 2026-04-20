@@ -65,13 +65,17 @@ export default function ProjectsPage({
       ])
       setRows(projectRows)
       setClients(clientRows)
-      if (createClientId === '' && clientRows.length > 0) setCreateClientId(clientRows[0]!.id)
+      setCreateClientId((prev) => {
+        if (clientRows.length === 0) return ''
+        if (prev === '') return clientRows[0]!.id
+        return clientRows.some((c) => c.id === prev) ? prev : clientRows[0]!.id
+      })
     } catch (err) {
       pushToast(err instanceof Error ? err.message : 'Load failed', 'err')
     } finally {
       setLoading(false)
     }
-  }, [token, q, clientFilter, canShowInactive, includeInactive, createClientId, pushToast])
+  }, [token, q, clientFilter, canShowInactive, includeInactive, pushToast])
 
   useEffect(() => {
     void refresh()

@@ -18,7 +18,7 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
 {
     /// <summary>Org-wide availability matrix for the month (FR20).</summary>
     [HttpGet("organization")]
-    [Authorize]
+    [Authorize(Roles = RbacRoleSets.NonIc)]
     public async Task<ActionResult<IReadOnlyList<ResourceTrackerEmployeeRowResponse>>> GetOrganization(
         [FromQuery] string monthStart,
         CancellationToken ct)

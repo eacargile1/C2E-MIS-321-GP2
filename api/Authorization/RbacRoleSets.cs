@@ -26,4 +26,8 @@ public static class RbacRoleSets
     /// <summary>Project create (IC excluded); managers can add projects but cannot PATCH catalog fields.</summary>
     public const string AdminManagerPartnerFinance =
         $"{nameof(AppRole.Admin)},{nameof(AppRole.Manager)},{nameof(AppRole.Partner)},{nameof(AppRole.Finance)}";
+
+    /// <summary>IC accounts are limited to own timesheet + expense submission; no org-wide views or reporting modules.</summary>
+    public const string NonIc =
+        $"{nameof(AppRole.Admin)},{nameof(AppRole.Manager)},{nameof(AppRole.Partner)},{nameof(AppRole.Finance)}";
 }

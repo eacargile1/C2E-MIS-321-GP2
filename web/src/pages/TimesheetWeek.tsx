@@ -238,10 +238,11 @@ export default function TimesheetWeek({
           setCatalogClients(c)
           setCatalogProjects(p)
         }
-      } catch {
+      } catch (e) {
         if (!cancelled) {
           setCatalogClients([])
           setCatalogProjects([])
+          pushToast(e instanceof Error ? e.message : 'Could not load client/project directory', 'err')
         }
       }
     }
@@ -249,7 +250,7 @@ export default function TimesheetWeek({
     return () => {
       cancelled = true
     }
-  }, [token, profile.role])
+  }, [token, profile.role, pushToast])
 
   const addRow = () => setLines((xs) => [...xs, blankDraft(weekStart)])
 
@@ -314,11 +315,17 @@ export default function TimesheetWeek({
           Signed in as {profile.displayName} · {profile.role}
         </p>
         <p className="admin-hint" style={{ marginTop: 8 }}>
-          This week: <strong>{weekHumanLabel}</strong> ·{' '}
-          <Link to="/resource-tracker" style={{ textDecoration: 'underline' }}>
-            Resource tracker
-          </Link>{' '}
-          for the org month view.
+          This week: <strong>{weekHumanLabel}</strong>
+          {isIc ? null : (
+            <>
+              {' '}
+              ·{' '}
+              <Link to="/resource-tracker" style={{ textDecoration: 'underline' }}>
+                Resource tracker
+              </Link>{' '}
+              for the org month view.
+            </>
+          )}
         </p>
         {weekApproval && isIc ? (
           <p className="admin-hint" style={{ marginTop: 10 }}>
@@ -417,7 +424,8 @@ export default function TimesheetWeek({
                   {lines.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="admin-hint">
-                        No lines yet for this week. Use Add line below, or open a week from the resource tracker.
+                        No lines yet for this week. Use Add line below
+                        {isIc ? '.' : ', or open a week from the resource tracker.'}
                       </td>
                     </tr>
                   ) : null}
