@@ -4,6 +4,7 @@ using C2E.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace C2E.Api.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260420221358_AddProjectAssignedFinanceUserId")]
+    partial class AddProjectAssignedFinanceUserId
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -111,24 +114,6 @@ namespace C2E.Api.Data.Migrations
                     b.HasIndex("Name");
 
                     b.ToTable("Clients");
-                });
-
-            modelBuilder.Entity("C2E.Api.Models.ClientEmployeeAssignment", b =>
-                {
-                    b.Property<Guid>("ClientId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<DateTime>("AssignedAtUtc")
-                        .HasColumnType("datetime(6)");
-
-                    b.HasKey("ClientId", "UserId");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("ClientEmployeeAssignments");
                 });
 
             modelBuilder.Entity("C2E.Api.Models.ClientQuote", b =>
@@ -321,39 +306,6 @@ namespace C2E.Api.Data.Migrations
                     b.ToTable("Projects");
                 });
 
-            modelBuilder.Entity("C2E.Api.Models.ProjectTeamMember", b =>
-                {
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("char(36)");
-
-                    b.HasKey("ProjectId", "UserId");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("ProjectTeamMembers");
-                });
-
-            modelBuilder.Entity("C2E.Api.Models.ProjectEmployeeAssignment", b =>
-                {
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<DateTime>("AssignedAtUtc")
-                        .HasColumnType("datetime(6)");
-
-                    b.HasKey("ProjectId", "UserId");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("ProjectEmployeeAssignments");
-                });
-
             modelBuilder.Entity("C2E.Api.Models.TimesheetLine", b =>
                 {
                     b.Property<Guid>("Id")
@@ -461,25 +413,6 @@ namespace C2E.Api.Data.Migrations
                     b.Navigation("Manager");
                 });
 
-            modelBuilder.Entity("C2E.Api.Models.ClientEmployeeAssignment", b =>
-                {
-                    b.HasOne("C2E.Api.Models.Client", "Client")
-                        .WithMany("EmployeeAssignments")
-                        .HasForeignKey("ClientId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("C2E.Api.Models.AppUser", "User")
-                        .WithMany("ClientAssignments")
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Client");
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("C2E.Api.Models.ClientQuote", b =>
                 {
                     b.HasOne("C2E.Api.Models.Client", "Client")
@@ -523,44 +456,6 @@ namespace C2E.Api.Data.Migrations
                     b.Navigation("EngagementPartner");
                 });
 
-            modelBuilder.Entity("C2E.Api.Models.ProjectTeamMember", b =>
-                {
-                    b.HasOne("C2E.Api.Models.Project", "Project")
-                        .WithMany("TeamMembers")
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("C2E.Api.Models.AppUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Project");
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("C2E.Api.Models.ProjectEmployeeAssignment", b =>
-                {
-                    b.HasOne("C2E.Api.Models.Project", "Project")
-                        .WithMany("EmployeeAssignments")
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("C2E.Api.Models.AppUser", "User")
-                        .WithMany("ProjectAssignments")
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Project");
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("C2E.Api.Models.TimesheetWeekApproval", b =>
                 {
                     b.HasOne("C2E.Api.Models.AppUser", "ReviewedBy")
@@ -581,25 +476,12 @@ namespace C2E.Api.Data.Migrations
 
             modelBuilder.Entity("C2E.Api.Models.AppUser", b =>
                 {
-                    b.Navigation("ClientAssignments");
-
                     b.Navigation("DirectReports");
-
-                    b.Navigation("ProjectAssignments");
                 });
 
             modelBuilder.Entity("C2E.Api.Models.Client", b =>
                 {
-                    b.Navigation("EmployeeAssignments");
-
                     b.Navigation("Projects");
-                });
-
-            modelBuilder.Entity("C2E.Api.Models.Project", b =>
-                {
-                    b.Navigation("EmployeeAssignments");
-
-                    b.Navigation("TeamMembers");
                 });
 #pragma warning restore 612, 618
         }

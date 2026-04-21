@@ -10,6 +10,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<ClientEmployeeAssignment> ClientEmployeeAssignments => Set<ClientEmployeeAssignment>();
     public DbSet<ProjectEmployeeAssignment> ProjectEmployeeAssignments => Set<ProjectEmployeeAssignment>();
+    public DbSet<ProjectTeamMember> ProjectTeamMembers => Set<ProjectTeamMember>();
     public DbSet<TimesheetLine> TimesheetLines => Set<TimesheetLine>();
     public DbSet<TimesheetWeekApproval> TimesheetWeekApprovals => Set<TimesheetWeekApproval>();
     public DbSet<ExpenseEntry> ExpenseEntries => Set<ExpenseEntry>();
@@ -42,6 +43,32 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .WithMany(c => c.Projects)
                 .HasForeignKey(x => x.ClientId)
                 .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.DeliveryManager)
+                .WithMany()
+                .HasForeignKey(x => x.DeliveryManagerUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.EngagementPartner)
+                .WithMany()
+                .HasForeignKey(x => x.EngagementPartnerUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.AssignedFinanceUser)
+                .WithMany()
+                .HasForeignKey(x => x.AssignedFinanceUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<ProjectTeamMember>(e =>
+        {
+            e.HasKey(x => new { x.ProjectId, x.UserId });
+            e.HasIndex(x => x.UserId);
+            e.HasOne(x => x.Project)
+                .WithMany(p => p.TeamMembers)
+                .HasForeignKey(x => x.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<ClientEmployeeAssignment>(e =>
@@ -127,6 +154,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.Description).HasMaxLength(500);
             e.Property(x => x.Amount).HasPrecision(18, 2);
             e.Property(x => x.Status).HasConversion<string>().HasMaxLength(24);
+            e.Property(x => x.InvoiceFileName).HasMaxLength(260);
+            e.Property(x => x.InvoiceContentType).HasMaxLength(128);
         });
 
         modelBuilder.Entity<ClientQuote>(e =>

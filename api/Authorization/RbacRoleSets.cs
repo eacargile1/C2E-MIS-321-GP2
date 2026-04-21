@@ -33,4 +33,15 @@ public static class RbacRoleSets
     /// <summary>IC accounts are limited to own timesheet + expense submission; no org-wide views or reporting modules.</summary>
     public const string NonIc =
         $"{nameof(AppRole.Admin)},{nameof(AppRole.Manager)},{nameof(AppRole.Partner)},{nameof(AppRole.Finance)}";
+
+    /// <summary>Project create and staffing assignment (Admin + Partner only).</summary>
+    public const string AdminPartner = $"{nameof(AppRole.Admin)},{nameof(AppRole.Partner)}";
+
+    /// <summary>Read-only staffing directory (managers, partners, finance) for labels on project views.</summary>
+    public const string ProjectStaffingDirectoryReaders =
+        $"{nameof(AppRole.Admin)},{nameof(AppRole.Partner)},{nameof(AppRole.Manager)},{nameof(AppRole.Finance)}";
+
+    /// <summary>Project PATCH: full edit (Admin + Partner) or budget-only for Finance assigned on the project.</summary>
+    public const string AdminPartnerFinanceProjectPatch =
+        $"{nameof(AppRole.Admin)},{nameof(AppRole.Partner)},{nameof(AppRole.Finance)}";
 }

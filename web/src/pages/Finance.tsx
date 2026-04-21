@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   createQuote,
+  downloadExpenseInvoice,
   listClients,
   listFinanceExpenseLedger,
   listQuotes,
@@ -46,6 +47,20 @@ export default function FinancePage({ token, profile }: { token: string; profile
     setToasts((t) => [...t, { id, message, variant }])
     window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), TOAST_MS)
   }, [])
+
+  const onDownloadInvoice = useCallback(
+    async (id: string) => {
+      setBusy(true)
+      try {
+        await downloadExpenseInvoice(token, id)
+      } catch (e) {
+        pushToast(e instanceof Error ? e.message : 'Download failed', 'err')
+      } finally {
+        setBusy(false)
+      }
+    },
+    [pushToast, token],
+  )
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -149,26 +164,26 @@ export default function FinancePage({ token, profile }: { token: string; profile
 
       <section className="dashboard-kpis">
         <article className="card admin-card kpi-card">
-          <p className="kpi-label">Pending expenses</p>
+          <p className="kpi-label">Pending Expenses</p>
           <p className="kpi-value">{loading ? '--' : usd.format(totals.pending)}</p>
         </article>
         <article className="card admin-card kpi-card">
-          <p className="kpi-label">Approved (register)</p>
+          <p className="kpi-label">Approved (Register)</p>
           <p className="kpi-value">{loading ? '--' : usd.format(totals.approved)}</p>
         </article>
         <article className="card admin-card kpi-card">
-          <p className="kpi-label">Rejected (register)</p>
+          <p className="kpi-label">Rejected (Register)</p>
           <p className="kpi-value">{loading ? '--' : usd.format(totals.rejected)}</p>
         </article>
         <article className="card admin-card kpi-card">
-          <p className="kpi-label">Quoted pipeline</p>
+          <p className="kpi-label">Quoted Pipeline</p>
           <p className="kpi-value">{loading ? '--' : usd.format(totals.quotePipeline)}</p>
         </article>
       </section>
 
       <div className="card admin-card">
         <div className="admin-table-head">
-          <h2 className="admin-h2">Expense register</h2>
+          <h2 className="admin-h2">Expense Register</h2>
           <div className="finance-toolbar">
             <label className="field inline">
               <span>Status</span>
@@ -193,12 +208,13 @@ export default function FinancePage({ token, profile }: { token: string; profile
             <table className="admin-table fin-table">
               <thead>
                 <tr>
-                  <th>Submitted by</th>
+                  <th>Submitted By</th>
                   <th>Date</th>
                   <th>Client / Project</th>
                   <th>Category</th>
                   <th>Description</th>
                   <th>Amount</th>
+                  <th>Invoice</th>
                   <th>Status</th>
                   <th>Reviewer</th>
                 </tr>
@@ -215,6 +231,20 @@ export default function FinancePage({ token, profile }: { token: string; profile
                     <td>{r.description}</td>
                     <td className="fin-num">{usd.format(r.amount)}</td>
                     <td>
+                      {r.hasInvoice ? (
+                        <button
+                          type="button"
+                          className="btn secondary btn-sm"
+                          onClick={() => void onDownloadInvoice(r.id)}
+                          disabled={busy}
+                        >
+                          Download
+                        </button>
+                      ) : (
+                        <span className="admin-hint">—</span>
+                      )}
+                    </td>
+                    <td>
                       <span className={statusClass(r.status)}>{r.status}</span>
                     </td>
                     <td className="admin-hint">{r.reviewedByEmail ?? '—'}</td>
@@ -228,7 +258,7 @@ export default function FinancePage({ token, profile }: { token: string; profile
 
       <div className="finance-two-col">
         <div className="card admin-card">
-          <h2 className="admin-h2">Client quotes</h2>
+          <h2 className="admin-h2">Client Quotes</h2>
           <p className="admin-hint">Fixed-fee style quotes from estimated hours × rate (snapshot at creation).</p>
           {quotes.length === 0 ? (
             <p className="admin-hint">No quotes yet.</p>

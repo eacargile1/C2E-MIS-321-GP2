@@ -41,7 +41,7 @@ function ProjectBudgetBarBlock({ b }: { b: ProjectBudgetBar }) {
             <span className="review-stat-value">{usd.format(b.consumedBillableAmount)}</span>
           </div>
           <div>
-            <span className="review-stat-label">This week</span>
+            <span className="review-stat-label">This Week</span>
             <span className="review-stat-value">{usd.format(b.pendingSubmissionBillableAmount)}</span>
           </div>
           <div>
@@ -76,7 +76,7 @@ function ProjectBudgetBarBlock({ b }: { b: ProjectBudgetBar }) {
           <span className="review-stat-value">{usd.format(b.consumedBillableAmount)}</span>
         </div>
         <div>
-          <span className="review-stat-label">This week</span>
+          <span className="review-stat-label">This Week</span>
           <span className="review-stat-value">{usd.format(b.pendingSubmissionBillableAmount)}</span>
         </div>
         <div>
@@ -91,7 +91,7 @@ function ProjectBudgetBarBlock({ b }: { b: ProjectBudgetBar }) {
       ) : null}
       <div className={`budget-bar-track${over ? ' budget-bar-track-over' : ''}`} aria-hidden>
         <div className="budget-bar-seg budget-bar-consumed" style={{ flex: `${fc / flexSum} 1 0` }} title="Recognized" />
-        <div className="budget-bar-seg budget-bar-pending" style={{ flex: `${fp / flexSum} 1 0` }} title="This week" />
+        <div className="budget-bar-seg budget-bar-pending" style={{ flex: `${fp / flexSum} 1 0` }} title="This Week" />
         <div className="budget-bar-seg budget-bar-remainder" style={{ flex: `${fr / flexSum} 1 0` }} title="Headroom" />
       </div>
       <div className="budget-bar-legend-inline">
@@ -99,7 +99,7 @@ function ProjectBudgetBarBlock({ b }: { b: ProjectBudgetBar }) {
           <i className="budget-legend-swatch budget-bar-consumed" /> Recognized
         </span>
         <span>
-          <i className="budget-legend-swatch budget-bar-pending" /> This week
+          <i className="budget-legend-swatch budget-bar-pending" /> This Week
         </span>
         <span>
           <i className="budget-legend-swatch budget-bar-remainder" /> Headroom
@@ -204,9 +204,9 @@ export default function TimesheetApprovalReview({
       <div className="card admin-card review-page-card">
         <header className="review-page-header">
           <div>
-            <h1 className="title admin-title review-page-title">Review timesheet</h1>
+            <h1 className="title admin-title review-page-title">Review Timesheet</h1>
             <p className="review-page-crumb">
-              <Link to="/">Home</Link> · <Link to="/timesheet">Your timesheet</Link> · {profile.displayName}
+              <Link to="/">Home</Link> · <Link to="/timesheet">Your Timesheet</Link> · {profile.displayName}
             </p>
           </div>
         </header>
@@ -247,13 +247,14 @@ export default function TimesheetApprovalReview({
             {data.projectBudgetBars.length > 0 ? (
               <section className="review-budget-section" aria-label="Budget impact">
                 <div className="review-section-head">
-                  <h2 className="review-section-title">Budget by project</h2>
+                  <h2 className="review-section-title">Budget By Project</h2>
                   <details className="review-budget-help">
                     <summary>How this is calculated</summary>
                     <p>
                       Uses each project&apos;s budget and the client&apos;s default hourly rate (Finance/Admin).
-                      <strong> Recognized</strong> = billable time on that project from manager-approved IC weeks, plus
-                      all non-IC billable lines. <strong>This week</strong> = this submission only.
+                      <strong> Recognized</strong> = billable time after delivery-manager-approved weeks (IC, Finance) and
+                      engagement-partner-approved weeks (Manager, Partner), plus Admin and other non-gated lines.{' '}
+                      <strong>This Week</strong> = this submission only.
                     </p>
                   </details>
                 </div>
@@ -266,7 +267,7 @@ export default function TimesheetApprovalReview({
             ) : null}
 
             <section className="review-lines-section" aria-label="Timesheet lines">
-              <h2 className="review-section-title">Line detail</h2>
+              <h2 className="review-section-title">Line Detail</h2>
               <div className="table-scroll">
                 <table className="admin-table">
                   <thead>
@@ -284,7 +285,7 @@ export default function TimesheetApprovalReview({
                     {data.lines.length === 0 ? (
                       <tr>
                         <td colSpan={7} className="review-muted">
-                          No lines for this week.
+                          No Lines For This Week.
                         </td>
                       </tr>
                     ) : (
@@ -307,10 +308,10 @@ export default function TimesheetApprovalReview({
 
             <footer className="review-actions">
               <button type="button" className="btn primary" disabled={busy} onClick={() => void onApprove()}>
-                Approve week
+                Approve Week
               </button>
               <button type="button" className="btn secondary" disabled={busy} onClick={() => void onReject()}>
-                Reject week
+                Reject Week
               </button>
               <button type="button" className="btn secondary btn-sm" disabled={busy} onClick={() => void load()}>
                 Refresh

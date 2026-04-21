@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Http;
 
 namespace C2E.Api.Dtos;
 
@@ -27,6 +28,34 @@ public sealed class CreateExpenseRequest
     public decimal Amount { get; init; }
 }
 
+/// <summary>Multipart create (same fields as JSON + optional invoice file).</summary>
+public sealed class CreateExpenseFormRequest
+{
+    [Required]
+    public string ExpenseDate { get; set; } = "";
+
+    [Required]
+    [MaxLength(120)]
+    public string Client { get; set; } = "";
+
+    [Required]
+    [MaxLength(120)]
+    public string Project { get; set; } = "";
+
+    [Required]
+    [MaxLength(80)]
+    public string Category { get; set; } = "";
+
+    [Required]
+    [MaxLength(500)]
+    public string Description { get; set; } = "";
+
+    [Range(typeof(decimal), "0.01", "99999999")]
+    public decimal Amount { get; set; }
+
+    public IFormFile? Invoice { get; set; }
+}
+
 public sealed class ExpenseResponse
 {
     public required Guid Id { get; init; }
@@ -41,4 +70,5 @@ public sealed class ExpenseResponse
     public required string Status { get; init; }
     public string? ReviewedByEmail { get; init; }
     public DateTime? ReviewedAtUtc { get; init; }
+    public bool HasInvoice { get; init; }
 }

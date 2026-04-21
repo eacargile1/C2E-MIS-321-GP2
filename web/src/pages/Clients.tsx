@@ -123,7 +123,7 @@ export default function ClientsPage({
         </div>
         <div className="form admin-form-grid" style={{ marginBottom: 16 }}>
           <label className="field">
-            <span>Search name</span>
+            <span>Search Name</span>
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Contains…" />
           </label>
           {isAdmin ? (
@@ -133,7 +133,7 @@ export default function ClientsPage({
                 checked={includeInactive}
                 onChange={(e) => setIncludeInactive(e.target.checked)}
               />
-              <span>Show inactive (admin)</span>
+              <span>Show Inactive (Admin)</span>
             </label>
           ) : null}
         </div>
@@ -141,7 +141,7 @@ export default function ClientsPage({
 
       {canCreateClient ? (
         <div className="card admin-card">
-          <h2 className="admin-h2">New client</h2>
+          <h2 className="admin-h2">New Client</h2>
           <p className="admin-hint">
             {canSeeRates
               ? 'Billing rate is visible only to Admin and Finance (per PRD).'
@@ -153,7 +153,7 @@ export default function ClientsPage({
               <input value={createName} onChange={(e) => setCreateName(e.target.value)} required />
             </label>
             <label className="field">
-              <span>Contact email</span>
+              <span>Contact Email</span>
               <input type="email" value={createEmail} onChange={(e) => setCreateEmail(e.target.value)} />
             </label>
             {canSeeRates ? (

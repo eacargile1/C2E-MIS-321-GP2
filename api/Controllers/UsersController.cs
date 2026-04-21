@@ -52,13 +52,25 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
                 return BadRequest(new AuthErrorResponse { Message = err });
         }
 
+        AppRole role = AppRole.IC;
+        if (!string.IsNullOrWhiteSpace(body.Role))
+        {
+            var roleTrimmed = body.Role.Trim();
+            if (!Enum.GetNames<AppRole>().Any(n => string.Equals(n, roleTrimmed, StringComparison.OrdinalIgnoreCase)))
+                return BadRequest(new AuthErrorResponse
+                {
+                    Message = $"Invalid role. Use one of: {string.Join(", ", Enum.GetNames<AppRole>())}.",
+                });
+            role = Enum.Parse<AppRole>(roleTrimmed, ignoreCase: true);
+        }
+
         var user = new AppUser
         {
             Id = Guid.NewGuid(),
             Email = normalized,
             DisplayName = displayName,
             PasswordHash = "",
-            Role = AppRole.IC,
+            Role = role,
             IsActive = true,
             ManagerUserId = body.ManagerUserId,
         };

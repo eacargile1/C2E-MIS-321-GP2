@@ -74,7 +74,7 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>IC weekly submission status for billable-hour sign-off (None until submitted).</summary>
+    /// <summary>IC or Manager weekly submission status for billable-hour sign-off (None until submitted).</summary>
     [HttpGet("week/status")]
     [Authorize]
     public async Task<ActionResult<TimesheetWeekStatusResponse>> GetWeekStatus(
@@ -103,7 +103,7 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
         });
     }
 
-    /// <summary>IC submits the current week for manager approval (billable hours).</summary>
+    /// <summary>IC submits for delivery manager (or org manager); Manager submits for engagement partner.</summary>
     [HttpPost("week/submit")]
     [Authorize]
     public async Task<IActionResult> SubmitWeekForApproval([FromQuery] string weekStart, CancellationToken ct)
@@ -116,19 +116,50 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
 
         var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
         if (user is null) return Unauthorized();
-        if (user.Role != AppRole.IC)
-            return BadRequest(new AuthErrorResponse { Message = "Only IC accounts submit weekly timesheets for approval." });
 
         var existing = await db.TimesheetWeekApprovals.FirstOrDefaultAsync(x => x.UserId == userId && x.WeekStartMonday == start, ct);
         if (existing is { Status: TimesheetWeekApprovalStatus.Pending })
             return BadRequest(new AuthErrorResponse { Message = "This week is already pending approval." });
-        if (existing is { Status: TimesheetWeekApprovalStatus.Approved })
+        if (existing is { Status: TimesheetWeekApprovalStatus.Approved } && user.Role != AppRole.Admin)
             return BadRequest(new AuthErrorResponse { Message = "This week is already approved." });
 
         if (existing is not null)
             db.TimesheetWeekApprovals.Remove(existing);
 
         var now = DateTime.UtcNow;
+
+        // Org admins self-sign weekly billable totals (no reviewer queue).
+        if (user.Role == AppRole.Admin)
+        {
+            db.TimesheetWeekApprovals.Add(new TimesheetWeekApproval
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                WeekStartMonday = start,
+                Status = TimesheetWeekApprovalStatus.Approved,
+                SubmittedAtUtc = now,
+                ReviewedByUserId = userId,
+                ReviewedAtUtc = now,
+            });
+            await db.SaveChangesAsync(ct);
+            return NoContent();
+        }
+
+        if (ProjectApprovalRouting.UsesDeliveryManagerWeekApproval(user.Role))
+        {
+            var err = await ProjectApprovalRouting.ValidateIcWeekSubmitAsync(db, userId, start, ct);
+            if (err is not null)
+                return BadRequest(new AuthErrorResponse { Message = err });
+        }
+        else if (ProjectApprovalRouting.UsesEngagementPartnerWeekApproval(user.Role))
+        {
+            var err = await ProjectApprovalRouting.ValidateManagerWeekSubmitAsync(db, userId, start, ct);
+            if (err is not null)
+                return BadRequest(new AuthErrorResponse { Message = err });
+        }
+        else
+            return BadRequest(new AuthErrorResponse { Message = "Weekly submit is not configured for this role." });
+
         db.TimesheetWeekApprovals.Add(new TimesheetWeekApproval
         {
             Id = Guid.NewGuid(),
@@ -141,25 +172,41 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
         return NoContent();
     }
 
-    /// <summary>Pending IC week submissions for manager/admin review.</summary>
+    /// <summary>Pending IC weeks (delivery manager / org manager) and Manager weeks (engagement partner).</summary>
     [HttpGet("approvals/pending-weeks")]
-    [Authorize(Roles = RbacRoleSets.AdminAndManager)]
+    [Authorize(Roles = RbacRoleSets.AdminManagerPartner)]
     public async Task<ActionResult<IReadOnlyList<PendingTimesheetWeekResponse>>> ListPendingTimesheetWeeks(CancellationToken ct)
     {
         if (!TryGetUserId(out var reviewerId)) return Unauthorized();
 
-        var q = db.TimesheetWeekApprovals.AsNoTracking()
-            .Where(a => a.Status == TimesheetWeekApprovalStatus.Pending);
-        if (User.IsInRole(nameof(AppRole.Manager)) && !User.IsInRole(nameof(AppRole.Admin)))
-            q = q.Where(a => db.Users.Any(u => u.Id == a.UserId && u.ManagerUserId == reviewerId));
-
-        var rows = await q.Join(db.Users.AsNoTracking(), a => a.UserId, u => u.Id, (a, u) => new { a, u.Email })
+        var rows = await db.TimesheetWeekApprovals.AsNoTracking()
+            .Where(a => a.Status == TimesheetWeekApprovalStatus.Pending)
+            .Join(db.Users.AsNoTracking(), a => a.UserId, u => u.Id, (a, u) => new { a, u.Email, u.Role })
             .OrderBy(x => x.a.SubmittedAtUtc)
             .ToListAsync(ct);
 
         var result = new List<PendingTimesheetWeekResponse>(rows.Count);
         foreach (var x in rows)
         {
+            if (x.Role == AppRole.Admin) continue;
+
+            if (!User.IsInRole(nameof(AppRole.Admin)))
+            {
+                var ok = false;
+                if (User.IsInRole(nameof(AppRole.Partner)) &&
+                    ProjectApprovalRouting.UsesEngagementPartnerWeekApproval(x.Role) &&
+                    await ProjectApprovalRouting.PartnerMayApproveManagerTimesheetWeekAsync(
+                        db, reviewerId, x.a.UserId, x.a.WeekStartMonday, ct))
+                    ok = true;
+                if (!ok &&
+                    (User.IsInRole(nameof(AppRole.Manager)) || User.IsInRole(nameof(AppRole.Partner))) &&
+                    ProjectApprovalRouting.UsesDeliveryManagerWeekApproval(x.Role) &&
+                    await ProjectApprovalRouting.ManagerMayApproveIcTimesheetWeekAsync(
+                        db, reviewerId, x.a.UserId, x.a.WeekStartMonday, ct))
+                    ok = true;
+                if (!ok) continue;
+            }
+
             var weekEnd = x.a.WeekStartMonday.AddDays(7);
             var (total, billable) = await SumWeekHoursAsync(x.a.UserId, x.a.WeekStartMonday, weekEnd, ct);
             result.Add(new PendingTimesheetWeekResponse
@@ -177,10 +224,10 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
     }
 
     /// <summary>
-    /// Full timesheet lines for an IC week that is <see cref="TimesheetWeekApprovalStatus.Pending"/> (manager = direct report only).
+    /// Full timesheet lines for a pending IC week (delivery manager / org manager) or Manager week (engagement partner).
     /// </summary>
     [HttpGet("approvals/week/{userId:guid}/pending-review")]
-    [Authorize(Roles = RbacRoleSets.AdminAndManager)]
+    [Authorize(Roles = RbacRoleSets.AdminManagerPartner)]
     public async Task<ActionResult<TimesheetPendingWeekReviewResponse>> GetPendingWeekForReview(
         [FromRoute] Guid userId,
         [FromQuery] string weekStart,
@@ -194,13 +241,25 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
 
         var target = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
         if (target is null) return NotFound();
-        if (target.Role != AppRole.IC)
-            return BadRequest(new AuthErrorResponse { Message = "Only IC timesheets use weekly approval." });
+        if (target.Role == AppRole.Admin)
+            return BadRequest(new AuthErrorResponse { Message = "Admin weeks are self-signed in the app; there is no reviewer queue for them." });
+        if (!ProjectApprovalRouting.UsesDeliveryManagerWeekApproval(target.Role) &&
+            !ProjectApprovalRouting.UsesEngagementPartnerWeekApproval(target.Role))
+            return BadRequest(new AuthErrorResponse { Message = "Weekly approval does not apply to this account type." });
 
-        if (User.IsInRole(nameof(AppRole.Manager)) && !User.IsInRole(nameof(AppRole.Admin)))
+        if (!User.IsInRole(nameof(AppRole.Admin)))
         {
-            if (target.ManagerUserId != reviewerId)
-                return Forbid();
+            var ok = false;
+            if (User.IsInRole(nameof(AppRole.Partner)) &&
+                ProjectApprovalRouting.UsesEngagementPartnerWeekApproval(target.Role) &&
+                await ProjectApprovalRouting.PartnerMayApproveManagerTimesheetWeekAsync(db, reviewerId, userId, start, ct))
+                ok = true;
+            if (!ok &&
+                (User.IsInRole(nameof(AppRole.Manager)) || User.IsInRole(nameof(AppRole.Partner))) &&
+                ProjectApprovalRouting.UsesDeliveryManagerWeekApproval(target.Role) &&
+                await ProjectApprovalRouting.ManagerMayApproveIcTimesheetWeekAsync(db, reviewerId, userId, start, ct))
+                ok = true;
+            if (!ok) return Forbid();
         }
 
         var approval = await db.TimesheetWeekApprovals.AsNoTracking()
@@ -225,12 +284,12 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPost("approvals/week/{userId:guid}/approve")]
-    [Authorize(Roles = RbacRoleSets.AdminAndManager)]
+    [Authorize(Roles = RbacRoleSets.AdminManagerPartner)]
     public Task<IActionResult> ApproveTimesheetWeek([FromRoute] Guid userId, [FromQuery] string weekStart, CancellationToken ct) =>
         ReviewTimesheetWeekAsync(userId, weekStart, TimesheetWeekApprovalStatus.Approved, ct);
 
     [HttpPost("approvals/week/{userId:guid}/reject")]
-    [Authorize(Roles = RbacRoleSets.AdminAndManager)]
+    [Authorize(Roles = RbacRoleSets.AdminManagerPartner)]
     public Task<IActionResult> RejectTimesheetWeek([FromRoute] Guid userId, [FromQuery] string weekStart, CancellationToken ct) =>
         ReviewTimesheetWeekAsync(userId, weekStart, TimesheetWeekApprovalStatus.Rejected, ct);
 
@@ -271,16 +330,16 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
         var end = start.AddDays(7);
         if (!TryGetUserId(out var userId)) return Unauthorized();
 
-        if (!await EnsureIcTimesheetEditableAsync(userId, start, ct))
+        if (!await EnsureTimesheetWeekEditableAsync(userId, start, ct))
             return BadRequest(new AuthErrorResponse
             {
-                Message = "This week is pending manager approval and cannot be edited until it is approved or rejected.",
+                Message = "This week is pending approval and cannot be edited until it is approved or rejected.",
             });
 
         try
         {
             await UpsertWeekForUser(userId, start, end, body, ct);
-            await ClearIcWeekApprovalAfterSuccessfulEditAsync(userId, start, ct);
+            await ClearNonPendingWeekApprovalAfterSuccessfulEditAsync(userId, start, ct);
             return NoContent();
         }
         catch (InvalidOperationException ex)
@@ -334,16 +393,16 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
             return BadRequest(new AuthErrorResponse { Message = "weekStart must be a Monday." });
 
         var end = start.AddDays(7);
-        if (!await EnsureIcTimesheetEditableAsync(userId, start, ct))
+        if (!await EnsureTimesheetWeekEditableAsync(userId, start, ct))
             return BadRequest(new AuthErrorResponse
             {
-                Message = "This week is pending manager approval and cannot be edited until it is approved or rejected.",
+                Message = "This week is pending approval and cannot be edited until it is approved or rejected.",
             });
 
         try
         {
             await UpsertWeekForUser(userId, start, end, body, ct);
-            await ClearIcWeekApprovalAfterSuccessfulEditAsync(userId, start, ct);
+            await ClearNonPendingWeekApprovalAfterSuccessfulEditAsync(userId, start, ct);
             return NoContent();
         }
         catch (InvalidOperationException ex)
@@ -369,11 +428,22 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
             ct);
         if (row is null) return NotFound();
 
-        if (User.IsInRole(nameof(AppRole.Manager)) && !User.IsInRole(nameof(AppRole.Admin)))
+        if (!User.IsInRole(nameof(AppRole.Admin)))
         {
             var sub = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == targetUserId, ct);
-            if (sub?.ManagerUserId != reviewerId)
-                return Forbid();
+            if (sub is null) return Forbid();
+
+            var ok = false;
+            if (User.IsInRole(nameof(AppRole.Partner)) &&
+                ProjectApprovalRouting.UsesEngagementPartnerWeekApproval(sub.Role) &&
+                await ProjectApprovalRouting.PartnerMayApproveManagerTimesheetWeekAsync(db, reviewerId, targetUserId, start, ct))
+                ok = true;
+            if (!ok &&
+                (User.IsInRole(nameof(AppRole.Manager)) || User.IsInRole(nameof(AppRole.Partner))) &&
+                ProjectApprovalRouting.UsesDeliveryManagerWeekApproval(sub.Role) &&
+                await ProjectApprovalRouting.ManagerMayApproveIcTimesheetWeekAsync(db, reviewerId, targetUserId, start, ct))
+                ok = true;
+            if (!ok) return Forbid();
         }
 
         row.Status = nextStatus;
@@ -398,19 +468,24 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
         return (total, billable);
     }
 
-    private async Task<bool> EnsureIcTimesheetEditableAsync(Guid userId, DateOnly weekStart, CancellationToken ct)
+    private async Task<bool> EnsureTimesheetWeekEditableAsync(Guid userId, DateOnly weekStart, CancellationToken ct)
     {
-        var isIc = await db.Users.AsNoTracking().AnyAsync(u => u.Id == userId && u.Role == AppRole.IC, ct);
-        if (!isIc) return true;
+        var role = await db.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => u.Role).FirstOrDefaultAsync(ct);
+        if (role == AppRole.Admin) return true;
+        if (!ProjectApprovalRouting.UsesDeliveryManagerWeekApproval(role) &&
+            !ProjectApprovalRouting.UsesEngagementPartnerWeekApproval(role))
+            return true;
         return !await db.TimesheetWeekApprovals.AnyAsync(
             x => x.UserId == userId && x.WeekStartMonday == weekStart && x.Status == TimesheetWeekApprovalStatus.Pending,
             ct);
     }
 
-    private async Task ClearIcWeekApprovalAfterSuccessfulEditAsync(Guid userId, DateOnly weekStart, CancellationToken ct)
+    private async Task ClearNonPendingWeekApprovalAfterSuccessfulEditAsync(Guid userId, DateOnly weekStart, CancellationToken ct)
     {
-        var isIc = await db.Users.AsNoTracking().AnyAsync(u => u.Id == userId && u.Role == AppRole.IC, ct);
-        if (!isIc) return;
+        var role = await db.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => u.Role).FirstOrDefaultAsync(ct);
+        if (!ProjectApprovalRouting.UsesDeliveryManagerWeekApproval(role) &&
+            !ProjectApprovalRouting.UsesEngagementPartnerWeekApproval(role))
+            return;
         var rows = await db.TimesheetWeekApprovals
             .Where(x => x.UserId == userId && x.WeekStartMonday == weekStart && x.Status != TimesheetWeekApprovalStatus.Pending)
             .ToListAsync(ct);
@@ -654,7 +729,8 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
     }
 
     /// <summary>
-    /// Billable hours on a project: non-IC lines always; IC lines only when that calendar week is manager-approved.
+    /// Billable hours on a project: IC / Finance lines when that calendar week is delivery-manager-approved;
+    /// Manager / Partner when engagement-partner-approved; Admin always; other roles count immediately.
     /// </summary>
     private async Task<decimal> SumConsumedBillableHoursForProjectAsync(
         string clientName,
@@ -671,17 +747,40 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
         if (lines.Count == 0)
             return 0m;
 
-        var icUserIds = lines.Where(x => x.Role == AppRole.IC).Select(x => x.UserId).Distinct().ToList();
-        HashSet<(Guid UserId, DateOnly WeekStart)>? approvedIcWeeks = null;
-        if (icUserIds.Count > 0)
+        var deliveryPathUserIds = lines
+            .Where(x => x.Role != AppRole.Admin && ProjectApprovalRouting.UsesDeliveryManagerWeekApproval(x.Role))
+            .Select(x => x.UserId)
+            .Distinct()
+            .ToList();
+        HashSet<(Guid UserId, DateOnly WeekStart)>? approvedDeliveryPathWeeks = null;
+        if (deliveryPathUserIds.Count > 0)
         {
             var approvedRows = await db.TimesheetWeekApprovals.AsNoTracking()
                 .Where(a =>
                     a.Status == TimesheetWeekApprovalStatus.Approved &&
-                    icUserIds.Contains(a.UserId))
+                    deliveryPathUserIds.Contains(a.UserId))
                 .Select(a => new { a.UserId, a.WeekStartMonday })
                 .ToListAsync(ct);
-            approvedIcWeeks = approvedRows
+            approvedDeliveryPathWeeks = approvedRows
+                .Select(a => (a.UserId, a.WeekStartMonday))
+                .ToHashSet();
+        }
+
+        var engagementPathUserIds = lines
+            .Where(x => ProjectApprovalRouting.UsesEngagementPartnerWeekApproval(x.Role))
+            .Select(x => x.UserId)
+            .Distinct()
+            .ToList();
+        HashSet<(Guid UserId, DateOnly WeekStart)>? approvedEngagementPathWeeks = null;
+        if (engagementPathUserIds.Count > 0)
+        {
+            var approvedMgrRows = await db.TimesheetWeekApprovals.AsNoTracking()
+                .Where(a =>
+                    a.Status == TimesheetWeekApprovalStatus.Approved &&
+                    engagementPathUserIds.Contains(a.UserId))
+                .Select(a => new { a.UserId, a.WeekStartMonday })
+                .ToListAsync(ct);
+            approvedEngagementPathWeeks = approvedMgrRows
                 .Select(a => (a.UserId, a.WeekStartMonday))
                 .ToHashSet();
         }
@@ -689,11 +788,24 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
         decimal sumHours = 0;
         foreach (var x in lines)
         {
-            if (x.Role == AppRole.IC)
+            if (x.Role == AppRole.Admin)
             {
-                if (approvedIcWeeks is null) continue;
+                sumHours += x.Hours;
+                continue;
+            }
+
+            if (ProjectApprovalRouting.UsesDeliveryManagerWeekApproval(x.Role))
+            {
+                if (approvedDeliveryPathWeeks is null) continue;
                 var mon = WeekStartMondayForWorkDate(x.WorkDate);
-                if (!approvedIcWeeks.Contains((x.UserId, mon)))
+                if (!approvedDeliveryPathWeeks.Contains((x.UserId, mon)))
+                    continue;
+            }
+            else if (ProjectApprovalRouting.UsesEngagementPartnerWeekApproval(x.Role))
+            {
+                if (approvedEngagementPathWeeks is null) continue;
+                var mon = WeekStartMondayForWorkDate(x.WorkDate);
+                if (!approvedEngagementPathWeeks.Contains((x.UserId, mon)))
                     continue;
             }
 
