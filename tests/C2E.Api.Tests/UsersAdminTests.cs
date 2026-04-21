@@ -259,7 +259,7 @@ public class UsersAdminTests
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
         var err = await res.Content.ReadFromJsonAsync<AuthErrorDto>();
         Assert.Equal(
-            "Provide at least one of email, password, isActive, role, displayName, or assignManager.",
+            "Provide at least one of email, password, isActive, role, displayName, assignManager, or skills.",
             err?.Message);
     }
 

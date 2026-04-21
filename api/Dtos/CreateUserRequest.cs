@@ -20,4 +20,7 @@ public class CreateUserRequest
 
     /// <summary>Optional; defaults to IC. Must match a known application role name (IC, Admin, Manager, Finance, Partner).</summary>
     public string? Role { get; init; }
+
+    /// <summary>Optional list of user skills.</summary>
+    public List<string>? Skills { get; init; }
 }

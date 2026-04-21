@@ -1365,6 +1365,48 @@ select.table-input {
   font-size: 0.9rem;
 }
 
+.assignment-recommend-wrap {
+  display: flex;
+  gap: 0.75rem;
+  align-items: end;
+  margin-bottom: 0.75rem;
+}
+
+.assignment-recommend-wrap .field {
+  flex: 1;
+}
+
+.recommendation-list {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.recommendation-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fbff;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.86rem;
+}
+
+.recommendation-meta {
+  margin-top: 0.2rem;
+  color: var(--text);
+}
+
+.recommendation-fallback {
+  margin-top: 0.2rem;
+  display: inline-block;
+  font-size: 0.75rem;
+  border: 1px solid #d97706;
+  color: #92400e;
+  border-radius: 999px;
+  padding: 0.1rem 0.4rem;
+}
+
 @media (max-width: 900px) {
   .assignment-controls {
     grid-template-columns: 1fr;
@@ -1373,5 +1415,10 @@ select.table-input {
   .assignment-item {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .assignment-recommend-wrap {
+    flex-direction: column;
+    align-items: stretch;
   }
 }

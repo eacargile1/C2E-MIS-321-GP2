@@ -11,6 +11,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ClientEmployeeAssignment> ClientEmployeeAssignments => Set<ClientEmployeeAssignment>();
     public DbSet<ProjectEmployeeAssignment> ProjectEmployeeAssignments => Set<ProjectEmployeeAssignment>();
     public DbSet<ProjectTeamMember> ProjectTeamMembers => Set<ProjectTeamMember>();
+    public DbSet<UserSkill> UserSkills => Set<UserSkill>();
     public DbSet<TimesheetLine> TimesheetLines => Set<TimesheetLine>();
     public DbSet<TimesheetWeekApproval> TimesheetWeekApprovals => Set<TimesheetWeekApproval>();
     public DbSet<ExpenseEntry> ExpenseEntries => Set<ExpenseEntry>();
@@ -112,6 +113,17 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .WithMany(x => x.DirectReports)
                 .HasForeignKey(x => x.ManagerUserId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<UserSkill>(e =>
+        {
+            e.HasKey(x => new { x.UserId, x.SkillName });
+            e.Property(x => x.SkillName).HasMaxLength(80);
+            e.HasIndex(x => x.SkillName);
+            e.HasOne(x => x.User)
+                .WithMany(u => u.Skills)
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<TimesheetLine>(e =>

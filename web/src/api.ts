@@ -62,6 +62,7 @@ export type UserRow = {
   role: string
   isActive: boolean
   managerUserId: string | null
+  skills: string[]
 }
 
 function emailLocalPart(email: string) {
@@ -138,7 +139,9 @@ function parseUserRow(r: Record<string, unknown>): UserRow {
   const mid = r.managerUserId
   const managerUserId =
     typeof mid === 'string' ? mid : mid === null || typeof mid === 'undefined' ? null : String(mid)
-  return { id: r.id, email: r.email, displayName, role: r.role, isActive: r.isActive, managerUserId }
+  const rawSkills = Array.isArray(r.skills) ? r.skills : []
+  const skills = rawSkills.filter((x): x is string => typeof x === 'string')
+  return { id: r.id, email: r.email, displayName, role: r.role, isActive: r.isActive, managerUserId, skills }
 }
 
 export async function listUsers(token: string): Promise<UserRow[]> {
@@ -153,13 +156,14 @@ export async function createUser(
   token: string,
   email: string,
   password: string,
-  opts?: { displayName?: string; managerUserId?: string | null; role?: string },
+  opts?: { displayName?: string; managerUserId?: string | null; role?: string; skills?: string[] },
 ): Promise<UserRow> {
   const body: Record<string, unknown> = { email, password }
   if (opts?.displayName !== undefined && opts.displayName.trim() !== '')
     body.displayName = opts.displayName.trim()
   if (opts?.managerUserId !== undefined) body.managerUserId = opts.managerUserId
   if (opts?.role !== undefined && opts.role.trim() !== '') body.role = opts.role.trim()
+  if (opts?.skills !== undefined) body.skills = opts.skills
   const res = await fetch(`${base}/api/users`, {
     method: 'POST',
     headers: authHeaders(token),
@@ -181,6 +185,7 @@ export async function patchUser(
     displayName?: string
     assignManager?: boolean
     managerUserId?: string | null
+    skills?: string[]
   },
 ): Promise<UserRow> {
   const res = await fetch(`${base}/api/users/${id}`, {
@@ -377,6 +382,25 @@ export type AssignmentRow = {
   role: string
 }
 
+export type StaffingRecommendationRow = {
+  userId: string
+  email: string
+  displayName: string
+  role: string
+  totalScore: number
+  skillScore: number
+  availabilityScore: number
+  utilizationScore: number
+  rationale: string[]
+  fallbackReason: string | null
+}
+
+export type StaffingRecommendationResponse = {
+  fallbackMode: string
+  warningMessage: string | null
+  results: StaffingRecommendationRow[]
+}
+
 function assertAssignment(x: unknown): AssignmentRow {
   const r = x as Record<string, unknown>
   if (
@@ -452,6 +476,57 @@ export async function unassignEmployeeFromProject(token: string, projectId: stri
     { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
   )
   if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not unassign employee from project'))
+}
+
+function assertRecommendationRow(x: unknown): StaffingRecommendationRow {
+  const r = x as Record<string, unknown>
+  if (
+    typeof r.userId !== 'string' ||
+    typeof r.email !== 'string' ||
+    typeof r.displayName !== 'string' ||
+    typeof r.role !== 'string' ||
+    typeof r.totalScore !== 'number' ||
+    typeof r.skillScore !== 'number' ||
+    typeof r.availabilityScore !== 'number' ||
+    typeof r.utilizationScore !== 'number' ||
+    !Array.isArray(r.rationale)
+  )
+    throw new Error('Could not load recommendations')
+  const rationale = r.rationale.filter((v): v is string => typeof v === 'string')
+  if (rationale.length !== r.rationale.length) throw new Error('Could not load recommendations')
+  return {
+    userId: r.userId,
+    email: r.email,
+    displayName: r.displayName,
+    role: r.role,
+    totalScore: r.totalScore,
+    skillScore: r.skillScore,
+    availabilityScore: r.availabilityScore,
+    utilizationScore: r.utilizationScore,
+    rationale,
+    fallbackReason: typeof r.fallbackReason === 'string' ? r.fallbackReason : null,
+  }
+}
+
+export async function getProjectStaffingRecommendations(
+  token: string,
+  projectId: string,
+  requiredSkills: string[],
+): Promise<StaffingRecommendationResponse> {
+  const res = await fetch(`${base}/api/assignments/projects/${encodeURIComponent(projectId)}/recommendations`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({ requiredSkills }),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load recommendations'))
+  const data = (await res.json()) as Record<string, unknown>
+  if (typeof data.fallbackMode !== 'string' || !Array.isArray(data.results))
+    throw new Error('Could not load recommendations')
+  return {
+    fallbackMode: data.fallbackMode,
+    warningMessage: typeof data.warningMessage === 'string' ? data.warningMessage : null,
+    results: data.results.map(assertRecommendationRow),
+  }
 }
 
 function assertProject(x: unknown): ProjectRow {

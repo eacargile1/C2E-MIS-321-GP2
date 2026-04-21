@@ -303,6 +303,45 @@ public class RbacEnforcementTests
         Assert.Equal(HttpStatusCode.NoContent, adminAssignProject.StatusCode);
     }
 
+    [Fact]
+    public async Task Staffing_recommendations_IC_and_Finance_forbidden_Admin_Manager_Partner_ok()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        var adminToken = await AdminTokenAsync(client);
+        var managerToken = await CreateUserWithRoleAsync(client, "mgr.reco@local.test", "MgrRecoPass1!", "Manager");
+        var partnerToken = await CreateUserWithRoleAsync(client, "par.reco@local.test", "ParRecoPass1!", "Partner");
+        var financeToken = await CreateUserWithRoleAsync(client, "fin.reco@local.test", "FinRecoPass1!", "Finance");
+        var icToken = await CreateUserWithRoleAsync(client, "ic.reco@local.test", "IcRecoPass1!", "IC");
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+        var newClient = await client.PostAsJsonAsync("/api/clients", new { name = "Reco Client" });
+        newClient.EnsureSuccessStatusCode();
+        var newClientBody = await newClient.Content.ReadFromJsonAsync<ClientDto>();
+        var newProject = await client.PostAsJsonAsync("/api/projects", new
+        {
+            name = "Reco Project",
+            clientId = newClientBody!.Id,
+            budgetAmount = 1000m,
+        });
+        newProject.EnsureSuccessStatusCode();
+        var newProjectBody = await newProject.Content.ReadFromJsonAsync<ProjectDto>();
+
+        async Task<HttpResponseMessage> CallAsync(string token)
+        {
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            return await client.PostAsJsonAsync(
+                $"/api/assignments/projects/{newProjectBody!.Id}/recommendations",
+                new { requiredSkills = new[] { "c#" } });
+        }
+
+        await AssertForbiddenJsonAsync(await CallAsync(icToken));
+        await AssertForbiddenJsonAsync(await CallAsync(financeToken));
+        Assert.Equal(HttpStatusCode.OK, (await CallAsync(adminToken)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await CallAsync(managerToken)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await CallAsync(partnerToken)).StatusCode);
+    }
+
     private static async Task<Guid> ReadOwnUserIdAsync(HttpClient client, string token)
     {
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);

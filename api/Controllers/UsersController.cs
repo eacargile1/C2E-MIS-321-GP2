@@ -21,7 +21,14 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
             .AsNoTracking()
             .OrderBy(u => u.Email)
             .ToListAsync(ct);
-        return Ok(users.Select(ToResponse).ToList());
+
+        var skillsByUser = await db.UserSkills
+            .AsNoTracking()
+            .GroupBy(s => s.UserId)
+            .Select(g => new { UserId = g.Key, Skills = g.Select(x => x.SkillName).ToList() })
+            .ToDictionaryAsync(x => x.UserId, x => x.Skills, ct);
+
+        return Ok(users.Select(u => ToResponse(u, skillsByUser.GetValueOrDefault(u.Id) ?? [])).ToList());
     }
 
     [HttpGet("{id:guid}")]
@@ -29,7 +36,13 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
     {
         var u = await db.Users.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
         if (u is null) return NotFound();
-        return Ok(ToResponse(u));
+        var skills = await db.UserSkills
+            .AsNoTracking()
+            .Where(s => s.UserId == id)
+            .OrderBy(s => s.SkillName)
+            .Select(s => s.SkillName)
+            .ToListAsync(ct);
+        return Ok(ToResponse(u, skills));
     }
 
     [HttpPost]
@@ -76,8 +89,22 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
         };
         user.PasswordHash = passwordHasher.HashPassword(user, body.Password);
         db.Users.Add(user);
+        foreach (var skill in NormalizeSkills(body.Skills))
+        {
+            db.UserSkills.Add(new UserSkill
+            {
+                UserId = user.Id,
+                SkillName = skill,
+                CreatedAtUtc = DateTime.UtcNow,
+            });
+        }
         await db.SaveChangesAsync(ct);
-        return CreatedAtAction(nameof(Get), new { id = user.Id }, ToResponse(user));
+        var createdSkills = await db.UserSkills
+            .AsNoTracking()
+            .Where(s => s.UserId == user.Id)
+            .Select(s => s.SkillName)
+            .ToListAsync(ct);
+        return CreatedAtAction(nameof(Get), new { id = user.Id }, ToResponse(user, createdSkills));
     }
 
     [HttpPatch("{id:guid}")]
@@ -86,11 +113,11 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
         if (!ModelState.IsValid) return BadRequest(ModelState);
 
         if (body.Email is null && body.Password is null && body.IsActive is null && body.Role is null &&
-            body.DisplayName is null && body.AssignManager != true)
+            body.DisplayName is null && body.AssignManager != true && body.Skills is null)
         {
             return BadRequest(new AuthErrorResponse
             {
-                Message = "Provide at least one of email, password, isActive, role, displayName, or assignManager.",
+                    Message = "Provide at least one of email, password, isActive, role, displayName, assignManager, or skills.",
             });
         }
 
@@ -166,8 +193,31 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
             user.DisplayName = d.Length > 0 ? d : UserProfileName.DefaultFromEmail(user.Email);
         }
 
+        if (body.Skills is not null)
+        {
+            var current = await db.UserSkills
+                .Where(s => s.UserId == user.Id)
+                .ToListAsync(ct);
+            db.UserSkills.RemoveRange(current);
+            foreach (var skill in NormalizeSkills(body.Skills))
+            {
+                db.UserSkills.Add(new UserSkill
+                {
+                    UserId = user.Id,
+                    SkillName = skill,
+                    CreatedAtUtc = DateTime.UtcNow,
+                });
+            }
+        }
+
         await db.SaveChangesAsync(ct);
-        return Ok(ToResponse(user));
+        var savedSkills = await db.UserSkills
+            .AsNoTracking()
+            .Where(s => s.UserId == user.Id)
+            .OrderBy(s => s.SkillName)
+            .Select(s => s.SkillName)
+            .ToListAsync(ct);
+        return Ok(ToResponse(user, savedSkills));
     }
 
     private async Task<string?> ValidateManagerAssignmentAsync(Guid managerId, Guid? userBeingEdited, CancellationToken ct)
@@ -199,7 +249,7 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
         return true;
     }
 
-    private static UserResponse ToResponse(AppUser u) => new()
+    private static UserResponse ToResponse(AppUser u, List<string> skills) => new()
     {
         Id = u.Id,
         Email = u.Email,
@@ -209,5 +259,19 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
         Role = u.Role.ToString(),
         IsActive = u.IsActive,
         ManagerUserId = u.ManagerUserId,
+        Skills = skills
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Select(s => s.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
+            .ToList(),
     };
+
+    private static List<string> NormalizeSkills(List<string>? raw) =>
+        (raw ?? [])
+            .Select(s => s?.Trim().ToLowerInvariant() ?? string.Empty)
+            .Where(s => s.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(50)
+            .ToList();
 }

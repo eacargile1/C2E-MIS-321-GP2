@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { AssignmentRow } from '../api'
+import type { AssignmentRow, StaffingRecommendationResponse, StaffingRecommendationRow } from '../api'
 
 type TargetOption = { id: string; name: string; isActive?: boolean }
 
@@ -12,6 +12,7 @@ export default function AssignmentManager({
   loadAssignments,
   assign,
   unassign,
+  loadRecommendations,
   canManage,
 }: {
   token: string
@@ -22,6 +23,11 @@ export default function AssignmentManager({
   loadAssignments: (token: string, targetId: string) => Promise<AssignmentRow[]>
   assign: (token: string, targetId: string, userId: string) => Promise<void>
   unassign: (token: string, targetId: string, userId: string) => Promise<void>
+  loadRecommendations?: (
+    token: string,
+    targetId: string,
+    requiredSkills: string[],
+  ) => Promise<StaffingRecommendationResponse>
   canManage: boolean
 }) {
   const activeTargets = useMemo(
@@ -35,6 +41,12 @@ export default function AssignmentManager({
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [recommendationBusy, setRecommendationBusy] = useState(false)
+  const [recommendationError, setRecommendationError] = useState<string | null>(null)
+  const [recommended, setRecommended] = useState<StaffingRecommendationRow[]>([])
+  const [recommendedFallbackMode, setRecommendedFallbackMode] = useState<string | null>(null)
+  const [recommendedWarning, setRecommendedWarning] = useState<string | null>(null)
+  const [skillInput, setSkillInput] = useState('')
 
   useEffect(() => {
     if (activeTargets.length === 0) {
@@ -67,6 +79,10 @@ export default function AssignmentManager({
         const first = employeeRows.find((e) => !assignedRows.some((a) => a.userId === e.userId))
         return first?.userId ?? ''
       })
+      setRecommended([])
+      setRecommendedFallbackMode(null)
+      setRecommendedWarning(null)
+      setRecommendationError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load assignments')
     } finally {
@@ -121,6 +137,29 @@ export default function AssignmentManager({
     }
   }
 
+  const parseSkills = () =>
+    skillInput
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+
+  const onRecommend = async () => {
+    if (!loadRecommendations || !selectedTargetId) return
+    setRecommendationBusy(true)
+    setRecommendationError(null)
+    try {
+      const result = await loadRecommendations(token, selectedTargetId, parseSkills())
+      setRecommended(result.results)
+      setRecommendedFallbackMode(result.fallbackMode)
+      setRecommendedWarning(result.warningMessage)
+      if (!selectedUserId && result.results.length > 0) setSelectedUserId(result.results[0]!.userId)
+    } catch (err) {
+      setRecommendationError(err instanceof Error ? err.message : 'Recommendation lookup failed')
+    } finally {
+      setRecommendationBusy(false)
+    }
+  }
+
   if (!canManage) return null
 
   return (
@@ -171,7 +210,50 @@ export default function AssignmentManager({
         </button>
       </div>
 
+      {loadRecommendations ? (
+        <div className="assignment-recommend-wrap">
+          <label className="field">
+            <span>Required skills (comma separated)</span>
+            <input
+              value={skillInput}
+              onChange={(e) => setSkillInput(e.target.value)}
+              placeholder="c#, react, finance"
+            />
+          </label>
+          <button
+            type="button"
+            className="btn secondary btn-sm"
+            onClick={() => void onRecommend()}
+            disabled={recommendationBusy || busy || loading || !selectedTargetId}
+          >
+            {recommendationBusy ? 'Recommending…' : 'Recommend candidates'}
+          </button>
+        </div>
+      ) : null}
+
       {error ? <p className="err">{error}</p> : null}
+      {recommendationError ? <p className="err">{recommendationError}</p> : null}
+      {recommendedWarning ? <p className="admin-hint">{recommendedWarning}</p> : null}
+      {recommendedFallbackMode && recommendedFallbackMode !== 'none' ? (
+        <p className="admin-hint">
+          Fallback mode: <strong>{recommendedFallbackMode}</strong>
+        </p>
+      ) : null}
+      {recommended.length > 0 ? (
+        <ul className="recommendation-list">
+          {recommended.slice(0, 5).map((r) => (
+            <li key={r.userId} className="recommendation-item">
+              <div>
+                <strong>{r.displayName}</strong> ({r.role}) · total {r.totalScore.toFixed(2)} · skill{' '}
+                {r.skillScore.toFixed(2)} · avail {r.availabilityScore.toFixed(2)} · util{' '}
+                {r.utilizationScore.toFixed(2)}
+              </div>
+              <div className="recommendation-meta">{r.rationale.join(' ')}</div>
+              {r.fallbackReason ? <div className="recommendation-fallback">{r.fallbackReason}</div> : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {loading ? (
         <p className="admin-hint">Loading assignments…</p>
       ) : assigned.length === 0 ? (

@@ -21,4 +21,7 @@ public class UpdateUserRequest
     public bool? AssignManager { get; init; }
 
     public Guid? ManagerUserId { get; init; }
+
+    /// <summary>When provided, replaces all user skills with this list.</summary>
+    public List<string>? Skills { get; init; }
 }

@@ -26,12 +26,14 @@ export default function AdminUsers({
   const [createDisplayName, setCreateDisplayName] = useState('')
   const [createRole, setCreateRole] = useState<string>('IC')
   const [createManagerId, setCreateManagerId] = useState('')
+  const [createSkills, setCreateSkills] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editEmail, setEditEmail] = useState('')
   const [editDisplayName, setEditDisplayName] = useState('')
   const [editPassword, setEditPassword] = useState('')
   const [editRole, setEditRole] = useState('')
   const [editManagerId, setEditManagerId] = useState('')
+  const [editSkills, setEditSkills] = useState('')
   const [confirmDeactivateId, setConfirmDeactivateId] = useState<string | null>(null)
 
   const pushToast = useCallback((message: string, variant: 'ok' | 'err') => {
@@ -65,12 +67,14 @@ export default function AdminUsers({
         displayName: createDisplayName.trim() || undefined,
         managerUserId: createManagerId.trim().length ? createManagerId.trim() : undefined,
         role: createRole,
+        skills: parseSkillsCsv(createSkills),
       })
       setCreateEmail('')
       setCreatePassword('')
       setCreateDisplayName('')
       setCreateRole('IC')
       setCreateManagerId('')
+      setCreateSkills('')
       pushToast('User created', 'ok')
       await refresh()
     } catch (err) {
@@ -85,6 +89,7 @@ export default function AdminUsers({
     setEditPassword('')
     setEditRole(u.role)
     setEditManagerId(u.managerUserId ?? '')
+    setEditSkills(u.skills.join(', '))
   }
 
   const cancelEdit = () => {
@@ -94,6 +99,7 @@ export default function AdminUsers({
     setEditPassword('')
     setEditRole('')
     setEditManagerId('')
+    setEditSkills('')
   }
 
   const saveEdit = async (id: string) => {
@@ -106,6 +112,7 @@ export default function AdminUsers({
         displayName?: string
         assignManager?: boolean
         managerUserId?: string | null
+        skills?: string[]
       } = {}
       const u = users.find((x) => x.id === id)
       if (!u) return
@@ -119,6 +126,7 @@ export default function AdminUsers({
         body.assignManager = true
         body.managerUserId = editManagerId.trim().length ? editManagerId.trim() : null
       }
+      if (editSkills.trim() !== u.skills.join(', ')) body.skills = parseSkillsCsv(editSkills)
       if (Object.keys(body).length === 0) {
         cancelEdit()
         return
@@ -240,6 +248,16 @@ export default function AdminUsers({
                 ))}
             </select>
           </label>
+          <label className="field">
+            <span>Skills (comma separated)</span>
+            <input
+              type="text"
+              value={createSkills}
+              onChange={(e) => setCreateSkills(e.target.value)}
+              placeholder="c#, react, sql"
+              autoComplete="off"
+            />
+          </label>
           <button type="submit" className="btn primary">
             Create
           </button>
@@ -264,6 +282,7 @@ export default function AdminUsers({
                   <th>Display Name</th>
                   <th>Role</th>
                   <th>Manager</th>
+                  <th>Skills</th>
                   <th>Status</th>
                   <th />
                 </tr>
@@ -333,6 +352,21 @@ export default function AdminUsers({
                         </select>
                       ) : u.managerUserId ? (
                         users.find((x) => x.id === u.managerUserId)?.email ?? '—'
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td>
+                      {editingId === u.id ? (
+                        <input
+                          className="table-input"
+                          value={editSkills}
+                          onChange={(e) => setEditSkills(e.target.value)}
+                          placeholder="c#, react, sql"
+                          aria-label="Skills"
+                        />
+                      ) : u.skills.length > 0 ? (
+                        u.skills.join(', ')
                       ) : (
                         '—'
                       )}
@@ -435,4 +469,12 @@ export default function AdminUsers({
       </div>
     </div>
   )
+}
+
+function parseSkillsCsv(raw: string): string[] {
+  return raw
+    .split(',')
+    .map((x) => x.trim().toLowerCase())
+    .filter((x) => x.length > 0)
+    .filter((x, i, arr) => arr.indexOf(x) === i)
 }

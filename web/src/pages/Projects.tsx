@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   assignEmployeeToProject,
   createProject,
+  getProjectStaffingRecommendations,
   listAssignableEmployees,
   listClients,
   listProjectAssignments,
@@ -413,6 +414,7 @@ export default function ProjectsPage({
         loadAssignments={listProjectAssignments}
         assign={assignEmployeeToProject}
         unassign={unassignEmployeeFromProject}
+        loadRecommendations={getProjectStaffingRecommendations}
         canManage={canManageAssignments}
       />
 

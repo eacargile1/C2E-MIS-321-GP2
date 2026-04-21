@@ -2,6 +2,7 @@ using C2E.Api;
 using C2E.Api.Authorization;
 using C2E.Api.Data;
 using C2E.Api.Dtos;
+using C2E.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -10,10 +11,10 @@ namespace C2E.Api.Controllers;
 
 [ApiController]
 [Route("api/assignments")]
-[Authorize(Roles = RbacRoleSets.AdminAndPartner)]
-public sealed class AssignmentsController(AppDbContext db) : ControllerBase
+public sealed class AssignmentsController(AppDbContext db, IStaffingRecommendationService recommendationService) : ControllerBase
 {
     [HttpGet("employees")]
+    [Authorize(Roles = RbacRoleSets.AdminAndPartner)]
     public async Task<ActionResult<IReadOnlyList<AssignmentResponse>>> ListAssignableEmployees(CancellationToken ct)
     {
         var rows = await db.Users
@@ -36,6 +37,7 @@ public sealed class AssignmentsController(AppDbContext db) : ControllerBase
     }
 
     [HttpGet("clients/{clientId:guid}")]
+    [Authorize(Roles = RbacRoleSets.AdminAndPartner)]
     public async Task<ActionResult<IReadOnlyList<AssignmentResponse>>> ListClientAssignments(Guid clientId, CancellationToken ct)
     {
         var clientExists = await db.Clients
@@ -74,6 +76,7 @@ public sealed class AssignmentsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPut("clients/{clientId:guid}/employees/{userId:guid}")]
+    [Authorize(Roles = RbacRoleSets.AdminAndPartner)]
     public async Task<ActionResult> AssignEmployeeToClient(Guid clientId, Guid userId, CancellationToken ct)
     {
         var clientExists = await db.Clients.AnyAsync(c => c.Id == clientId && c.IsActive, ct);
@@ -100,6 +103,7 @@ public sealed class AssignmentsController(AppDbContext db) : ControllerBase
     }
 
     [HttpDelete("clients/{clientId:guid}/employees/{userId:guid}")]
+    [Authorize(Roles = RbacRoleSets.AdminAndPartner)]
     public async Task<ActionResult> UnassignEmployeeFromClient(Guid clientId, Guid userId, CancellationToken ct)
     {
         var row = await db.ClientEmployeeAssignments
@@ -113,6 +117,7 @@ public sealed class AssignmentsController(AppDbContext db) : ControllerBase
     }
 
     [HttpGet("projects/{projectId:guid}")]
+    [Authorize(Roles = RbacRoleSets.AdminAndPartner)]
     public async Task<ActionResult<IReadOnlyList<AssignmentResponse>>> ListProjectAssignments(Guid projectId, CancellationToken ct)
     {
         var projectExists = await db.Projects
@@ -151,6 +156,7 @@ public sealed class AssignmentsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPut("projects/{projectId:guid}/employees/{userId:guid}")]
+    [Authorize(Roles = RbacRoleSets.AdminAndPartner)]
     public async Task<ActionResult> AssignEmployeeToProject(Guid projectId, Guid userId, CancellationToken ct)
     {
         var projectExists = await db.Projects.AnyAsync(p => p.Id == projectId && p.IsActive, ct);
@@ -177,6 +183,7 @@ public sealed class AssignmentsController(AppDbContext db) : ControllerBase
     }
 
     [HttpDelete("projects/{projectId:guid}/employees/{userId:guid}")]
+    [Authorize(Roles = RbacRoleSets.AdminAndPartner)]
     public async Task<ActionResult> UnassignEmployeeFromProject(Guid projectId, Guid userId, CancellationToken ct)
     {
         var row = await db.ProjectEmployeeAssignments
@@ -187,5 +194,25 @@ public sealed class AssignmentsController(AppDbContext db) : ControllerBase
         db.ProjectEmployeeAssignments.Remove(row);
         await db.SaveChangesAsync(ct);
         return NoContent();
+    }
+
+    [HttpPost("projects/{projectId:guid}/recommendations")]
+    [Authorize(Roles = RbacRoleSets.AdminManagerPartner)]
+    public async Task<ActionResult<StaffingRecommendationResponseDto>> RecommendProjectStaffing(
+        Guid projectId,
+        [FromBody] StaffingRecommendationRequestDto? req,
+        CancellationToken ct)
+    {
+        var projectExists = await db.Projects
+            .AsNoTracking()
+            .AnyAsync(p => p.Id == projectId && p.IsActive, ct);
+        if (!projectExists)
+            return NotFound(new AuthErrorResponse { Message = "Project not found or inactive." });
+
+        var response = await recommendationService.RecommendForProjectAsync(
+            projectId,
+            req?.RequiredSkills ?? [],
+            ct);
+        return Ok(response);
     }
 }

@@ -21,6 +21,7 @@ using Microsoft.IdentityModel.Tokens;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
+builder.Services.Configure<AiRecommendationOptions>(builder.Configuration.GetSection(AiRecommendationOptions.SectionName));
 var jwt = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()
     ?? throw new InvalidOperationException("Jwt configuration section is required.");
 
@@ -34,6 +35,9 @@ var dbConnectivity = DatabaseConnectivity.Resolve(builder.Configuration);
 builder.Services.AddAppDbContext(dbConnectivity, builder.Configuration);
 builder.Services.AddSingleton<PasswordHasher<AppUser>>();
 builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
+builder.Services.AddScoped<IStaffingRecommendationService, StaffingRecommendationService>();
+builder.Services.AddHttpClient(nameof(OpenAiStaffingReranker));
+builder.Services.AddScoped<IOpenAiStaffingReranker, OpenAiStaffingReranker>();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(o =>
