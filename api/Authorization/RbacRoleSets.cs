@@ -30,16 +30,12 @@ public static class RbacRoleSets
     /// <summary>Client directory create (IC excluded; managers escalate to Partner/Finance).</summary>
     public const string AdminPartnerFinance = $"{nameof(AppRole.Admin)},{nameof(AppRole.Partner)},{nameof(AppRole.Finance)}";
 
-    /// <summary>IC accounts are limited to own timesheet + expense submission; no org-wide views or reporting modules.</summary>
-    public const string NonIc =
-        $"{nameof(AppRole.Admin)},{nameof(AppRole.Manager)},{nameof(AppRole.Partner)},{nameof(AppRole.Finance)}";
-
     /// <summary>Project create and staffing assignment (Admin + Partner only).</summary>
     public const string AdminPartner = $"{nameof(AppRole.Admin)},{nameof(AppRole.Partner)}";
 
-    /// <summary>Read-only staffing directory (managers, partners, finance) for labels on project views.</summary>
+    /// <summary>Read-only staffing directory for labels on project views (IC browse-only + delivery roles).</summary>
     public const string ProjectStaffingDirectoryReaders =
-        $"{nameof(AppRole.Admin)},{nameof(AppRole.Partner)},{nameof(AppRole.Manager)},{nameof(AppRole.Finance)}";
+        $"{nameof(AppRole.Admin)},{nameof(AppRole.Partner)},{nameof(AppRole.Manager)},{nameof(AppRole.Finance)},{nameof(AppRole.IC)}";
 
     /// <summary>Project PATCH: full edit (Admin + Partner) or budget-only for Finance assigned on the project.</summary>
     public const string AdminPartnerFinanceProjectPatch =

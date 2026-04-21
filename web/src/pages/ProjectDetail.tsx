@@ -44,8 +44,8 @@ export default function ProjectDetailPage({ token, profile }: { token: string; p
   const [savingTeam, setSavingTeam] = useState(false)
 
   const isIc = profile.role === 'IC'
-  const canSeeExpenseRollup = !isIc
-  const canSeeStaffingLabels = profile.role !== 'IC'
+  const canSeeExpenseRollup = true
+  const canSeeStaffingLabels = true
   const canEditBudgetFinanceOnly = profile.role === 'Finance'
   const canEditStaffing = profile.role === 'Admin' || profile.role === 'Partner'
 
@@ -360,12 +360,7 @@ export default function ProjectDetailPage({ token, profile }: { token: string; p
               </section>
             ) : null}
 
-            {isIc ? (
-              <p className="admin-hint" style={{ marginTop: 16 }}>
-                Expense breakdown on this engagement is visible to managers, partners, finance (when assigned), and
-                admins.
-              </p>
-            ) : insightsErr ? (
+            {insightsErr ? (
               <p className="admin-hint" style={{ marginTop: 16, color: 'var(--danger, #b42318)' }}>
                 {insightsErr}
               </p>
@@ -377,27 +372,21 @@ export default function ProjectDetailPage({ token, profile }: { token: string; p
                   {insights.approvedCount} approved ({usd.format(insights.approvedAmount)}),{' '}
                   {insights.rejectedCount} denied ({usd.format(insights.rejectedAmount)}).
                 </p>
-                <div className="table-scroll">
-                  <table className="admin-table">
-                    <thead>
-                      <tr>
-                        <th>Date</th>
-                        <th>Who</th>
-                        <th>Status</th>
-                        <th>Amount</th>
-                        <th>Category</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {insights.expenses.length === 0 ? (
+                {insights.expenses.length > 0 ? (
+                  <div className="table-scroll">
+                    <table className="admin-table">
+                      <thead>
                         <tr>
-                          <td colSpan={6} className="admin-hint">
-                            No expenses yet tagged to this client + project name.
-                          </td>
+                          <th>Date</th>
+                          <th>Who</th>
+                          <th>Status</th>
+                          <th>Amount</th>
+                          <th>Category</th>
+                          <th>Description</th>
                         </tr>
-                      ) : (
-                        insights.expenses.map((e) => (
+                      </thead>
+                      <tbody>
+                        {insights.expenses.map((e) => (
                           <tr key={e.id}>
                             <td>{e.expenseDate}</td>
                             <td>{e.submitterEmail}</td>
@@ -410,11 +399,21 @@ export default function ProjectDetailPage({ token, profile }: { token: string; p
                             <td>{e.category}</td>
                             <td>{e.description}</td>
                           </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : isIc &&
+                  insights.pendingCount + insights.approvedCount + insights.rejectedCount > 0 ? (
+                  <p className="admin-hint" style={{ marginTop: 12 }}>
+                    IC view shows rollups only. Managers, partners, assigned finance, and admins see the line-level grid
+                    (submitter, category, description).
+                  </p>
+                ) : (
+                  <p className="admin-hint" style={{ marginTop: 12 }}>
+                    No expenses yet tagged to this client + project name.
+                  </p>
+                )}
               </section>
             ) : null}
           </>

@@ -103,7 +103,7 @@ public class RbacEnforcementTests
     }
 
     [Fact]
-    public async Task Organization_timesheets_IC_forbidden_Finance_and_Partner_ok()
+    public async Task Organization_timesheets_IC_Finance_and_Partner_ok()
     {
         using var factory = Factory();
         var client = factory.CreateClient();
@@ -114,7 +114,8 @@ public class RbacEnforcementTests
             client, "par.ts@local.test", "ParTsPass1!", "Partner");
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
-        await AssertForbiddenJsonAsync(await client.GetAsync("/api/timesheets/organization?monthStart=2026-03-01"));
+        var icRes = await client.GetAsync("/api/timesheets/organization?monthStart=2026-03-01");
+        Assert.Equal(HttpStatusCode.OK, icRes.StatusCode);
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", financeToken);
         var ok = await client.GetAsync("/api/timesheets/organization?monthStart=2026-03-01");
@@ -126,7 +127,7 @@ public class RbacEnforcementTests
     }
 
     [Fact]
-    public async Task Personal_summary_IC_forbidden_Manager_ok()
+    public async Task Personal_summary_IC_and_Manager_ok()
     {
         using var factory = Factory();
         var client = factory.CreateClient();
@@ -135,8 +136,8 @@ public class RbacEnforcementTests
             client, "mgr.rep@local.test", "MgrRepPass1!", "Manager");
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
-        await AssertForbiddenJsonAsync(
-            await client.GetAsync("/api/reports/personal-summary?from=2026-03-01&to=2026-03-31"));
+        var icRes = await client.GetAsync("/api/reports/personal-summary?from=2026-03-01&to=2026-03-31");
+        Assert.Equal(HttpStatusCode.OK, icRes.StatusCode);
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", mgrToken);
         var ok = await client.GetAsync("/api/reports/personal-summary?from=2026-03-01&to=2026-03-31");

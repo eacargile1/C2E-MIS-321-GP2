@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Security.Claims;
-using C2E.Api.Authorization;
 using C2E.Api.Data;
 using C2E.Api.Dtos;
 using C2E.Api.Models;
@@ -15,9 +14,8 @@ namespace C2E.Api.Controllers;
 [Authorize]
 public sealed class ReportsController(AppDbContext db) : ControllerBase
 {
-    /// <summary>Personal time + expense rollups for a date range (inclusive).</summary>
+    /// <summary>Personal time + expense rollups for a date range (inclusive). Scoped to the signed-in user (IC included).</summary>
     [HttpGet("personal-summary")]
-    [Authorize(Roles = RbacRoleSets.NonIc)]
     public async Task<ActionResult<PersonalSummaryResponse>> PersonalSummary(
         [FromQuery] string from,
         [FromQuery] string to,

@@ -90,13 +90,15 @@ public sealed class ProjectsController(AppDbContext db) : ControllerBase
         return Ok(Map(p));
     }
 
-    /// <summary>Approved / pending / rejected expenses for this catalog project (not available to IC).</summary>
+    /// <summary>
+    /// Approved / pending / rejected expense rollups for this catalog project.
+    /// IC sees counts and amounts only; Manager/Partner/Admin and assigned Finance get line-level detail.
+    /// </summary>
     [HttpGet("{id:guid}/expense-insights")]
     public async Task<ActionResult<ProjectExpenseInsightsResponse>> GetExpenseInsights(Guid id, CancellationToken ct)
     {
         if (!TryGetUserId(out var userId)) return Unauthorized();
         var role = GetUserRole();
-        if (role == AppRole.IC) return Forbid();
 
         var p = await db.Projects
             .AsNoTracking()
@@ -104,7 +106,8 @@ public sealed class ProjectsController(AppDbContext db) : ControllerBase
             .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (p is null || p.Client is null) return NotFound();
         if (!p.IsActive && role != AppRole.Admin) return NotFound();
-        if (!CanViewExpenseInsights(userId, role, p)) return Forbid();
+        if (!CanViewProject(userId, role, p)) return NotFound();
+        if (role != AppRole.IC && !CanViewExpenseInsights(userId, role, p)) return Forbid();
 
         var clientName = p.Client.Name;
         var projectName = p.Name;
@@ -118,17 +121,20 @@ public sealed class ProjectsController(AppDbContext db) : ControllerBase
             .ThenByDescending(x => x.e.CreatedAtUtc)
             .ToListAsync(ct);
 
-        var rows = expenses.Select(x => new ProjectExpenseRowResponse
-        {
-            Id = x.e.Id,
-            UserId = x.e.UserId,
-            SubmitterEmail = x.Email,
-            ExpenseDate = x.e.ExpenseDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            Status = x.e.Status.ToString(),
-            Amount = x.e.Amount,
-            Category = x.e.Category,
-            Description = x.e.Description,
-        }).ToList();
+        var includeLineDetail = role != AppRole.IC;
+        var rows = includeLineDetail
+            ? expenses.Select(x => new ProjectExpenseRowResponse
+            {
+                Id = x.e.Id,
+                UserId = x.e.UserId,
+                SubmitterEmail = x.Email,
+                ExpenseDate = x.e.ExpenseDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                Status = x.e.Status.ToString(),
+                Amount = x.e.Amount,
+                Category = x.e.Category,
+                Description = x.e.Description,
+            }).ToList()
+            : [];
 
         var pending = expenses.Where(x => x.e.Status == ExpenseStatus.Pending).ToList();
         var approved = expenses.Where(x => x.e.Status == ExpenseStatus.Approved).ToList();

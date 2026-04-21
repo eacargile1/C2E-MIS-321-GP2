@@ -16,9 +16,9 @@ namespace C2E.Api.Controllers;
 [Route("api/timesheets")]
 public sealed class TimesheetsController(AppDbContext db) : ControllerBase
 {
-    /// <summary>Org-wide availability matrix for the month (FR20).</summary>
+    /// <summary>Org-wide availability matrix for the month (FR20). Read-only for all authenticated roles including IC.</summary>
     [HttpGet("organization")]
-    [Authorize(Roles = RbacRoleSets.NonIc)]
+    [Authorize]
     public async Task<ActionResult<IReadOnlyList<ResourceTrackerEmployeeRowResponse>>> GetOrganization(
         [FromQuery] string monthStart,
         CancellationToken ct)

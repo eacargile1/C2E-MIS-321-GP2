@@ -172,12 +172,8 @@ function HomeDashboard({ session }: { session: Session }) {
         myTimesheetWeek,
         pendingTimesheetWeeks,
       ] = await Promise.all([
-        isIcOnly
-          ? Promise.resolve([] as Awaited<ReturnType<typeof listClients>>)
-          : listClients(session.token, undefined, isAdmin),
-        isIcOnly
-          ? Promise.resolve([] as Awaited<ReturnType<typeof listProjects>>)
-          : listProjects(session.token, { includeInactive: isAdmin }),
+        listClients(session.token, undefined, isAdmin),
+        listProjects(session.token, { includeInactive: isAdmin }),
         getTimesheetWeek(session.token, weekStart),
         listMyExpenses(session.token),
         isReviewer ? listPendingExpenseApprovals(session.token) : Promise.resolve([] as ExpenseRow[]),
@@ -213,7 +209,7 @@ function HomeDashboard({ session }: { session: Session }) {
         pendingTimesheetWeeks: [],
       })
     }
-  }, [isAdmin, isFinanceHub, isIcOnly, isReviewer, role, session.token, weekStart])
+  }, [isAdmin, isFinanceHub, isReviewer, role, session.token, weekStart])
 
   useEffect(() => {
     void loadDashboard()
@@ -228,24 +224,20 @@ function HomeDashboard({ session }: { session: Session }) {
         </p>
         <p className="admin-hint" style={{ marginBottom: 0 }}>
           {isIcOnly
-            ? 'Use Timesheet and Expenses in the header to log hours and submit expenses.'
+            ? 'Browse clients, projects, resource tracker, and reports from the header (read-only). Use Timesheet and Expenses to log hours and submit your expenses.'
             : 'Use top navigation for full modules; quick actions and the status panel summarize common follow-ups.'}
         </p>
       </section>
 
       <section className="dashboard-kpis">
-        {isIcOnly ? null : (
-          <>
-            <article className="card admin-card kpi-card">
-              <p className="kpi-label">Active Clients</p>
-              <p className="kpi-value">{kpis.loading ? '--' : kpis.activeClients}</p>
-            </article>
-            <article className="card admin-card kpi-card">
-              <p className="kpi-label">Active Projects</p>
-              <p className="kpi-value">{kpis.loading ? '--' : kpis.activeProjects}</p>
-            </article>
-          </>
-        )}
+        <article className="card admin-card kpi-card">
+          <p className="kpi-label">Active Clients</p>
+          <p className="kpi-value">{kpis.loading ? '--' : kpis.activeClients}</p>
+        </article>
+        <article className="card admin-card kpi-card">
+          <p className="kpi-label">Active Projects</p>
+          <p className="kpi-value">{kpis.loading ? '--' : kpis.activeProjects}</p>
+        </article>
         <article className="card admin-card kpi-card">
           <p className="kpi-label kpi-label-with-help">
             <span>Hours This Week</span>
@@ -270,17 +262,15 @@ function HomeDashboard({ session }: { session: Session }) {
               <span className="quick-action-title">Timesheet</span>
               <span className="quick-action-sub">Log Hours By Client, Project, And Task</span>
             </NavLink>
-            {isIcOnly ? null : (
-              <NavLink to="/resource-tracker" className="quick-action-tile qa-projects">
-                <span className="quick-action-title">Resource tracker</span>
-                <span className="quick-action-sub">Org month view from logged hours</span>
-              </NavLink>
-            )}
+            <NavLink to="/resource-tracker" className="quick-action-tile qa-projects">
+              <span className="quick-action-title">Resource tracker</span>
+              <span className="quick-action-sub">Org month view from logged hours</span>
+            </NavLink>
             <NavLink to="/expenses" className="quick-action-tile qa-projects">
               <span className="quick-action-title">Track Expense</span>
               <span className="quick-action-sub">Submit Expenses For Approval</span>
             </NavLink>
-            {isIcOnly ? null : quickCreateClient ? (
+            {quickCreateClient ? (
               <NavLink to="/clients" className="quick-action-tile qa-clients">
                 <span className="quick-action-title">Create Client</span>
                 <span className="quick-action-sub">Add A Customer (Partner, Finance, Or Admin)</span>
@@ -288,10 +278,14 @@ function HomeDashboard({ session }: { session: Session }) {
             ) : (
               <NavLink to="/clients" className="quick-action-tile qa-clients">
                 <span className="quick-action-title">Clients</span>
-                <span className="quick-action-sub">Browse Directory; New Clients Are Created By Partner Or Finance</span>
+                <span className="quick-action-sub">
+                  {isIcOnly
+                    ? 'Browse the directory (read-only for IC)'
+                    : 'Browse Directory; New Clients Are Created By Partner Or Finance'}
+                </span>
               </NavLink>
             )}
-            {isIcOnly ? null : quickCreateProject ? (
+            {quickCreateProject ? (
               <NavLink to="/projects" className="quick-action-tile qa-projects">
                 <span className="quick-action-title">Create project</span>
                 <span className="quick-action-sub">Start an engagement (Admin or Partner)</span>
@@ -299,7 +293,11 @@ function HomeDashboard({ session }: { session: Session }) {
             ) : (
               <NavLink to="/projects" className="quick-action-tile qa-projects">
                 <span className="quick-action-title">Projects</span>
-                <span className="quick-action-sub">Browse Engagements And Budget In The Directory</span>
+                <span className="quick-action-sub">
+                  {isIcOnly
+                    ? 'Browse engagements and budgets (read-only for IC)'
+                    : 'Browse Engagements And Budget In The Directory'}
+                </span>
               </NavLink>
             )}
             {isFinanceHub ? (
@@ -491,28 +489,22 @@ function HomeDashboard({ session }: { session: Session }) {
 
       <section className="card admin-card">
         <h2 className="admin-h2">Current Delivery Scope</h2>
-        {isIcOnly ? (
-          <ul className="dashboard-list">
-            <li>Your weekly timesheet (this account type cannot view org-wide resource or directory modules)</li>
-            <li>Expense submission and tracking your own reimbursement requests</li>
-          </ul>
-        ) : (
-          <ul className="dashboard-list">
-            <li>Authentication and role-based access controls</li>
-            <li>
-              Timesheet weekly entry and org resource tracker (split views); IC browses clients and projects; Partner and
-              Finance create clients; Admin and Partner create projects and staffing; Finance updates budget on assigned
-              projects; managers see project and expense rollups without editing the catalog
-            </li>
-            <li>Client management directory</li>
-            <li>
-              Project directory (filters; catalog edits Admin or Partner; per-project detail for rollups and finance budget)
-            </li>
-            <li>Personal reports (time + expense totals by month)</li>
-            {isAdmin ? <li>User administration and role assignment</li> : null}
-            {isFinanceHub ? <li>Finance register and client quoting</li> : null}
-          </ul>
-        )}
+        <ul className="dashboard-list">
+          <li>Authentication and role-based access controls</li>
+          <li>
+            Timesheet weekly entry and org resource tracker; IC browses clients, projects, resource tracker, and personal
+            reports (read-only); Partner and Finance create clients; Admin and Partner create projects and staffing;
+            Finance updates budget on assigned projects; managers see full per-line expense detail on projects where IC
+            sees rollups only
+          </li>
+          <li>Client directory{isIcOnly ? ' — IC browse only' : ''}</li>
+          <li>
+            Project directory (filters; catalog edits Admin or Partner; per-project detail for rollups and finance budget)
+          </li>
+          <li>Personal reports (time + expense totals by month)</li>
+          {isAdmin ? <li>User administration and role assignment</li> : null}
+          {isFinanceHub ? <li>Finance register and client quoting</li> : null}
+        </ul>
       </section>
     </div>
   )
@@ -596,7 +588,6 @@ function AuthenticatedLayout({
   onSignOut: () => void
 }) {
   if (!session) return <Navigate to="/login" replace />
-  const isIcOnly = session.profile.role === 'IC'
   const isAdmin = session.profile.role === 'Admin'
   const isFinanceHub = session.profile.role === 'Admin' || session.profile.role === 'Finance'
   const [density, setDensity] = useState<'comfortable' | 'compact'>(() => {
@@ -624,29 +615,21 @@ function AuthenticatedLayout({
           <NavLink to="/timesheet" end className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
             Timesheet
           </NavLink>
-          {isIcOnly ? null : (
-            <NavLink to="/resource-tracker" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
-              Resource tracker
-            </NavLink>
-          )}
+          <NavLink to="/resource-tracker" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
+            Resource tracker
+          </NavLink>
           <NavLink to="/expenses" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
             Expenses
           </NavLink>
-          {isIcOnly ? null : (
-            <NavLink to="/clients" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
-              Clients
-            </NavLink>
-          )}
-          {isIcOnly ? null : (
-            <NavLink to="/projects" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
-              Projects
-            </NavLink>
-          )}
-          {isIcOnly ? null : (
-            <NavLink to="/reports" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
-              Reports
-            </NavLink>
-          )}
+          <NavLink to="/clients" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
+            Clients
+          </NavLink>
+          <NavLink to="/projects" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
+            Projects
+          </NavLink>
+          <NavLink to="/reports" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
+            Reports
+          </NavLink>
           {isFinanceHub ? (
             <NavLink to="/finance" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
               Finance
@@ -700,13 +683,11 @@ function TimesheetApprovalReviewRoute({ session }: { session: Session | null }) 
 
 function ResourceTrackerRoute({ session }: { session: Session | null }) {
   if (!session) return <Navigate to="/login" replace />
-  if (session.profile.role === 'IC') return <Navigate to="/" replace />
   return <ResourceTracker token={session.token} profile={session.profile} />
 }
 
 function ClientsRoute({ session }: { session: Session | null }) {
   if (!session) return <Navigate to="/login" replace />
-  if (session.profile.role === 'IC') return <Navigate to="/" replace />
   return <ClientsPage token={session.token} profile={session.profile} />
 }
 
@@ -717,7 +698,6 @@ function ExpensesRoute({ session }: { session: Session | null }) {
 
 function ProjectsRoute({ session }: { session: Session | null }) {
   if (!session) return <Navigate to="/login" replace />
-  if (session.profile.role === 'IC') return <Navigate to="/" replace />
   return <ProjectsPage token={session.token} profile={session.profile} />
 }
 
@@ -728,7 +708,6 @@ function ProjectDetailRoute({ session }: { session: Session | null }) {
 
 function ReportsRoute({ session }: { session: Session | null }) {
   if (!session) return <Navigate to="/login" replace />
-  if (session.profile.role === 'IC') return <Navigate to="/" replace />
   return <ReportsPage token={session.token} profile={session.profile} />
 }
 
