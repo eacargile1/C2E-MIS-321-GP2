@@ -314,6 +314,21 @@ public sealed class ExpensesController(AppDbContext db) : ControllerBase
             return BadRequest(new AuthErrorResponse { Message = ex.Message });
         }
 
+        var catalogEnforced = await db.Clients.AnyAsync(c => c.IsActive, ct);
+        var submitterRole = await db.Users.AsNoTracking()
+            .Where(u => u.Id == userId)
+            .Select(u => u.Role)
+            .FirstAsync(ct);
+        if (catalogEnforced && submitterRole == AppRole.IC &&
+            !await IcCatalogAccess.MayUseClientProjectAsync(db, userId, client, project, ct))
+        {
+            return BadRequest(new AuthErrorResponse
+            {
+                Message =
+                    "You are not assigned to that client/project. Ask a Partner or Admin to add you to the client roster, project roster, or project team.",
+            });
+        }
+
         var now = DateTime.UtcNow;
         var entity = new ExpenseEntry
         {

@@ -23,6 +23,11 @@ import {
   type TimesheetLine,
   type TimesheetWeekStatusPayload,
 } from '../api'
+import {
+  clampTimesheetWeekMondayYmd,
+  timesheetNavMondayBounds,
+  ymdDateCompare,
+} from '../timesheetNavWindow'
 import '../App.css'
 
 type Toast = { id: number; message: string; variant: 'ok' | 'err' }
@@ -162,6 +167,8 @@ export default function TimesheetWeek({
   const isIc = profile.role === 'IC'
   const weekLockedPending = usesPendingWeekLock && weekApproval?.status === 'Pending'
 
+  const { minMonday: navMinMonday, maxMonday: navMaxMonday } = useMemo(() => timesheetNavMondayBounds(), [])
+
   const weekStartDate = useMemo(() => {
     if (!isYmd(weekStart)) return startOfWeekMonday(new Date())
     const [y, m, d] = weekStart.split('-').map(Number)
@@ -198,8 +205,18 @@ export default function TimesheetWeek({
 
   useEffect(() => {
     const m = mondayFromSearchParams(searchParams)
-    if (m) setWeekStart(m)
-  }, [searchParams])
+    if (!m) return
+    const { ymd, didClamp } = clampTimesheetWeekMondayYmd(m)
+    if (didClamp) {
+      pushToast(
+        'That week is outside the ±1 month entry window (server uses UTC). Showing the nearest allowed week.',
+        'err',
+      )
+      setWeekNav(ymd)
+      return
+    }
+    if (ymd !== weekStart) setWeekStart(ymd)
+  }, [searchParams, weekStart, setWeekNav, pushToast])
 
   const refresh = useCallback(async () => {
     const loadId = ++lastLoadId.current
@@ -265,14 +282,6 @@ export default function TimesheetWeek({
   }, [refreshPto])
 
   useEffect(() => {
-    if (typeof window === 'undefined' || window.location.hash !== '#pto-requests') return
-    const t = window.setTimeout(() => {
-      document.getElementById('pto-requests')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }, 150)
-    return () => window.clearTimeout(t)
-  }, [weekStart])
-
-  useEffect(() => {
     let cancelled = false
     async function loadCat() {
       try {
@@ -317,7 +326,15 @@ export default function TimesheetWeek({
 
   const setPrevWeek = () => setWeekNav(toYmd(addDays(weekStartDate, -7)))
   const setNextWeek = () => setWeekNav(toYmd(addDays(weekStartDate, 7)))
-  const jumpToThisWeek = () => setWeekNav(toYmd(startOfWeekMonday(new Date())))
+  const jumpToThisWeek = () => {
+    const { ymd, didClamp } = clampTimesheetWeekMondayYmd(toYmd(startOfWeekMonday(new Date())))
+    if (didClamp) {
+      pushToast('Current calendar week is outside the entry window; showing the nearest allowed week.', 'err')
+    }
+    setWeekNav(ymd)
+  }
+  const prevWeekDisabled = loading || saving || ymdDateCompare(weekStartDate, navMinMonday) <= 0
+  const nextWeekDisabled = loading || saving || ymdDateCompare(weekStartDate, navMaxMonday) >= 0
 
   const onSave = async () => {
     setSaving(true)
@@ -429,17 +446,18 @@ export default function TimesheetWeek({
           <div>
             <h2 className="admin-h2">Weekly Entry</h2>
             <p className="admin-hint">
-              Monday–Sunday · {weekStart} → {toYmd(weekEndDate)}
+              Monday–Sunday · {weekStart} → {toYmd(weekEndDate)} · you can move roughly ±1 month from this calendar week
+              (server enforces in UTC).
             </p>
           </div>
           <div className="admin-header-actions">
-            <button type="button" className="btn secondary btn-sm" onClick={setPrevWeek} disabled={loading || saving}>
+            <button type="button" className="btn secondary btn-sm" onClick={setPrevWeek} disabled={prevWeekDisabled}>
               ← Prev Week
             </button>
             <button type="button" className="btn secondary btn-sm" onClick={jumpToThisWeek} disabled={loading || saving}>
               This Week
             </button>
-            <button type="button" className="btn secondary btn-sm" onClick={setNextWeek} disabled={loading || saving}>
+            <button type="button" className="btn secondary btn-sm" onClick={setNextWeek} disabled={nextWeekDisabled}>
               Next Week →
             </button>
             <button
@@ -633,174 +651,6 @@ export default function TimesheetWeek({
         )}
       </div>
 
-      <div className="card admin-card" id="pto-requests">
-        <h2 className="admin-h2">PTO Requests</h2>
-        <p className="admin-hint" style={{ marginBottom: 12 }}>
-          IC requests go to your org manager and reporting partner (when assigned); Manager and Finance to reporting
-          partner and org manager (when assigned). Either approver may act. Partner and Admin requests are auto-approved
-          when submitted.
-        </p>
-        <div className="form admin-form-grid" style={{ marginBottom: 16 }}>
-          <label className="field">
-            <span>Start</span>
-            <input type="date" value={ptoStart} onChange={(e) => setPtoStart(e.target.value)} />
-          </label>
-          <label className="field">
-            <span>End</span>
-            <input type="date" value={ptoEnd} onChange={(e) => setPtoEnd(e.target.value)} />
-          </label>
-          <label className="field" style={{ gridColumn: '1 / -1' }}>
-            <span>Reason (optional)</span>
-            <input
-              type="text"
-              value={ptoReason}
-              onChange={(e) => setPtoReason(e.target.value)}
-              maxLength={2000}
-              placeholder="e.g. family trip"
-            />
-          </label>
-          <button
-            type="button"
-            className="btn primary btn-sm"
-            disabled={ptoBusy || !ptoStart || !ptoEnd}
-            onClick={async () => {
-              setPtoBusy(true)
-              try {
-                await createPtoRequest(token, {
-                  startDate: ptoStart,
-                  endDate: ptoEnd,
-                  reason: ptoReason.trim() || undefined,
-                })
-                pushToast('PTO request submitted', 'ok')
-                setPtoReason('')
-                await refreshPto()
-              } catch (e) {
-                pushToast(e instanceof Error ? e.message : 'PTO submit failed', 'err')
-              } finally {
-                setPtoBusy(false)
-              }
-            }}
-          >
-            {ptoBusy ? 'Submitting…' : 'Submit PTO Request'}
-          </button>
-        </div>
-        <h3 className="admin-h3" style={{ fontSize: '1rem', marginBottom: 8 }}>
-          My Requests
-        </h3>
-        {ptoMine.length === 0 ? (
-          <p className="admin-hint">None yet.</p>
-        ) : (
-          <div className="table-scroll" style={{ marginBottom: 20 }}>
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>Dates</th>
-                  <th>Status</th>
-                  <th>Approvers</th>
-                  <th>Reason</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ptoMine.map((p) => (
-                  <tr key={p.id}>
-                    <td>
-                      {p.startDate} → {p.endDate}
-                    </td>
-                    <td>{p.status}</td>
-                    <td>
-                      {p.secondaryApproverEmail
-                        ? `${p.approverEmail}; ${p.secondaryApproverEmail}`
-                        : p.approverEmail}
-                    </td>
-                    <td>{p.reason || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {isPtoReviewer ? (
-          <>
-            <h3 className="admin-h3" style={{ fontSize: '1rem', marginBottom: 8 }}>
-              Pending Approval
-            </h3>
-            {ptoPending.length === 0 ? (
-              <p className="admin-hint" style={{ marginBottom: 0 }}>
-                Nothing pending.
-              </p>
-            ) : (
-              <div className="table-scroll">
-                <table className="admin-table">
-                  <thead>
-                    <tr>
-                      <th>Requester</th>
-                      <th>Dates</th>
-                      <th>Reason</th>
-                      <th />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ptoPending.map((p) => {
-                      const busy = ptoReviewBusy === p.id
-                      return (
-                        <tr key={p.id}>
-                          <td>{p.userEmail}</td>
-                          <td>
-                            {p.startDate} → {p.endDate}
-                          </td>
-                          <td>{p.reason || '—'}</td>
-                          <td className="admin-actions">
-                            <button
-                              type="button"
-                              className="btn secondary btn-sm"
-                              disabled={busy}
-                              onClick={async () => {
-                                setPtoReviewBusy(p.id)
-                                try {
-                                  await approvePtoRequest(token, p.id)
-                                  pushToast('PTO approved', 'ok')
-                                  await refreshPto()
-                                } catch (e) {
-                                  pushToast(e instanceof Error ? e.message : 'Approve failed', 'err')
-                                } finally {
-                                  setPtoReviewBusy(null)
-                                }
-                              }}
-                            >
-                              Approve
-                            </button>
-                            <button
-                              type="button"
-                              className="btn secondary btn-sm"
-                              disabled={busy}
-                              onClick={async () => {
-                                if (!window.confirm(`Reject PTO for ${p.userEmail}?`)) return
-                                setPtoReviewBusy(p.id)
-                                try {
-                                  await rejectPtoRequest(token, p.id)
-                                  pushToast('PTO rejected', 'ok')
-                                  await refreshPto()
-                                } catch (e) {
-                                  pushToast(e instanceof Error ? e.message : 'Reject failed', 'err')
-                                } finally {
-                                  setPtoReviewBusy(null)
-                                }
-                              }}
-                            >
-                              Reject
-                            </button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </>
-        ) : null}
-      </div>
-
       {isReviewer ? (
         <div className="card admin-card">
           <h2 className="admin-h2">Team Timesheet Approvals</h2>
@@ -889,6 +739,174 @@ export default function TimesheetWeek({
           )}
         </div>
       ) : null}
+
+      <div className="card admin-card" id="pto-requests">
+        <h2 className="admin-h2">PTO</h2>
+        <p className="admin-hint" style={{ marginBottom: 12 }}>
+          Submit requests and track status below. Approved PTO shows on the Resource Tracker month grid. IC → org manager
+          and reporting partner (when set); Manager and Finance → reporting partner and org manager (when set). Either
+          approver may act. Partner and Admin requests auto-approve on submit.
+        </p>
+        <div className="form admin-form-grid" style={{ marginBottom: 16 }}>
+          <label className="field">
+            <span>Start</span>
+            <input type="date" value={ptoStart} onChange={(e) => setPtoStart(e.target.value)} />
+          </label>
+          <label className="field">
+            <span>End</span>
+            <input type="date" value={ptoEnd} onChange={(e) => setPtoEnd(e.target.value)} />
+          </label>
+          <label className="field" style={{ gridColumn: '1 / -1' }}>
+            <span>Reason (optional)</span>
+            <input
+              type="text"
+              value={ptoReason}
+              onChange={(e) => setPtoReason(e.target.value)}
+              maxLength={2000}
+              placeholder="e.g. family trip"
+            />
+          </label>
+          <button
+            type="button"
+            className="btn primary btn-sm"
+            disabled={ptoBusy || !ptoStart || !ptoEnd}
+            onClick={async () => {
+              setPtoBusy(true)
+              try {
+                await createPtoRequest(token, {
+                  startDate: ptoStart,
+                  endDate: ptoEnd,
+                  reason: ptoReason.trim() || undefined,
+                })
+                pushToast('PTO request submitted', 'ok')
+                setPtoReason('')
+                await refreshPto()
+              } catch (e) {
+                pushToast(e instanceof Error ? e.message : 'PTO submit failed', 'err')
+              } finally {
+                setPtoBusy(false)
+              }
+            }}
+          >
+            {ptoBusy ? 'Submitting…' : 'Submit PTO Request'}
+          </button>
+        </div>
+        <h3 className="admin-h3" style={{ fontSize: '1rem', marginBottom: 8 }}>
+          My requests
+        </h3>
+        {ptoMine.length === 0 ? (
+          <p className="admin-hint">None yet.</p>
+        ) : (
+          <div className="table-scroll" style={{ marginBottom: 20 }}>
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Dates</th>
+                  <th>Status</th>
+                  <th>Approvers</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ptoMine.map((p) => (
+                  <tr key={p.id}>
+                    <td>
+                      {p.startDate} → {p.endDate}
+                    </td>
+                    <td>{p.status}</td>
+                    <td>
+                      {p.secondaryApproverEmail
+                        ? `${p.approverEmail}; ${p.secondaryApproverEmail}`
+                        : p.approverEmail}
+                    </td>
+                    <td>{p.reason || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {isPtoReviewer ? (
+          <>
+            <h3 className="admin-h3" style={{ fontSize: '1rem', marginBottom: 8 }}>
+              Pending approval
+            </h3>
+            {ptoPending.length === 0 ? (
+              <p className="admin-hint" style={{ marginBottom: 0 }}>
+                Nothing pending.
+              </p>
+            ) : (
+              <div className="table-scroll">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Requester</th>
+                      <th>Dates</th>
+                      <th>Reason</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ptoPending.map((p) => {
+                      const busy = ptoReviewBusy === p.id
+                      return (
+                        <tr key={p.id}>
+                          <td>{p.userEmail}</td>
+                          <td>
+                            {p.startDate} → {p.endDate}
+                          </td>
+                          <td>{p.reason || '—'}</td>
+                          <td className="admin-actions">
+                            <button
+                              type="button"
+                              className="btn secondary btn-sm"
+                              disabled={busy}
+                              onClick={async () => {
+                                setPtoReviewBusy(p.id)
+                                try {
+                                  await approvePtoRequest(token, p.id)
+                                  pushToast('PTO approved', 'ok')
+                                  await refreshPto()
+                                } catch (e) {
+                                  pushToast(e instanceof Error ? e.message : 'Approve failed', 'err')
+                                } finally {
+                                  setPtoReviewBusy(null)
+                                }
+                              }}
+                            >
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              className="btn secondary btn-sm"
+                              disabled={busy}
+                              onClick={async () => {
+                                if (!window.confirm(`Reject PTO for ${p.userEmail}?`)) return
+                                setPtoReviewBusy(p.id)
+                                try {
+                                  await rejectPtoRequest(token, p.id)
+                                  pushToast('PTO rejected', 'ok')
+                                  await refreshPto()
+                                } catch (e) {
+                                  pushToast(e instanceof Error ? e.message : 'Reject failed', 'err')
+                                } finally {
+                                  setPtoReviewBusy(null)
+                                }
+                              }}
+                            >
+                              Reject
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        ) : null}
+      </div>
 
       <div className="toast-stack" aria-live="polite">
         {toasts.map((t) => (

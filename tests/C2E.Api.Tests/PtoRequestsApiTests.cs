@@ -118,6 +118,28 @@ public class PtoRequestsApiTests
         Assert.Equal("Approved", row!.Status);
     }
 
+    [Fact]
+    public async Task Approved_pto_shows_PTO_status_on_organization_month()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        var parToken = await LoginTokenAsync(client, DevRoleAccountsSeed.DevPartnerEmail, "AdminPass!9");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", parToken);
+        var created = await client.PostAsJsonAsync(
+            "/api/pto-requests",
+            new { startDate = "2026-06-03", endDate = "2026-06-04" });
+        created.EnsureSuccessStatusCode();
+        var row = await created.Content.ReadFromJsonAsync<PtoRowDto>();
+        Assert.Equal("Approved", row!.Status);
+
+        var month = await client.GetFromJsonAsync<List<OrgMatrixRowDto>>("/api/timesheets/organization?monthStart=2026-06-01");
+        var partnerRow = month!.First(r =>
+            string.Equals(r.Email, DevRoleAccountsSeed.DevPartnerEmail, StringComparison.OrdinalIgnoreCase));
+        Assert.Equal("PTO", partnerRow.Days.First(d => d.Date == "2026-06-03").Status);
+        Assert.Equal("PTO", partnerRow.Days.First(d => d.Date == "2026-06-04").Status);
+        Assert.Equal("Available", partnerRow.Days.First(d => d.Date == "2026-06-05").Status);
+    }
+
     private sealed record LoginResponseDto(string AccessToken, string TokenType, int ExpiresInSeconds);
 
     private sealed record CreatedUserDto([property: JsonPropertyName("id")] Guid Id);
@@ -125,4 +147,13 @@ public class PtoRequestsApiTests
     private sealed record PtoRowDto(
         [property: JsonPropertyName("id")] Guid Id,
         [property: JsonPropertyName("status")] string Status);
+
+    private sealed record OrgMatrixRowDto(
+        [property: JsonPropertyName("email")] string Email,
+        [property: JsonPropertyName("days")] List<OrgMatrixDayDto> Days);
+
+    private sealed record OrgMatrixDayDto(
+        [property: JsonPropertyName("date")] string Date,
+        [property: JsonPropertyName("status")] string Status,
+        [property: JsonPropertyName("hours")] decimal Hours);
 }

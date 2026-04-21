@@ -4,6 +4,7 @@ using C2E.Api.Authorization;
 using C2E.Api.Data;
 using C2E.Api.Dtos;
 using C2E.Api.Models;
+using C2E.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -43,6 +44,12 @@ public sealed class ProjectsController(AppDbContext db) : ControllerBase
 
         if (role == AppRole.Finance && !User.IsInRole(nameof(AppRole.Admin)))
             query = query.Where(p => p.AssignedFinanceUserId == userId);
+
+        if (role == AppRole.IC)
+        {
+            var allowed = await IcCatalogAccess.GetAllowedProjectIdsAsync(db, userId, ct);
+            query = query.Where(p => allowed.Contains(p.Id));
+        }
 
         var rows = await query
             .OrderBy(p => p.Name)
@@ -86,7 +93,7 @@ public sealed class ProjectsController(AppDbContext db) : ControllerBase
             .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (p is null) return NotFound();
         if (!p.IsActive && GetUserRole() != AppRole.Admin) return NotFound();
-        if (!CanViewProject(userId, GetUserRole(), p)) return NotFound();
+        if (!await CanViewProjectAsync(userId, GetUserRole(), p, ct)) return NotFound();
         return Ok(Map(p));
     }
 
@@ -106,7 +113,7 @@ public sealed class ProjectsController(AppDbContext db) : ControllerBase
             .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (p is null || p.Client is null) return NotFound();
         if (!p.IsActive && role != AppRole.Admin) return NotFound();
-        if (!CanViewProject(userId, role, p)) return NotFound();
+        if (!await CanViewProjectAsync(userId, role, p, ct)) return NotFound();
         if (role != AppRole.IC && !CanViewExpenseInsights(userId, role, p)) return Forbid();
 
         var clientName = p.Client.Name;
@@ -363,10 +370,16 @@ public sealed class ProjectsController(AppDbContext db) : ControllerBase
             TeamMemberUserIds: null,
         };
 
-    private static bool CanViewProject(Guid userId, AppRole role, Project p)
+    private async Task<bool> CanViewProjectAsync(Guid userId, AppRole role, Project p, CancellationToken ct)
     {
-        if (role is AppRole.Admin or AppRole.Partner or AppRole.Manager or AppRole.IC) return true;
+        if (role is AppRole.Admin or AppRole.Partner or AppRole.Manager) return true;
         if (role == AppRole.Finance) return p.AssignedFinanceUserId == userId;
+        if (role == AppRole.IC)
+        {
+            var allowed = await IcCatalogAccess.GetAllowedProjectIdsAsync(db, userId, ct);
+            return allowed.Contains(p.Id);
+        }
+
         return false;
     }
 

@@ -19,27 +19,12 @@ import {
   type ProjectRow,
   type ResourceTrackerEmployeeRow,
 } from '../api'
+import { clampTimesheetWeekMondayYmd, parseYmdLocal, startOfWeekMonday, toYmd } from '../timesheetNavWindow'
 import '../App.css'
 
 type Toast = { id: number; message: string; variant: 'ok' | 'err' }
 
 const TOAST_MS = 4000
-
-function pad2(n: number) {
-  return String(n).padStart(2, '0')
-}
-
-function toYmd(d: Date) {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
-}
-
-function startOfWeekMonday(d: Date) {
-  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate())
-  const day = x.getDay()
-  const diff = (day + 6) % 7
-  x.setDate(x.getDate() - diff)
-  return x
-}
 
 function addDays(d: Date, days: number) {
   const x = new Date(d.getTime())
@@ -157,8 +142,16 @@ export default function ResourceTracker() {
   const jumpToTodayMonth = () => setMonthAnchor(startOfMonth(new Date()))
 
   const openWeekForDay = (dayYmd: string) => {
-    const weekMonday = toYmd(startOfWeekMonday(new Date(dayYmd)))
-    nav(`/timesheet?week=${encodeURIComponent(weekMonday)}`)
+    const d = parseYmdLocal(dayYmd)
+    if (!d) return
+    const rawMonday = toYmd(startOfWeekMonday(d))
+    const { ymd, didClamp } = clampTimesheetWeekMondayYmd(rawMonday)
+    if (didClamp)
+      pushToast(
+        'That week is outside the ±1 month timesheet entry window (server uses UTC); opened the nearest allowed week.',
+        'err',
+      )
+    nav(`/timesheet?week=${encodeURIComponent(ymd)}`)
   }
 
   const onPickEmployee = (userId: string) => {

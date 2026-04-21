@@ -14,7 +14,7 @@ namespace C2E.Api.Controllers;
 
 [ApiController]
 [Route("api/timesheets")]
-public sealed class TimesheetsController(AppDbContext db) : ControllerBase
+public sealed class TimesheetsController(AppDbContext db, TimesheetWeekWindow timesheetWeekWindow) : ControllerBase
 {
     /// <summary>Org-wide availability matrix for the month (FR20). Read-only for all authenticated roles including IC.</summary>
     [HttpGet("organization")]
@@ -42,6 +42,20 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
             .Select(g => new { g.Key.UserId, g.Key.WorkDate, Hours = g.Sum(x => x.Hours) })
             .ToListAsync(ct);
 
+        var approvedPto = await db.PtoRequests.AsNoTracking()
+            .Where(p => p.Status == PtoRequestStatus.Approved && p.StartDate < end && p.EndDate >= start)
+            .Select(p => new { p.UserId, p.StartDate, p.EndDate })
+            .ToListAsync(ct);
+
+        var ptoByUserDate = new HashSet<(Guid UserId, DateOnly Day)>();
+        foreach (var p in approvedPto)
+        {
+            var from = p.StartDate < start ? start : p.StartDate;
+            var to = p.EndDate >= end ? end.AddDays(-1) : p.EndDate;
+            for (var d = from; d <= to; d = d.AddDays(1))
+                ptoByUserDate.Add((p.UserId, d));
+        }
+
         var byUserDate = lines.ToDictionary(x => (x.UserId, x.WorkDate), x => x.Hours);
         var dayCount = end.DayNumber - start.DayNumber;
         var result = new List<ResourceTrackerEmployeeRowResponse>(userRows.Count);
@@ -53,7 +67,9 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
             {
                 var day = start.AddDays(i);
                 var hours = byUserDate.TryGetValue((u.Id, day), out var h) ? h : 0m;
-                var status = hours >= 8m ? "FullyBooked" : hours > 0m ? "SoftBooked" : "Available";
+                var status = ptoByUserDate.Contains((u.Id, day))
+                    ? "PTO"
+                    : hours >= 8m ? "FullyBooked" : hours > 0m ? "SoftBooked" : "Available";
                 days.Add(new ResourceTrackerDayResponse
                 {
                     Date = day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
@@ -85,6 +101,8 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
             return BadRequest(new AuthErrorResponse { Message = "Invalid weekStart. Use YYYY-MM-DD." });
         if (start.DayOfWeek != DayOfWeek.Monday)
             return BadRequest(new AuthErrorResponse { Message = "weekStart must be a Monday." });
+        if (WeekEntryWindowError(start) is { } winErr0)
+            return BadRequest(new AuthErrorResponse { Message = winErr0 });
         if (!TryGetUserId(out var userId)) return Unauthorized();
 
         var weekEnd = start.AddDays(7);
@@ -115,6 +133,8 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
             return BadRequest(new AuthErrorResponse { Message = "Invalid weekStart. Use YYYY-MM-DD." });
         if (start.DayOfWeek != DayOfWeek.Monday)
             return BadRequest(new AuthErrorResponse { Message = "weekStart must be a Monday." });
+        if (WeekEntryWindowError(start) is { } winErrSubmit)
+            return BadRequest(new AuthErrorResponse { Message = winErrSubmit });
         if (!TryGetUserId(out var userId)) return Unauthorized();
 
         var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
@@ -338,6 +358,8 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
             return BadRequest(new AuthErrorResponse { Message = "Invalid weekStart. Use YYYY-MM-DD." });
         if (start.DayOfWeek != DayOfWeek.Monday)
             return BadRequest(new AuthErrorResponse { Message = "weekStart must be a Monday." });
+        if (WeekEntryWindowError(start) is { } winErrGet)
+            return BadRequest(new AuthErrorResponse { Message = winErrGet });
 
         var end = start.AddDays(7);
         if (!TryGetUserId(out var userId)) return Unauthorized();
@@ -360,6 +382,8 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
             return BadRequest(new AuthErrorResponse { Message = "Invalid weekStart. Use YYYY-MM-DD." });
         if (start.DayOfWeek != DayOfWeek.Monday)
             return BadRequest(new AuthErrorResponse { Message = "weekStart must be a Monday." });
+        if (WeekEntryWindowError(start) is { } winErrPut)
+            return BadRequest(new AuthErrorResponse { Message = winErrPut });
 
         var end = start.AddDays(7);
         if (!TryGetUserId(out var userId)) return Unauthorized();
@@ -399,6 +423,8 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
             return BadRequest(new AuthErrorResponse { Message = "Invalid weekStart. Use YYYY-MM-DD." });
         if (start.DayOfWeek != DayOfWeek.Monday)
             return BadRequest(new AuthErrorResponse { Message = "weekStart must be a Monday." });
+        if (WeekEntryWindowError(start) is { } winErrGetScoped)
+            return BadRequest(new AuthErrorResponse { Message = winErrGetScoped });
 
         var end = start.AddDays(7);
         return Ok(await GetWeekForUser(userId, start, end, ct));
@@ -425,6 +451,8 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
             return BadRequest(new AuthErrorResponse { Message = "Invalid weekStart. Use YYYY-MM-DD." });
         if (start.DayOfWeek != DayOfWeek.Monday)
             return BadRequest(new AuthErrorResponse { Message = "weekStart must be a Monday." });
+        if (WeekEntryWindowError(start) is { } winErrPutScoped)
+            return BadRequest(new AuthErrorResponse { Message = winErrPutScoped });
 
         var end = start.AddDays(7);
         if (!await EnsureTimesheetWeekEditableAsync(userId, start, ct))
@@ -535,6 +563,16 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
         await db.SaveChangesAsync(ct);
     }
 
+    private string? WeekEntryWindowError(DateOnly weekStartMonday)
+    {
+        if (timesheetWeekWindow.IsWeekStartAllowed(weekStartMonday))
+            return null;
+
+        var (min, max) = timesheetWeekWindow.AllowedWeekMondayRange();
+        return
+            $"That timesheet week is outside the allowed range (Monday weeks from {min.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)} through {max.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}, UTC). Entries are limited to about one calendar month before and after the week that contains today.";
+    }
+
     private bool TryGetUserId(out Guid id)
     {
         var sub = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue(ClaimTypes.Name);
@@ -614,9 +652,21 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
             normalized.Add((workDate, client, project, task, line.Hours, line.IsBillable, notes));
         }
 
+        var submitterRole = await db.Users.AsNoTracking()
+            .Where(u => u.Id == userId)
+            .Select(u => u.Role)
+            .FirstAsync(ct);
+        var catalogEnforced = await db.Clients.AnyAsync(c => c.IsActive, ct);
+
         foreach (var (_, client, project, _, _, _, _) in normalized)
         {
             await ActiveCatalogValidation.EnsureActiveClientAndProjectAsync(db, client, project, ct);
+            if (catalogEnforced && submitterRole == AppRole.IC &&
+                !await IcCatalogAccess.MayUseClientProjectAsync(db, userId, client, project, ct))
+            {
+                throw new InvalidOperationException(
+                    $"You are not assigned to client \"{client}\" / project \"{project}\". Ask a Partner or Admin to add you to the client roster, project roster, or project team.");
+            }
         }
 
         var existing = await db.TimesheetLines
@@ -683,12 +733,6 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
         {
             throw new InvalidOperationException("Could not save timesheet.");
         }
-    }
-
-    private static DateOnly WeekStartMondayForWorkDate(DateOnly workDate)
-    {
-        var offset = ((int)workDate.DayOfWeek + 6) % 7;
-        return workDate.AddDays(-offset);
     }
 
     private async Task<IReadOnlyList<ProjectBudgetBarDto>> BuildProjectBudgetBarsAsync(
@@ -838,14 +882,14 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
             if (x.Role == AppRole.IC || x.Role == AppRole.Finance)
             {
                 if (approvedIcFinanceWeeks is null) continue;
-                var mon = WeekStartMondayForWorkDate(x.WorkDate);
+                var mon = TimesheetWeekWindow.MondayOfWeekContaining(x.WorkDate);
                 if (!approvedIcFinanceWeeks.Contains((x.UserId, mon)))
                     continue;
             }
             else if (ProjectApprovalRouting.UsesEngagementPartnerWeekApproval(x.Role))
             {
                 if (approvedEngagementPathWeeks is null) continue;
-                var mon = WeekStartMondayForWorkDate(x.WorkDate);
+                var mon = TimesheetWeekWindow.MondayOfWeekContaining(x.WorkDate);
                 if (!approvedEngagementPathWeeks.Contains((x.UserId, mon)))
                     continue;
             }

@@ -22,6 +22,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 builder.Services.Configure<AiRecommendationOptions>(builder.Configuration.GetSection(AiRecommendationOptions.SectionName));
+builder.Services.Configure<TimesheetWeekWindowOptions>(
+    builder.Configuration.GetSection(TimesheetWeekWindowOptions.SectionName));
+builder.Services.AddSingleton<TimesheetWeekWindow>();
 var jwt = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()
     ?? throw new InvalidOperationException("Jwt configuration section is required.");
 
@@ -135,8 +138,8 @@ await using (var scope = app.Services.CreateAsyncScope())
     var env = scope.ServiceProvider.GetRequiredService<IWebHostEnvironment>();
     var cfg = scope.ServiceProvider.GetRequiredService<IConfiguration>();
     var hasher = scope.ServiceProvider.GetRequiredService<PasswordHasher<AppUser>>();
-    var seedEmail = builder.Configuration["Seed:DevUserEmail"] ?? "dev@c2e.local";
-    var seedPassword = builder.Configuration["Seed:DevUserPassword"] ?? "ChangeMe!1";
+    var seedEmail = app.Configuration["Seed:DevUserEmail"] ?? "dev@c2e.local";
+    var seedPassword = app.Configuration["Seed:DevUserPassword"] ?? "ChangeMe!1";
 
     if (!await db.Users.AnyAsync())
         await DevRoleAccountsSeed.SeedWhenEmptyAsync(db, hasher, seedEmail, seedPassword);

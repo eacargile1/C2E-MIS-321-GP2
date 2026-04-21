@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { createUser, listUsers, patchUser, type MeProfile, type UserRow } from '../api'
+import { createUser, deleteUser, listUsers, patchUser, type MeProfile, type UserRow } from '../api'
 import '../App.css'
 
 type Toast = { id: number; message: string; variant: 'ok' | 'err' }
@@ -37,6 +37,7 @@ export default function AdminUsers({
   const [editPartnerId, setEditPartnerId] = useState('')
   const [editSkills, setEditSkills] = useState('')
   const [confirmDeactivateId, setConfirmDeactivateId] = useState<string | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
   const pushToast = useCallback((message: string, variant: 'ok' | 'err') => {
     const id = Date.now()
@@ -230,6 +231,30 @@ export default function AdminUsers({
       await refresh()
     } catch (e) {
       pushToast(e instanceof Error ? e.message : 'Reactivate failed', 'err')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const requestDelete = (id: string) => {
+    if (id === profile.id) {
+      pushToast('You cannot delete your own account from here.', 'err')
+      return
+    }
+    setConfirmDeleteId(id)
+  }
+
+  const confirmDelete = async () => {
+    if (!confirmDeleteId) return
+    const id = confirmDeleteId
+    setConfirmDeleteId(null)
+    setBusyId(id)
+    try {
+      await deleteUser(token, id)
+      pushToast('User and related data removed', 'ok')
+      await refresh()
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : 'Delete failed', 'err')
     } finally {
       setBusyId(null)
     }
@@ -542,6 +567,36 @@ export default function AdminUsers({
                               Reactivate
                             </button>
                           )}
+                          {u.id !== profile.id &&
+                            (confirmDeleteId === u.id ? (
+                              <span className="inline-confirm">
+                                <span>Delete user and their data?</span>
+                                <button
+                                  type="button"
+                                  className="btn primary btn-sm"
+                                  disabled={busyId === u.id}
+                                  onClick={() => void confirmDelete()}
+                                >
+                                  Yes
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn secondary btn-sm"
+                                  onClick={() => setConfirmDeleteId(null)}
+                                >
+                                  No
+                                </button>
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn secondary btn-sm danger-outline"
+                                disabled={busyId === u.id}
+                                onClick={() => requestDelete(u.id)}
+                              >
+                                Delete
+                              </button>
+                            ))}
                         </>
                       )}
                     </td>

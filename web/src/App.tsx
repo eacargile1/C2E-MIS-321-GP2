@@ -626,22 +626,8 @@ function AuthenticatedLayout({
           <NavLink to="/" end className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
             Home
           </NavLink>
-          <NavLink
-            to="/timesheet"
-            end
-            className={() =>
-              `topbar-tab${location.pathname === '/timesheet' && location.hash !== '#pto-requests' ? ' active' : ''}`
-            }
-          >
+          <NavLink to="/timesheet" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
             Time Tracking
-          </NavLink>
-          <NavLink
-            to="/timesheet#pto-requests"
-            className={() =>
-              `topbar-tab${location.pathname === '/timesheet' && location.hash === '#pto-requests' ? ' active' : ''}`
-            }
-          >
-            PTO Requests
           </NavLink>
           <NavLink
             to="/resource-tracker"

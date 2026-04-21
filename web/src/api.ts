@@ -221,6 +221,15 @@ export async function patchUser(
   return parseUserRow(r)
 }
 
+export async function deleteUser(token: string, id: string): Promise<void> {
+  const res = await fetch(`${base}/api/users/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  })
+  if (!res.ok && res.status !== 404)
+    throw new Error(await readApiErrorMessage(res, 'Could not delete user'))
+}
+
 export type PtoRequestRow = {
   id: string
   userId: string

@@ -144,12 +144,20 @@ public class ProjectsApiTests
         });
         Assert.Equal(HttpStatusCode.Created, partnerCreate.StatusCode);
 
+        var partnerProject = (await partnerCreate.Content.ReadFromJsonAsync<ProjectDto>())!;
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
+        var icUserId = (await client.GetFromJsonAsync<MeIdDto>("/api/auth/me"))!.Id;
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        (await client.PutAsync(
+                $"/api/assignments/projects/{partnerProject.Id}/employees/{icUserId}",
+                null))
+            .EnsureSuccessStatusCode();
+
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
         var icListAfter = await client.GetAsync("/api/projects");
         icListAfter.EnsureSuccessStatusCode();
         Assert.Single((await icListAfter.Content.ReadFromJsonAsync<List<ProjectDto>>())!);
-
-        var partnerProject = (await partnerCreate.Content.ReadFromJsonAsync<ProjectDto>())!;
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", managerToken);
         var managerPatch = await client.PatchAsJsonAsync(
             $"/api/projects/{partnerProject.Id}",
@@ -167,6 +175,7 @@ public class ProjectsApiTests
 
     private sealed record LoginResponseDto(string AccessToken, string TokenType, int ExpiresInSeconds);
     private sealed record UserDto(Guid Id, string Email, string Role, bool IsActive);
+    private sealed record MeIdDto(Guid Id, string Email, string DisplayName, string Role, bool IsActive);
     private sealed record ClientDto(Guid Id, string Name);
     private sealed record ProjectDto(
         Guid Id,

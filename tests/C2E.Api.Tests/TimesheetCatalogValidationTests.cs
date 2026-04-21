@@ -18,6 +18,7 @@ public class TimesheetCatalogValidationTests
             b.UseSetting("Jwt:SigningKey", "test-signing-key-must-be-32-chars-min!!");
             b.UseSetting("Seed:DevUserEmail", "admin@local.test");
             b.UseSetting("Seed:DevUserPassword", "AdminPass!9");
+            b.UseSetting("Timesheets:AnchorDateUtc", "2026-04-21");
         });
 
     private static async Task<string> LoginTokenAsync(HttpClient client, string email, string password)
