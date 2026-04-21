@@ -4,6 +4,7 @@ using C2E.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace C2E.Api.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260420215201_AddProjectDeliveryManagerEngagementPartner")]
+    partial class AddProjectDeliveryManagerEngagementPartner
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -256,9 +259,6 @@ namespace C2E.Api.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");
 
-                    b.Property<Guid?>("AssignedFinanceUserId")
-                        .HasColumnType("char(36)");
-
                     b.Property<decimal>("BudgetAmount")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
@@ -288,8 +288,6 @@ namespace C2E.Api.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AssignedFinanceUserId");
-
                     b.HasIndex("ClientId");
 
                     b.HasIndex("DeliveryManagerUserId");
@@ -301,21 +299,6 @@ namespace C2E.Api.Data.Migrations
                     b.HasIndex("Name");
 
                     b.ToTable("Projects");
-                });
-
-            modelBuilder.Entity("C2E.Api.Models.ProjectTeamMember", b =>
-                {
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("char(36)");
-
-                    b.HasKey("ProjectId", "UserId");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("ProjectTeamMembers");
                 });
 
             modelBuilder.Entity("C2E.Api.Models.TimesheetLine", b =>
@@ -438,11 +421,6 @@ namespace C2E.Api.Data.Migrations
 
             modelBuilder.Entity("C2E.Api.Models.Project", b =>
                 {
-                    b.HasOne("C2E.Api.Models.AppUser", "AssignedFinanceUser")
-                        .WithMany()
-                        .HasForeignKey("AssignedFinanceUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("C2E.Api.Models.Client", "Client")
                         .WithMany("Projects")
                         .HasForeignKey("ClientId")
@@ -459,32 +437,11 @@ namespace C2E.Api.Data.Migrations
                         .HasForeignKey("EngagementPartnerUserId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.Navigation("AssignedFinanceUser");
-
                     b.Navigation("Client");
 
                     b.Navigation("DeliveryManager");
 
                     b.Navigation("EngagementPartner");
-                });
-
-            modelBuilder.Entity("C2E.Api.Models.ProjectTeamMember", b =>
-                {
-                    b.HasOne("C2E.Api.Models.Project", "Project")
-                        .WithMany("TeamMembers")
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("C2E.Api.Models.AppUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Project");
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("C2E.Api.Models.TimesheetWeekApproval", b =>
@@ -513,11 +470,6 @@ namespace C2E.Api.Data.Migrations
             modelBuilder.Entity("C2E.Api.Models.Client", b =>
                 {
                     b.Navigation("Projects");
-                });
-
-            modelBuilder.Entity("C2E.Api.Models.Project", b =>
-                {
-                    b.Navigation("TeamMembers");
                 });
 #pragma warning restore 612, 618
         }

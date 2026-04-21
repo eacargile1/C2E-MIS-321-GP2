@@ -23,6 +23,11 @@ public sealed class ExpenseEntry
     public Guid? ReviewedByUserId { get; set; }
     public DateTime? ReviewedAtUtc { get; set; }
 
+    /// <summary>Optional receipt / invoice uploaded with the expense (PDF or image).</summary>
+    public string? InvoiceFileName { get; set; }
+    public string? InvoiceContentType { get; set; }
+    public byte[]? InvoiceBytes { get; set; }
+
     public DateTime CreatedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
 }

@@ -9,6 +9,7 @@ using C2E.Api.Dtos;
 using C2E.Api.Options;
 using C2E.Api.Services;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Authorization.Policy;
@@ -51,6 +52,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, JsonForbiddenAuthorizationMiddlewareResultHandler>();
 
+builder.Services.Configure<FormOptions>(o =>
+{
+    o.MultipartBodyLengthLimit = 6 * 1024 * 1024;
+});
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 

@@ -758,6 +758,38 @@ select.table-input {
   line-height: 1.1;
 }
 
+.kpi-label-with-help {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.kpi-help-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  line-height: 1;
+  font-weight: 700;
+  border-radius: 50%;
+  border: 1px solid #b8c8db;
+  color: var(--accent);
+  background: #f2f6fb;
+  cursor: help;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.kpi-help-trigger:hover,
+.kpi-help-trigger:focus-visible {
+  background: #e6eef8;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(31, 79, 169, 0.25);
+}
+
 .kpi-value {
   margin: 0;
   color: var(--text-h);

@@ -153,12 +153,13 @@ export async function createUser(
   token: string,
   email: string,
   password: string,
-  opts?: { displayName?: string; managerUserId?: string | null },
+  opts?: { displayName?: string; managerUserId?: string | null; role?: string },
 ): Promise<UserRow> {
   const body: Record<string, unknown> = { email, password }
   if (opts?.displayName !== undefined && opts.displayName.trim() !== '')
     body.displayName = opts.displayName.trim()
   if (opts?.managerUserId !== undefined) body.managerUserId = opts.managerUserId
+  if (opts?.role !== undefined && opts.role.trim() !== '') body.role = opts.role.trim()
   const res = await fetch(`${base}/api/users`, {
     method: 'POST',
     headers: authHeaders(token),
@@ -341,6 +342,20 @@ export type ProjectRow = {
   clientName: string
   budgetAmount: number
   isActive: boolean
+  deliveryManagerUserId?: string | null
+  engagementPartnerUserId?: string | null
+  assignedFinanceUserId?: string | null
+  teamMemberUserIds?: string[]
+}
+
+function parseTeamMemberIds(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  const out: string[] = []
+  for (const x of raw) {
+    if (typeof x === 'string') out.push(x)
+    else if (typeof x === 'number') out.push(String(x))
+  }
+  return out
 }
 
 function assertProject(x: unknown): ProjectRow {
@@ -361,7 +376,135 @@ function assertProject(x: unknown): ProjectRow {
     clientName: r.clientName,
     budgetAmount: r.budgetAmount,
     isActive: r.isActive,
+    deliveryManagerUserId: typeof r.deliveryManagerUserId === 'string' ? r.deliveryManagerUserId : null,
+    engagementPartnerUserId: typeof r.engagementPartnerUserId === 'string' ? r.engagementPartnerUserId : null,
+    assignedFinanceUserId: typeof r.assignedFinanceUserId === 'string' ? r.assignedFinanceUserId : null,
+    teamMemberUserIds: parseTeamMemberIds(r.teamMemberUserIds),
   }
+}
+
+export type ProjectStaffingUserRow = {
+  id: string
+  email: string
+  displayName: string
+  role: string
+}
+
+function appRoleFromApi(raw: unknown): string {
+  if (typeof raw === 'string') return raw
+  if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 0 && raw <= 4) {
+    const names = ['IC', 'Admin', 'Manager', 'Finance', 'Partner'] as const
+    return names[raw] ?? String(raw)
+  }
+  throw new Error('Could not load staffing user')
+}
+
+function assertProjectStaffingUser(x: unknown): ProjectStaffingUserRow {
+  const r = x as Record<string, unknown>
+  if (typeof r.id !== 'string' || typeof r.email !== 'string' || typeof r.displayName !== 'string')
+    throw new Error('Could not load staffing user')
+  return { id: r.id, email: r.email, displayName: r.displayName, role: appRoleFromApi(r.role) }
+}
+
+export async function listProjectStaffingUsers(token: string): Promise<ProjectStaffingUserRow[]> {
+  const res = await fetch(`${base}/api/projects/staffing-users`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load staffing users'))
+  const data = (await res.json()) as unknown
+  if (!Array.isArray(data)) throw new Error('Could not load staffing users')
+  return data.map(assertProjectStaffingUser)
+}
+
+export async function getProject(token: string, id: string): Promise<ProjectRow> {
+  const res = await fetch(`${base}/api/projects/${encodeURIComponent(id)}`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load project'))
+  return assertProject(await res.json())
+}
+
+export type ProjectExpenseRow = {
+  id: string
+  userId: string
+  submitterEmail: string
+  expenseDate: string
+  status: string
+  amount: number
+  category: string
+  description: string
+}
+
+export type ProjectExpenseInsights = {
+  clientName: string
+  projectName: string
+  budgetAmount: number
+  pendingCount: number
+  approvedCount: number
+  rejectedCount: number
+  pendingAmount: number
+  approvedAmount: number
+  rejectedAmount: number
+  expenses: ProjectExpenseRow[]
+}
+
+function assertProjectExpenseRow(x: unknown): ProjectExpenseRow {
+  const r = x as Record<string, unknown>
+  if (
+    typeof r.id !== 'string' ||
+    typeof r.userId !== 'string' ||
+    typeof r.submitterEmail !== 'string' ||
+    typeof r.expenseDate !== 'string' ||
+    typeof r.status !== 'string' ||
+    typeof r.amount !== 'number' ||
+    typeof r.category !== 'string' ||
+    typeof r.description !== 'string'
+  )
+    throw new Error('Could not load expense row')
+  return {
+    id: r.id,
+    userId: r.userId,
+    submitterEmail: r.submitterEmail,
+    expenseDate: r.expenseDate,
+    status: r.status,
+    amount: r.amount,
+    category: r.category,
+    description: r.description,
+  }
+}
+
+function assertProjectExpenseInsights(x: unknown): ProjectExpenseInsights {
+  const r = x as Record<string, unknown>
+  const ex = r.expenses
+  if (
+    typeof r.clientName !== 'string' ||
+    typeof r.projectName !== 'string' ||
+    typeof r.budgetAmount !== 'number' ||
+    typeof r.pendingCount !== 'number' ||
+    typeof r.approvedCount !== 'number' ||
+    typeof r.rejectedCount !== 'number' ||
+    typeof r.pendingAmount !== 'number' ||
+    typeof r.approvedAmount !== 'number' ||
+    typeof r.rejectedAmount !== 'number' ||
+    !Array.isArray(ex)
+  )
+    throw new Error('Could not load project expense insights')
+  return {
+    clientName: r.clientName,
+    projectName: r.projectName,
+    budgetAmount: r.budgetAmount,
+    pendingCount: r.pendingCount,
+    approvedCount: r.approvedCount,
+    rejectedCount: r.rejectedCount,
+    pendingAmount: r.pendingAmount,
+    approvedAmount: r.approvedAmount,
+    rejectedAmount: r.rejectedAmount,
+    expenses: ex.map(assertProjectExpenseRow),
+  }
+}
+
+export async function getProjectExpenseInsights(token: string, projectId: string): Promise<ProjectExpenseInsights> {
+  const res = await fetch(`${base}/api/projects/${encodeURIComponent(projectId)}/expense-insights`, {
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load project expenses'))
+  return assertProjectExpenseInsights(await res.json())
 }
 
 export async function listProjects(
@@ -383,7 +526,15 @@ export async function listProjects(
 
 export async function createProject(
   token: string,
-  body: { name: string; clientId: string; budgetAmount: number },
+  body: {
+    name: string
+    clientId: string
+    budgetAmount: number
+    deliveryManagerUserId?: string | null
+    engagementPartnerUserId?: string | null
+    assignedFinanceUserId?: string | null
+    teamMemberUserIds?: string[]
+  },
 ): Promise<ProjectRow> {
   const res = await fetch(`${base}/api/projects`, {
     method: 'POST',
@@ -397,7 +548,19 @@ export async function createProject(
 export async function patchProject(
   token: string,
   id: string,
-  body: { name?: string; clientId?: string; budgetAmount?: number; isActive?: boolean },
+  body: {
+    name?: string
+    clientId?: string
+    budgetAmount?: number
+    isActive?: boolean
+    deliveryManagerUserId?: string | null
+    engagementPartnerUserId?: string | null
+    assignedFinanceUserId?: string | null
+    clearDeliveryManager?: boolean
+    clearEngagementPartner?: boolean
+    clearAssignedFinance?: boolean
+    teamMemberUserIds?: string[] | null
+  },
 ): Promise<ProjectRow> {
   const res = await fetch(`${base}/api/projects/${id}`, {
     method: 'PATCH',
@@ -421,6 +584,7 @@ export type ExpenseRow = {
   status: 'Pending' | 'Approved' | 'Rejected'
   reviewedByEmail: string | null
   reviewedAtUtc: string | null
+  hasInvoice: boolean
 }
 
 function assertExpense(x: unknown): ExpenseRow {
@@ -452,6 +616,7 @@ function assertExpense(x: unknown): ExpenseRow {
     status: r.status,
     reviewedByEmail: typeof r.reviewedByEmail === 'string' ? r.reviewedByEmail : null,
     reviewedAtUtc: typeof r.reviewedAtUtc === 'string' ? r.reviewedAtUtc : null,
+    hasInvoice: typeof r.hasInvoice === 'boolean' ? r.hasInvoice : false,
   }
 }
 
@@ -475,14 +640,60 @@ export async function listTeamExpenses(token: string): Promise<ExpenseRow[]> {
 export async function createExpense(
   token: string,
   body: { expenseDate: string; client: string; project: string; category: string; description: string; amount: number },
+  invoiceFile?: File | null,
 ): Promise<ExpenseRow> {
-  const res = await fetch(`${base}/api/expenses`, {
-    method: 'POST',
-    headers: authHeaders(token),
-    body: JSON.stringify(body),
-  })
+  const hasFile = invoiceFile && invoiceFile.size > 0
+  const res = hasFile
+    ? await fetch(`${base}/api/expenses`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: (() => {
+          const fd = new FormData()
+          fd.append('expenseDate', body.expenseDate)
+          fd.append('client', body.client)
+          fd.append('project', body.project)
+          fd.append('category', body.category)
+          fd.append('description', body.description)
+          fd.append('amount', String(body.amount))
+          fd.append('invoice', invoiceFile)
+          return fd
+        })(),
+      })
+    : await fetch(`${base}/api/expenses`, {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: JSON.stringify(body),
+      })
   if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not create expense'))
   return assertExpense(await res.json())
+}
+
+/** Opens a browser download of the attached invoice (PDF or image). */
+export async function downloadExpenseInvoice(token: string, expenseId: string): Promise<void> {
+  const res = await fetch(`${base}/api/expenses/${encodeURIComponent(expenseId)}/invoice`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not download invoice'))
+  const blob = await res.blob()
+  const dispo = res.headers.get('Content-Disposition')
+  let filename = 'invoice'
+  const m = dispo?.match(/filename\*?=(?:UTF-8'')?("?)([^";\n]+)\1/i)
+  if (m?.[2]) {
+    try {
+      filename = decodeURIComponent(m[2].trim())
+    } catch {
+      filename = m[2].trim()
+    }
+  }
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.rel = 'noopener'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
 }
 
 export async function listPendingExpenseApprovals(token: string): Promise<ExpenseRow[]> {
@@ -847,9 +1058,9 @@ export async function getResourceTrackerMonth(token: string, monthStart: string)
   const res = await fetch(`${base}/api/timesheets/organization?monthStart=${encodeURIComponent(monthStart)}`, {
     headers: { Authorization: `Bearer ${token}` },
   })
-  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load resource tracker'))
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load Resource Tracker'))
   const data = (await res.json()) as unknown
-  if (!Array.isArray(data)) throw new Error('Could not load resource tracker')
+  if (!Array.isArray(data)) throw new Error('Could not load Resource Tracker')
   return data.map((row) => {
     const r = row as Record<string, unknown>
     if (
@@ -858,7 +1069,7 @@ export async function getResourceTrackerMonth(token: string, monthStart: string)
       typeof r.role !== 'string' ||
       !Array.isArray(r.days)
     )
-      throw new Error('Could not load resource tracker')
+      throw new Error('Could not load Resource Tracker')
     const days = r.days.map((d) => {
       const x = d as Record<string, unknown>
       if (
@@ -867,7 +1078,7 @@ export async function getResourceTrackerMonth(token: string, monthStart: string)
         typeof x.hours !== 'number' ||
         (x.status !== 'Available' && x.status !== 'SoftBooked' && x.status !== 'FullyBooked' && x.status !== 'PTO')
       )
-        throw new Error('Could not load resource tracker')
+        throw new Error('Could not load Resource Tracker')
       return { date: x.date, status: x.status, hours: x.hours } as ResourceTrackerDay
     })
     return { userId: r.userId, email: r.email, role: r.role, days }

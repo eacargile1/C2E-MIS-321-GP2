@@ -187,6 +187,13 @@ public class TimesheetWeekTests
         var client = factory.CreateClient();
         var token = await CreateIcUserAndGetTokenAsync(client, "ic.pending@local.test", "IcPendPa1!");
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var icId = await MyUserIdAsync(client);
+        var mgrId = await CreateUserWithRoleReturnIdAsync(client, "mgr.icpend@local.test", "MgrIcPend1!", "Manager");
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        Assert.True((await client.PatchAsJsonAsync($"/api/users/{icId}", new { assignManager = true, managerUserId = mgrId }))
+            .IsSuccessStatusCode);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
         const string weekStart = "2026-04-06";
         var putOk = await client.PutAsJsonAsync(
@@ -351,12 +358,58 @@ public class TimesheetWeekTests
     }
 
     [Fact]
-    public async Task Non_IC_cannot_submit_week_for_approval()
+    public async Task Manager_submit_week_requires_billable_engagement_partner_projects()
     {
         using var factory = Factory();
         var client = factory.CreateClient();
         var mgrToken = await CreateUserWithRoleAsync(client, "mgr.nosub@local.test", "MgrNoSub1!", "Manager");
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", mgrToken);
+        var r = await client.PostAsync("/api/timesheets/week/submit?weekStart=2026-04-06", null);
+        Assert.Equal(HttpStatusCode.BadRequest, r.StatusCode);
+    }
+
+    [Fact]
+    public async Task Finance_can_submit_week_when_org_manager_assigned()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        var finId = await CreateUserWithRoleReturnIdAsync(client, "fin.tsweek@local.test", "FinTsWeek1!", "Finance");
+        var mgrId = await CreateUserWithRoleReturnIdAsync(client, "mgr.fintsw@local.test", "MgrFinTs1!", "Manager");
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        Assert.True((await client.PatchAsJsonAsync($"/api/users/{finId}", new { assignManager = true, managerUserId = mgrId }))
+            .IsSuccessStatusCode);
+        client.DefaultRequestHeaders.Authorization = null;
+        var finToken = await LoginTokenAsync(client, "fin.tsweek@local.test", "FinTsWeek1!");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", finToken);
+        const string weekStart = "2026-04-06";
+        var put = await client.PutAsJsonAsync(
+            $"/api/timesheets/week?weekStart={weekStart}",
+            new[]
+            {
+                new
+                {
+                    workDate = "2026-04-06",
+                    client = "Acme",
+                    project = "Website",
+                    task = "Finance work",
+                    hours = 1m,
+                    isBillable = true,
+                    notes = (string?)null,
+                },
+            });
+        Assert.Equal(HttpStatusCode.NoContent, put.StatusCode);
+        var submit = await client.PostAsync($"/api/timesheets/week/submit?weekStart={weekStart}", null);
+        Assert.Equal(HttpStatusCode.NoContent, submit.StatusCode);
+    }
+
+    [Fact]
+    public async Task Partner_submit_week_requires_billable_engagement_partner_projects()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        var parToken = await CreateUserWithRoleAsync(client, "par.nosub@local.test", "ParNoSub1!", "Partner");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", parToken);
         var r = await client.PostAsync("/api/timesheets/week/submit?weekStart=2026-04-06", null);
         Assert.Equal(HttpStatusCode.BadRequest, r.StatusCode);
     }

@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   createProject,
   listClients,
   listProjects,
+  listProjectStaffingUsers,
   patchProject,
   type ClientRow,
   type MeProfile,
   type ProjectRow,
+  type ProjectStaffingUserRow,
 } from '../api'
 import '../App.css'
 
@@ -21,17 +24,13 @@ export default function ProjectsPage({
   token: string
   profile: MeProfile
 }) {
-  const canCreateProject =
-    profile.role === 'Admin' ||
-    profile.role === 'Manager' ||
-    profile.role === 'Partner' ||
-    profile.role === 'Finance'
-  const canEditProject =
-    profile.role === 'Admin' || profile.role === 'Partner' || profile.role === 'Finance'
+  const canCreateProject = profile.role === 'Admin' || profile.role === 'Partner'
+  const canEditProjectInline = profile.role === 'Admin' || profile.role === 'Partner'
   const canShowInactive = profile.role === 'Admin'
 
   const [rows, setRows] = useState<ProjectRow[]>([])
   const [clients, setClients] = useState<ClientRow[]>([])
+  const [staffUsers, setStaffUsers] = useState<ProjectStaffingUserRow[]>([])
   const [loading, setLoading] = useState(true)
   const [q, setQ] = useState('')
   const [clientFilter, setClientFilter] = useState('')
@@ -40,17 +39,55 @@ export default function ProjectsPage({
   const [createName, setCreateName] = useState('')
   const [createClientId, setCreateClientId] = useState('')
   const [createBudget, setCreateBudget] = useState('')
+  const [createDmId, setCreateDmId] = useState('')
+  const [createEpId, setCreateEpId] = useState('')
+  const [createFinId, setCreateFinId] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [editClientId, setEditClientId] = useState('')
   const [editBudget, setEditBudget] = useState('')
   const [editActive, setEditActive] = useState(true)
 
+  const managers = useMemo(() => staffUsers.filter((u) => u.role === 'Manager'), [staffUsers])
+  const partners = useMemo(() => staffUsers.filter((u) => u.role === 'Partner'), [staffUsers])
+  const financeUsers = useMemo(() => staffUsers.filter((u) => u.role === 'Finance'), [staffUsers])
+
   const pushToast = useCallback((message: string, variant: 'ok' | 'err') => {
     const id = Date.now()
     setToasts((t) => [...t, { id, message, variant }])
     window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), TOAST_MS)
   }, [])
+
+  useEffect(() => {
+    if (!canCreateProject) {
+      setStaffUsers([])
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const s = await listProjectStaffingUsers(token)
+        if (!cancelled) setStaffUsers(s)
+      } catch (e) {
+        if (!cancelled) {
+          setStaffUsers([])
+          pushToast(e instanceof Error ? e.message : 'Could not load staffing pickers', 'err')
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [token, canCreateProject, pushToast])
+
+  useEffect(() => {
+    if (!canCreateProject || profile.role !== 'Partner') return
+    if (staffUsers.length === 0) return
+    setCreateEpId((prev) => {
+      if (prev !== '') return prev
+      return staffUsers.some((u) => u.id === profile.id) ? profile.id : prev
+    })
+  }, [canCreateProject, profile.id, profile.role, staffUsers])
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -90,9 +127,15 @@ export default function ProjectsPage({
         name: createName.trim(),
         clientId: createClientId,
         budgetAmount: budget,
+        deliveryManagerUserId: createDmId || undefined,
+        engagementPartnerUserId: createEpId || undefined,
+        assignedFinanceUserId: createFinId || undefined,
       })
       setCreateName('')
       setCreateBudget('')
+      setCreateDmId('')
+      setCreateEpId('')
+      setCreateFinId('')
       pushToast('Project created', 'ok')
       await refresh()
     } catch (err) {
@@ -109,7 +152,7 @@ export default function ProjectsPage({
   }
 
   const saveEdit = async (id: string) => {
-    if (!canEditProject) return
+    if (!canEditProjectInline) return
     const budget = Number(editBudget)
     if (!Number.isFinite(budget)) {
       pushToast('Budget must be a number.', 'err')
@@ -137,6 +180,11 @@ export default function ProjectsPage({
         <p className="subtitle admin-sub">
           Signed in as {profile.email} · {profile.role}
         </p>
+        <p className="admin-hint" style={{ marginBottom: 0 }}>
+          New engagements are created by Admin or Partner (optional staffing on create). Delivery manager, engagement
+          partner, and assigned finance are maintained on each project&apos;s detail page. Managers and Finance use that
+          page for visibility; Finance updates budget only on projects they are assigned to.
+        </p>
       </div>
 
       <div className="card admin-card">
@@ -148,13 +196,13 @@ export default function ProjectsPage({
         </div>
         <div className="form admin-form-grid" style={{ marginBottom: 16 }}>
           <label className="field">
-            <span>Search name</span>
+            <span>Search Name</span>
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Contains..." />
           </label>
           <label className="field">
-            <span>Filter client</span>
+            <span>Filter Client</span>
             <select value={clientFilter} onChange={(e) => setClientFilter(e.target.value)}>
-              <option value="">All clients</option>
+              <option value="">All Clients</option>
               {clients.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -169,7 +217,7 @@ export default function ProjectsPage({
                 checked={includeInactive}
                 onChange={(e) => setIncludeInactive(e.target.checked)}
               />
-              <span>Show inactive</span>
+              <span>Show Inactive</span>
             </label>
           ) : null}
         </div>
@@ -177,7 +225,7 @@ export default function ProjectsPage({
 
       {canCreateProject ? (
         <div className="card admin-card">
-          <h2 className="admin-h2">New project</h2>
+          <h2 className="admin-h2">New Project</h2>
           <form className="form admin-form-grid" onSubmit={onCreate}>
             <label className="field">
               <span>Name</span>
@@ -204,6 +252,39 @@ export default function ProjectsPage({
                 required
               />
             </label>
+            <label className="field">
+              <span>Delivery manager (optional)</span>
+              <select value={createDmId} onChange={(e) => setCreateDmId(e.target.value)}>
+                <option value="">—</option>
+                {managers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.displayName || u.email}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Engagement partner (optional)</span>
+              <select value={createEpId} onChange={(e) => setCreateEpId(e.target.value)}>
+                <option value="">—</option>
+                {partners.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.displayName || u.email}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Assigned finance (optional)</span>
+              <select value={createFinId} onChange={(e) => setCreateFinId(e.target.value)}>
+                <option value="">—</option>
+                {financeUsers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.displayName || u.email}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button type="submit" className="btn primary">
               Create
             </button>
@@ -225,7 +306,8 @@ export default function ProjectsPage({
                   <th>Client</th>
                   <th>Budget</th>
                   <th>Status</th>
-                  {canEditProject ? <th /> : null}
+                  <th>View</th>
+                  {canEditProjectInline ? <th /> : null}
                 </tr>
               </thead>
               <tbody>
@@ -240,7 +322,11 @@ export default function ProjectsPage({
                     </td>
                     <td>
                       {editingId === p.id ? (
-                        <select className="table-input" value={editClientId} onChange={(e) => setEditClientId(e.target.value)}>
+                        <select
+                          className="table-input"
+                          value={editClientId}
+                          onChange={(e) => setEditClientId(e.target.value)}
+                        >
                           {clients.map((c) => (
                             <option key={c.id} value={c.id}>
                               {c.name}
@@ -261,7 +347,9 @@ export default function ProjectsPage({
                           value={editBudget}
                           onChange={(e) => setEditBudget(e.target.value)}
                         />
-                      ) : usd.format(p.budgetAmount)}
+                      ) : (
+                        usd.format(p.budgetAmount)
+                      )}
                     </td>
                     <td>
                       {editingId === p.id ? (
@@ -275,7 +363,12 @@ export default function ProjectsPage({
                         'Inactive'
                       )}
                     </td>
-                    {canEditProject ? (
+                    <td>
+                      <Link to={`/projects/${p.id}`} className="btn secondary btn-sm" style={{ textDecoration: 'none' }}>
+                        Open
+                      </Link>
+                    </td>
+                    {canEditProjectInline ? (
                       <td>
                         {editingId === p.id ? (
                           <>

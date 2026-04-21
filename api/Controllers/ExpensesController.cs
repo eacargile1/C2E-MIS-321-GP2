@@ -16,6 +16,16 @@ namespace C2E.Api.Controllers;
 [Authorize]
 public sealed class ExpensesController(AppDbContext db) : ControllerBase
 {
+    private const long MaxInvoiceBytes = 5 * 1024 * 1024;
+    private static readonly HashSet<string> InvoiceMimeAllow =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "application/pdf",
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+        };
+
     /// <summary>Full expense register for finance ops (all users, all approval states).</summary>
     [HttpGet("ledger")]
     [Authorize(Roles = RbacRoleSets.AdminAndFinance)]
@@ -66,21 +76,219 @@ public sealed class ExpensesController(AppDbContext db) : ControllerBase
     }
 
     [HttpPost]
-    public async Task<ActionResult<ExpenseResponse>> Create([FromBody] CreateExpenseRequest body, CancellationToken ct)
+    [Consumes("application/json")]
+    public async Task<ActionResult<ExpenseResponse>> CreateJson([FromBody] CreateExpenseRequest body, CancellationToken ct)
     {
         if (!ModelState.IsValid)
             return BadRequest(new AuthErrorResponse { Message = FirstModelError() ?? "Invalid request." });
-        if (!TryGetUserId(out var userId)) return Unauthorized();
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
         if (!TryParseDateOnly(body.ExpenseDate, out var expenseDate))
             return BadRequest(new AuthErrorResponse { Message = "Invalid expenseDate. Use YYYY-MM-DD." });
 
+        return await CreateExpenseCoreAsync(
+            userId,
+            expenseDate,
+            body.Client.Trim(),
+            body.Project.Trim(),
+            body.Category.Trim(),
+            body.Description.Trim(),
+            body.Amount,
+            invoiceBytes: null,
+            invoiceFileName: null,
+            invoiceContentType: null,
+            ct);
+    }
+
+    [HttpPost]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(6_000_000)]
+    public async Task<ActionResult<ExpenseResponse>> CreateMultipart([FromForm] CreateExpenseFormRequest form, CancellationToken ct)
+    {
+        if (!TryGetUserId(out var userId)) return Unauthorized();
+        if (!TryParseDateOnly(form.ExpenseDate, out var expenseDate))
+            return BadRequest(new AuthErrorResponse { Message = "Invalid expenseDate. Use YYYY-MM-DD." });
+
+        var client = form.Client.Trim();
+        var project = form.Project.Trim();
+        var category = form.Category.Trim();
+        var description = form.Description.Trim();
+        var err = ValidateExpenseFieldLengths(client, project, category, description, form.Amount);
+        if (err is not null) return BadRequest(new AuthErrorResponse { Message = err });
+
+        var (bytes, fn, cty, invErr) = await ReadInvoiceUploadAsync(form.Invoice, ct);
+        if (invErr is not null) return BadRequest(new AuthErrorResponse { Message = invErr });
+
+        return await CreateExpenseCoreAsync(
+            userId,
+            expenseDate,
+            client,
+            project,
+            category,
+            description,
+            form.Amount,
+            bytes,
+            fn,
+            cty,
+            ct);
+    }
+
+    [HttpGet("{id:guid}/invoice")]
+    public async Task<IActionResult> DownloadInvoice([FromRoute] Guid id, CancellationToken ct)
+    {
+        if (!TryGetUserId(out var userId)) return Unauthorized();
+        var row = await db.ExpenseEntries.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (row is null) return NotFound(new AuthErrorResponse { Message = "Expense not found." });
+        if (row.InvoiceBytes is null || row.InvoiceBytes.Length == 0)
+            return NotFound(new AuthErrorResponse { Message = "No invoice attached to this expense." });
+
+        if (row.UserId != userId)
+        {
+            if (User.IsInRole(nameof(AppRole.Admin)))
+            {
+                // ok
+            }
+            else if (User.IsInRole(nameof(AppRole.Finance)))
+            {
+                // ok — ledger visibility
+            }
+            else if (User.IsInRole(nameof(AppRole.Manager)))
+            {
+                var submitter = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == row.UserId, ct);
+                if (submitter is null) return Forbid();
+                if (!await ProjectApprovalRouting.ManagerMayApproveIcExpenseAsync(db, userId, row, submitter, ct))
+                    return Forbid();
+            }
+            else if (User.IsInRole(nameof(AppRole.Partner)))
+            {
+                var submitter = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == row.UserId, ct);
+                if (submitter is null) return Forbid();
+                var okPartner = await ProjectApprovalRouting.PartnerMayApproveManagerExpenseAsync(db, userId, row, submitter, ct);
+                var okDm = await ProjectApprovalRouting.ManagerMayApproveIcExpenseAsync(db, userId, row, submitter, ct);
+                if (!okPartner && !okDm) return Forbid();
+            }
+            else
+                return Forbid();
+        }
+
+        var fileName = string.IsNullOrWhiteSpace(row.InvoiceFileName) ? "invoice" : row.InvoiceFileName;
+        var contentType = string.IsNullOrWhiteSpace(row.InvoiceContentType)
+            ? "application/octet-stream"
+            : row.InvoiceContentType;
+        return File(row.InvoiceBytes, contentType, fileName);
+    }
+
+    [HttpGet("approvals/pending")]
+    [Authorize(Roles = RbacRoleSets.AdminManagerPartner)]
+    public async Task<ActionResult<IReadOnlyList<ExpenseResponse>>> ListPendingApprovals(CancellationToken ct)
+    {
+        if (!TryGetUserId(out var reviewerId)) return Unauthorized();
+
+        var users = await db.Users.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Email, ct);
+        var pending = await db.ExpenseEntries
+            .AsNoTracking()
+            .Where(x => x.Status == ExpenseStatus.Pending)
+            .OrderBy(x => x.ExpenseDate)
+            .ThenBy(x => x.CreatedAtUtc)
+            .ToListAsync(ct);
+
+        var submitterIds = pending.Select(x => x.UserId).Distinct().ToList();
+        var submitters = await db.Users.AsNoTracking()
+            .Where(u => submitterIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, ct);
+
+        var rows = new List<ExpenseEntry>(pending.Count);
+        foreach (var e in pending)
+        {
+            if (!submitters.TryGetValue(e.UserId, out var sub))
+                continue;
+            if (User.IsInRole(nameof(AppRole.Admin)))
+            {
+                rows.Add(e);
+                continue;
+            }
+
+            var ok = false;
+            if (User.IsInRole(nameof(AppRole.Partner)))
+            {
+                if (await ProjectApprovalRouting.PartnerMayApproveManagerExpenseAsync(db, reviewerId, e, sub, ct))
+                    ok = true;
+                else if (await ProjectApprovalRouting.ManagerMayApproveIcExpenseAsync(db, reviewerId, e, sub, ct))
+                    ok = true;
+            }
+
+            if (!ok && User.IsInRole(nameof(AppRole.Manager)) &&
+                await ProjectApprovalRouting.ManagerMayApproveIcExpenseAsync(db, reviewerId, e, sub, ct))
+                ok = true;
+            if (ok)
+                rows.Add(e);
+        }
+
+        return Ok(rows.Select(x => Map(x, users)).ToList());
+    }
+
+    [HttpPost("{id:guid}/approve")]
+    [Authorize(Roles = RbacRoleSets.AdminManagerPartner)]
+    public Task<IActionResult> Approve([FromRoute] Guid id, CancellationToken ct) =>
+        Review(id, ExpenseStatus.Approved, ct);
+
+    [HttpPost("{id:guid}/reject")]
+    [Authorize(Roles = RbacRoleSets.AdminManagerPartner)]
+    public Task<IActionResult> Reject([FromRoute] Guid id, CancellationToken ct) =>
+        Review(id, ExpenseStatus.Rejected, ct);
+
+    private async Task<IActionResult> Review(Guid id, ExpenseStatus nextStatus, CancellationToken ct)
+    {
+        if (!TryGetUserId(out var userId)) return Unauthorized();
+        var row = await db.ExpenseEntries.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (row is null) return NotFound();
+        if (row.Status != ExpenseStatus.Pending)
+            return BadRequest(new AuthErrorResponse { Message = "Only pending expenses can be reviewed." });
+
+        if (!User.IsInRole(nameof(AppRole.Admin)))
+        {
+            var submitter = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == row.UserId, ct);
+            if (submitter is null) return Forbid();
+
+            var ok = false;
+            if (User.IsInRole(nameof(AppRole.Partner)))
+            {
+                if (await ProjectApprovalRouting.PartnerMayApproveManagerExpenseAsync(db, userId, row, submitter, ct))
+                    ok = true;
+                else if (await ProjectApprovalRouting.ManagerMayApproveIcExpenseAsync(db, userId, row, submitter, ct))
+                    ok = true;
+            }
+
+            if (!ok && User.IsInRole(nameof(AppRole.Manager)) &&
+                await ProjectApprovalRouting.ManagerMayApproveIcExpenseAsync(db, userId, row, submitter, ct))
+                ok = true;
+            if (!ok) return Forbid();
+        }
+
+        row.Status = nextStatus;
+        row.ReviewedByUserId = userId;
+        row.ReviewedAtUtc = DateTime.UtcNow;
+        row.UpdatedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    private async Task<ActionResult<ExpenseResponse>> CreateExpenseCoreAsync(
+        Guid userId,
+        DateOnly expenseDate,
+        string client,
+        string project,
+        string category,
+        string description,
+        decimal amount,
+        byte[]? invoiceBytes,
+        string? invoiceFileName,
+        string? invoiceContentType,
+        CancellationToken ct)
+    {
         try
         {
-            await ActiveCatalogValidation.EnsureActiveClientAndProjectAsync(
-                db,
-                body.Client.Trim(),
-                body.Project.Trim(),
-                ct);
+            await ActiveCatalogValidation.EnsureActiveClientAndProjectAsync(db, client, project, ct);
         }
         catch (InvalidOperationException ex)
         {
@@ -93,90 +301,58 @@ public sealed class ExpensesController(AppDbContext db) : ControllerBase
             Id = Guid.NewGuid(),
             UserId = userId,
             ExpenseDate = expenseDate,
-            Client = body.Client.Trim(),
-            Project = body.Project.Trim(),
-            Category = body.Category.Trim(),
-            Description = body.Description.Trim(),
-            Amount = body.Amount,
+            Client = client,
+            Project = project,
+            Category = category,
+            Description = description,
+            Amount = amount,
             Status = ExpenseStatus.Pending,
+            InvoiceBytes = invoiceBytes,
+            InvoiceFileName = invoiceFileName,
+            InvoiceContentType = invoiceContentType,
             CreatedAtUtc = now,
             UpdatedAtUtc = now,
         };
         db.ExpenseEntries.Add(entity);
         await db.SaveChangesAsync(ct);
 
-        var userEmail = User.FindFirstValue(ClaimTypes.Email) ?? "";
-        return Ok(new ExpenseResponse
-        {
-            Id = entity.Id,
-            UserId = entity.UserId,
-            UserEmail = userEmail,
-            ExpenseDate = entity.ExpenseDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            Client = entity.Client,
-            Project = entity.Project,
-            Category = entity.Category,
-            Description = entity.Description,
-            Amount = entity.Amount,
-            Status = entity.Status.ToString(),
-            ReviewedByEmail = null,
-            ReviewedAtUtc = null,
-        });
-    }
-
-    [HttpGet("approvals/pending")]
-    [Authorize(Roles = RbacRoleSets.AdminAndManager)]
-    public async Task<ActionResult<IReadOnlyList<ExpenseResponse>>> ListPendingApprovals(CancellationToken ct)
-    {
-        if (!TryGetUserId(out var reviewerId)) return Unauthorized();
-
         var users = await db.Users.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Email, ct);
-        var q = db.ExpenseEntries
-            .AsNoTracking()
-            .Where(x => x.Status == ExpenseStatus.Pending);
-
-        if (User.IsInRole(nameof(AppRole.Manager)) && !User.IsInRole(nameof(AppRole.Admin)))
-        {
-            q = q.Where(x => db.Users.Any(u => u.Id == x.UserId && u.ManagerUserId == reviewerId));
-        }
-
-        var rows = await q
-            .OrderBy(x => x.ExpenseDate)
-            .ThenBy(x => x.CreatedAtUtc)
-            .ToListAsync(ct);
-        return Ok(rows.Select(x => Map(x, users)).ToList());
+        return Ok(Map(entity, users));
     }
 
-    [HttpPost("{id:guid}/approve")]
-    [Authorize(Roles = RbacRoleSets.AdminAndManager)]
-    public async Task<IActionResult> Approve([FromRoute] Guid id, CancellationToken ct) =>
-        await Review(id, ExpenseStatus.Approved, ct);
-
-    [HttpPost("{id:guid}/reject")]
-    [Authorize(Roles = RbacRoleSets.AdminAndManager)]
-    public async Task<IActionResult> Reject([FromRoute] Guid id, CancellationToken ct) =>
-        await Review(id, ExpenseStatus.Rejected, ct);
-
-    private async Task<IActionResult> Review(Guid id, ExpenseStatus nextStatus, CancellationToken ct)
+    private static async Task<(byte[]? Bytes, string? FileName, string? ContentType, string? Error)> ReadInvoiceUploadAsync(
+        IFormFile? file,
+        CancellationToken ct)
     {
-        if (!TryGetUserId(out var userId)) return Unauthorized();
-        var row = await db.ExpenseEntries.FirstOrDefaultAsync(x => x.Id == id, ct);
-        if (row is null) return NotFound();
-        if (row.Status != ExpenseStatus.Pending)
-            return BadRequest(new AuthErrorResponse { Message = "Only pending expenses can be reviewed." });
+        if (file is null || file.Length == 0)
+            return (null, null, null, null);
+        if (file.Length > MaxInvoiceBytes)
+            return (null, null, null, "Invoice file must be 5 MB or smaller.");
+        var ctType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType.Trim();
+        if (!InvoiceMimeAllow.Contains(ctType))
+            return (null, null, null, "Invoice must be PDF, JPEG, PNG, or WebP.");
 
-        if (User.IsInRole(nameof(AppRole.Manager)) && !User.IsInRole(nameof(AppRole.Admin)))
-        {
-            var submitter = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == row.UserId, ct);
-            if (submitter?.ManagerUserId != userId)
-                return Forbid();
-        }
+        await using var ms = new MemoryStream((int)Math.Min(file.Length, int.MaxValue));
+        await file.CopyToAsync(ms, ct);
+        var name = string.IsNullOrWhiteSpace(file.FileName) ? "invoice" : Path.GetFileName(file.FileName);
+        if (name.Length > 260)
+            name = name[..260];
+        return (ms.ToArray(), name, ctType, null);
+    }
 
-        row.Status = nextStatus;
-        row.ReviewedByUserId = userId;
-        row.ReviewedAtUtc = DateTime.UtcNow;
-        row.UpdatedAtUtc = DateTime.UtcNow;
-        await db.SaveChangesAsync(ct);
-        return NoContent();
+    private static string? ValidateExpenseFieldLengths(string client, string project, string category, string description, decimal amount)
+    {
+        if (string.IsNullOrWhiteSpace(client) || client.Trim().Length > 120)
+            return "Client is required (max 120 characters).";
+        if (string.IsNullOrWhiteSpace(project) || project.Trim().Length > 120)
+            return "Project is required (max 120 characters).";
+        if (string.IsNullOrWhiteSpace(category) || category.Trim().Length > 80)
+            return "Category is required (max 80 characters).";
+        if (string.IsNullOrWhiteSpace(description) || description.Trim().Length > 500)
+            return "Description is required (max 500 characters).";
+        if (amount < 0.01m || amount > 99_999_999m)
+            return "Amount must be between 0.01 and 99999999.";
+        return null;
     }
 
     private static ExpenseResponse Map(ExpenseEntry x, IReadOnlyDictionary<Guid, string> users) =>
@@ -194,6 +370,7 @@ public sealed class ExpensesController(AppDbContext db) : ControllerBase
             Status = x.Status.ToString(),
             ReviewedByEmail = x.ReviewedByUserId is { } uid && users.TryGetValue(uid, out var rev) ? rev : null,
             ReviewedAtUtc = x.ReviewedAtUtc,
+            HasInvoice = x.InvoiceBytes is { Length: > 0 },
         };
 
     private bool TryGetUserId(out Guid id)

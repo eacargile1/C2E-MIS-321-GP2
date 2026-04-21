@@ -105,7 +105,7 @@ export default function ResourceTracker({
   return (
     <div className="admin-wrap">
       <div className="card admin-card">
-        <h1 className="title admin-title">Resource tracker</h1>
+        <h1 className="title admin-title">Resource Tracker</h1>
         <p className="subtitle admin-sub">
           Signed in as {profile.displayName} · {profile.role}
         </p>
@@ -125,7 +125,7 @@ export default function ResourceTracker({
       <div className="card admin-card">
         <div className="admin-table-head">
           <div>
-            <h2 className="admin-h2">Monthly availability grid</h2>
+            <h2 className="admin-h2">Monthly Availability Grid</h2>
             <p className="admin-hint">{monthLabel}</p>
           </div>
           <div className="admin-header-actions">
@@ -136,7 +136,7 @@ export default function ResourceTracker({
               Month →
             </button>
             <button type="button" className="btn secondary btn-sm" onClick={jumpToTodayMonth} disabled={monthLoading}>
-              This month
+              This Month
             </button>
             <button type="button" className="btn secondary btn-sm" onClick={() => void refreshMonth()} disabled={monthLoading}>
               Refresh
@@ -145,10 +145,10 @@ export default function ResourceTracker({
         </div>
         <div className="timesheet-legend">
           <span>
-            <i className="lg fully" /> Fully booked
+            <i className="lg fully" /> Fully Booked
           </span>
           <span>
-            <i className="lg soft" /> Soft booked
+            <i className="lg soft" /> Soft Booked
           </span>
           <span>
             <i className="lg available" /> Available
@@ -173,7 +173,7 @@ export default function ResourceTracker({
               <tbody>
                 {monthRows.length === 0 ? (
                   <tr>
-                    <td className="sticky-col">No employees</td>
+                    <td className="sticky-col">No Employees</td>
                     {monthDays.map((d) => (
                       <td key={toYmd(d)} className="status-empty">
                         —
@@ -190,7 +190,7 @@ export default function ResourceTracker({
                         <td
                           key={day.date}
                           className={`status-${day.status}`}
-                          title={`${row.email} · ${day.date} · ${day.status} · ${day.hours.toFixed(2)}h — click to open timesheet week`}
+                          title={`${row.email} · ${day.date} · ${day.status} · ${day.hours.toFixed(2)}h — click to open Timesheet Week`}
                           role="button"
                           tabIndex={0}
                           onClick={() => openWeekForDay(day.date)}

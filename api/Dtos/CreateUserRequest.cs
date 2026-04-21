@@ -17,4 +17,7 @@ public class CreateUserRequest
     public string? DisplayName { get; init; }
 
     public Guid? ManagerUserId { get; init; }
+
+    /// <summary>Optional; defaults to IC. Must match a known application role name (IC, Admin, Manager, Finance, Partner).</summary>
+    public string? Role { get; init; }
 }

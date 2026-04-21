@@ -24,6 +24,7 @@ export default function AdminUsers({
   const [createEmail, setCreateEmail] = useState('')
   const [createPassword, setCreatePassword] = useState('')
   const [createDisplayName, setCreateDisplayName] = useState('')
+  const [createRole, setCreateRole] = useState<string>('IC')
   const [createManagerId, setCreateManagerId] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editEmail, setEditEmail] = useState('')
@@ -63,10 +64,12 @@ export default function AdminUsers({
       await createUser(token, createEmail.trim(), createPassword, {
         displayName: createDisplayName.trim() || undefined,
         managerUserId: createManagerId.trim().length ? createManagerId.trim() : undefined,
+        role: createRole,
       })
       setCreateEmail('')
       setCreatePassword('')
       setCreateDisplayName('')
+      setCreateRole('IC')
       setCreateManagerId('')
       pushToast('User created', 'ok')
       await refresh()
@@ -179,11 +182,11 @@ export default function AdminUsers({
       </div>
 
       <div className="card admin-card">
-        <h2 className="admin-h2">Create user</h2>
-        <p className="admin-hint">New accounts default to role IC. Password min. 8 characters.</p>
+        <h2 className="admin-h2">Create User</h2>
+        <p className="admin-hint">Choose a role for the new account. Password min. 8 characters.</p>
         <form className="form admin-form-grid" onSubmit={onCreate}>
           <label className="field">
-            <span>Display name</span>
+            <span>Display Name</span>
             <input
               type="text"
               value={createDisplayName}
@@ -204,7 +207,7 @@ export default function AdminUsers({
             />
           </label>
           <label className="field">
-            <span>Initial password</span>
+            <span>Initial Password</span>
             <input
               type="password"
               value={createPassword}
@@ -215,7 +218,17 @@ export default function AdminUsers({
             />
           </label>
           <label className="field">
-            <span>Manager (optional)</span>
+            <span>Role</span>
+            <select value={createRole} onChange={(e) => setCreateRole(e.target.value)} aria-label="Role for new user">
+              {APP_ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Manager (Optional)</span>
             <select value={createManagerId} onChange={(e) => setCreateManagerId(e.target.value)}>
               <option value="">— None —</option>
               {users
@@ -235,7 +248,7 @@ export default function AdminUsers({
 
       <div className="card admin-card">
         <div className="admin-table-head">
-          <h2 className="admin-h2">All users</h2>
+          <h2 className="admin-h2">All Users</h2>
           <button type="button" className="btn secondary btn-sm" onClick={() => void refresh()} disabled={loading}>
             Refresh
           </button>
@@ -248,7 +261,7 @@ export default function AdminUsers({
               <thead>
                 <tr>
                   <th>Email</th>
-                  <th>Display name</th>
+                  <th>Display Name</th>
                   <th>Role</th>
                   <th>Manager</th>
                   <th>Status</th>
@@ -335,10 +348,10 @@ export default function AdminUsers({
                       {editingId === u.id ? (
                         <>
                           <label className="field inline-field">
-                            <span className="sr-only">New password (optional)</span>
+                            <span className="sr-only">New Password (Optional)</span>
                             <input
                               type="password"
-                              placeholder="New password (optional)"
+                              placeholder="New Password (Optional)"
                               value={editPassword}
                               onChange={(e) => setEditPassword(e.target.value)}
                               minLength={8}

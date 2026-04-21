@@ -137,9 +137,15 @@ export default function TimesheetWeek({
   const [reviewBusyKey, setReviewBusyKey] = useState<string | null>(null)
   const lastLoadId = useRef(0)
 
-  const isIc = profile.role === 'IC'
-  const isReviewer = profile.role === 'Admin' || profile.role === 'Manager'
-  const weekLockedForIc = isIc && weekApproval?.status === 'Pending'
+  const usesPendingWeekLock =
+    profile.role === 'IC' ||
+    profile.role === 'Finance' ||
+    profile.role === 'Manager' ||
+    profile.role === 'Partner'
+  const canSubmitWeekForApproval =
+    usesPendingWeekLock || profile.role === 'Admin'
+  const isReviewer = profile.role === 'Admin' || profile.role === 'Manager' || profile.role === 'Partner'
+  const weekLockedPending = usesPendingWeekLock && weekApproval?.status === 'Pending'
 
   const weekStartDate = useMemo(() => {
     if (!isYmd(weekStart)) return startOfWeekMonday(new Date())
@@ -314,17 +320,17 @@ export default function TimesheetWeek({
           Signed in as {profile.displayName} · {profile.role}
         </p>
         <p className="admin-hint" style={{ marginTop: 8 }}>
-          This week: <strong>{weekHumanLabel}</strong> ·{' '}
+          This Week: <strong>{weekHumanLabel}</strong> ·{' '}
           <Link to="/resource-tracker" style={{ textDecoration: 'underline' }}>
-            Resource tracker
+            Resource Tracker
           </Link>{' '}
           for the org month view.
         </p>
-        {weekApproval && isIc ? (
+        {weekApproval && canSubmitWeekForApproval ? (
           <p className="admin-hint" style={{ marginTop: 10 }}>
             Approval: <strong>{weekApproval.status}</strong>
             {weekApproval.status === 'Pending'
-              ? ' — this week is locked until your manager approves or rejects it.'
+              ? ' — this week is locked until your approver (delivery manager / engagement partner / org chain) approves or rejects it.'
               : null}
             {weekApproval.status === 'Approved'
               ? ' — billable hours are signed off. Editing clears approval until you submit again.'
@@ -332,10 +338,14 @@ export default function TimesheetWeek({
             {weekApproval.status === 'Rejected'
               ? ' — you can edit and save, then submit again when ready.'
               : null}
-            {weekApproval.status === 'None' ? ' — submit when the week is ready for manager review.' : null}
+            {weekApproval.status === 'None'
+              ? ' — submit when the week is ready (IC & Finance → delivery manager path; Manager & Partner → engagement partner path; Admin self-signs).'
+              : null}
           </p>
         ) : null}
-        {isIc && weekApproval && (weekApproval.status === 'None' || weekApproval.status === 'Rejected') ? (
+        {canSubmitWeekForApproval &&
+        weekApproval &&
+        (weekApproval.status === 'None' || weekApproval.status === 'Rejected') ? (
           <div className="admin-header-actions" style={{ marginTop: 10 }}>
             <button
               type="button"
@@ -355,7 +365,7 @@ export default function TimesheetWeek({
                 }
               }}
             >
-              {submittingWeek ? 'Submitting…' : 'Submit week for approval'}
+              {submittingWeek ? 'Submitting…' : 'Submit Week For Approval'}
             </button>
           </div>
         ) : null}
@@ -369,20 +379,20 @@ export default function TimesheetWeek({
       <div className="card admin-card">
         <div className="admin-table-head">
           <div>
-            <h2 className="admin-h2">Weekly entry</h2>
+            <h2 className="admin-h2">Weekly Entry</h2>
             <p className="admin-hint">
               Monday–Sunday · {weekStart} → {toYmd(weekEndDate)}
             </p>
           </div>
           <div className="admin-header-actions">
             <button type="button" className="btn secondary btn-sm" onClick={setPrevWeek} disabled={loading || saving}>
-              ← Prev week
+              ← Prev Week
             </button>
             <button type="button" className="btn secondary btn-sm" onClick={jumpToThisWeek} disabled={loading || saving}>
-              This week
+              This Week
             </button>
             <button type="button" className="btn secondary btn-sm" onClick={setNextWeek} disabled={loading || saving}>
-              Next week →
+              Next Week →
             </button>
             <button
               type="button"
@@ -417,7 +427,7 @@ export default function TimesheetWeek({
                   {lines.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="admin-hint">
-                        No lines yet for this week. Use Add line below, or open a week from the resource tracker.
+                        No lines yet for this week. Use Add Line below, or open a week from the Resource Tracker.
                       </td>
                     </tr>
                   ) : null}
@@ -443,7 +453,7 @@ export default function TimesheetWeek({
                             max={toYmd(weekEndDate)}
                             onChange={(e) => updateRow(idx, { workDate: e.target.value })}
                             aria-label="Work date"
-                            disabled={weekLockedForIc}
+                            disabled={weekLockedPending}
                           />
                         </td>
                         <td>
@@ -453,7 +463,7 @@ export default function TimesheetWeek({
                               value={r.client}
                               onChange={(e) => updateRow(idx, { client: e.target.value, project: '' })}
                               aria-label="Client"
-                              disabled={weekLockedForIc}
+                              disabled={weekLockedPending}
                             >
                               <option value="">— Client —</option>
                               {catalogClients
@@ -470,7 +480,7 @@ export default function TimesheetWeek({
                               value={r.client}
                               onChange={(e) => updateRow(idx, { client: e.target.value })}
                               aria-label="Client"
-                              disabled={weekLockedForIc}
+                              disabled={weekLockedPending}
                             />
                           )}
                         </td>
@@ -481,7 +491,7 @@ export default function TimesheetWeek({
                               value={r.project}
                               onChange={(e) => updateRow(idx, { project: e.target.value })}
                               aria-label="Project"
-                              disabled={!r.client.trim() || weekLockedForIc}
+                              disabled={!r.client.trim() || weekLockedPending}
                             >
                               <option value="">— Project —</option>
                               {catalogProjects
@@ -498,7 +508,7 @@ export default function TimesheetWeek({
                               value={r.project}
                               onChange={(e) => updateRow(idx, { project: e.target.value })}
                               aria-label="Project"
-                              disabled={weekLockedForIc}
+                              disabled={weekLockedPending}
                             />
                           )}
                         </td>
@@ -508,7 +518,7 @@ export default function TimesheetWeek({
                             value={r.task}
                             onChange={(e) => updateRow(idx, { task: e.target.value })}
                             aria-label="Task"
-                            disabled={weekLockedForIc}
+                            disabled={weekLockedPending}
                           />
                         </td>
                         <td>
@@ -519,7 +529,7 @@ export default function TimesheetWeek({
                             onChange={(e) => updateRow(idx, { hours: e.target.value })}
                             aria-label="Hours"
                             placeholder="e.g. 1.25"
-                            disabled={weekLockedForIc}
+                            disabled={weekLockedPending}
                           />
                         </td>
                         <td>
@@ -528,7 +538,7 @@ export default function TimesheetWeek({
                             checked={r.isBillable}
                             onChange={(e) => updateRow(idx, { isBillable: e.target.checked })}
                             aria-label="Billable"
-                            disabled={weekLockedForIc}
+                            disabled={weekLockedPending}
                           />
                         </td>
                         <td>
@@ -537,7 +547,7 @@ export default function TimesheetWeek({
                             value={r.notes}
                             onChange={(e) => updateRow(idx, { notes: e.target.value })}
                             aria-label="Notes"
-                            disabled={weekLockedForIc}
+                            disabled={weekLockedPending}
                           />
                         </td>
                         <td className="admin-actions">
@@ -545,7 +555,7 @@ export default function TimesheetWeek({
                             type="button"
                             className="btn secondary btn-sm"
                             onClick={() => removeRow(idx)}
-                            disabled={saving || weekLockedForIc}
+                            disabled={saving || weekLockedPending}
                           >
                             Remove
                           </button>
@@ -558,14 +568,14 @@ export default function TimesheetWeek({
             </div>
 
             <div className="admin-header-actions" style={{ marginTop: '0.75rem' }}>
-              <button type="button" className="btn secondary btn-sm" onClick={addRow} disabled={saving || weekLockedForIc}>
-                Add line
+              <button type="button" className="btn secondary btn-sm" onClick={addRow} disabled={saving || weekLockedPending}>
+                Add Line
               </button>
               <button
                 type="button"
                 className="btn primary btn-sm"
                 onClick={() => void onSave()}
-                disabled={saving || weekLockedForIc}
+                disabled={saving || weekLockedPending}
               >
                 {saving ? 'Saving…' : 'Save'}
               </button>
@@ -576,8 +586,11 @@ export default function TimesheetWeek({
 
       {isReviewer ? (
         <div className="card admin-card">
-          <h2 className="admin-h2">Team timesheet approvals</h2>
-          <p className="admin-hint">IC weeks submitted for billable-hour sign-off. Same list appears on Home.</p>
+          <h2 className="admin-h2">Team Timesheet Approvals</h2>
+          <p className="admin-hint">
+            Pending weeks for delivery-manager sign-off (IC, Finance) and engagement-partner sign-off (Manager,
+            Partner). Same list appears on Home.
+          </p>
           {pendingTeamWeeks.length === 0 ? (
             <p className="admin-hint" style={{ marginBottom: 0 }}>
               Nothing pending.
@@ -589,7 +602,7 @@ export default function TimesheetWeek({
                   <tr>
                     <th>Consultant</th>
                     <th>Week</th>
-                    <th>Billable h</th>
+                    <th>Billable Hrs</th>
                     <th>Actions</th>
                   </tr>
                 </thead>

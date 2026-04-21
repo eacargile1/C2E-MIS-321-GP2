@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -90,13 +91,47 @@ public class ExpensesApiTests
     }
 
     [Fact]
-    public async Task Partner_cannot_open_expense_approval_queue()
+    public async Task Create_multipart_with_invoice_then_download()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        var icToken = await CreateUserWithRoleAsync(client, "ic.invoice@local.test", "IcInvPass1!", "IC");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
+
+        using var content = new MultipartFormDataContent();
+        content.Add(new StringContent("2026-03-20"), "expenseDate");
+        content.Add(new StringContent("Valent"), "client");
+        content.Add(new StringContent("VAL023"), "project");
+        content.Add(new StringContent("Travel"), "category");
+        content.Add(new StringContent("Taxi receipt"), "description");
+        content.Add(new StringContent(12.5m.ToString(CultureInfo.InvariantCulture)), "amount");
+        var pdfBytes = new byte[] { 0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0x0a, 0x25, 0xc4, 0xe3, 0x0c, 0x0a };
+        var fileContent = new ByteArrayContent(pdfBytes);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+        content.Add(fileContent, "invoice", "receipt.pdf");
+
+        var create = await client.PostAsync("/api/expenses", content);
+        Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+        var created = await create.Content.ReadFromJsonAsync<ExpenseDtoWithInvoice>();
+        Assert.NotNull(created);
+        Assert.True(created!.HasInvoice);
+
+        var dl = await client.GetAsync($"/api/expenses/{created.Id}/invoice");
+        Assert.Equal(HttpStatusCode.OK, dl.StatusCode);
+        Assert.Equal("application/pdf", dl.Content.Headers.ContentType?.MediaType);
+        var body = await dl.Content.ReadAsByteArrayAsync();
+        Assert.Equal(pdfBytes, body);
+    }
+
+    [Fact]
+    public async Task Partner_can_open_expense_approval_queue_team_still_forbidden()
     {
         using var factory = Factory();
         var client = factory.CreateClient();
         var partnerToken = await CreateUserWithRoleAsync(client, "par.exp@local.test", "ParExpPa1!", "Partner");
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", partnerToken);
-        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/expenses/approvals/pending")).StatusCode);
+        var pending = await client.GetAsync("/api/expenses/approvals/pending");
+        Assert.Equal(HttpStatusCode.OK, pending.StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/expenses/team")).StatusCode);
     }
 
@@ -282,5 +317,6 @@ public class ExpensesApiTests
 
     private sealed record UserDto(Guid Id, string Email, string Role, bool IsActive);
     private sealed record ExpenseDto(Guid Id, decimal Amount, string Status);
+    private sealed record ExpenseDtoWithInvoice(Guid Id, decimal Amount, string Status, bool HasInvoice);
     private sealed record ExpenseLedgerDto(string Status);
 }

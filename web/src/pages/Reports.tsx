@@ -81,7 +81,7 @@ export default function ReportsPage({ token, profile }: { token: string; profile
               onClick={() => setAnchor((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))}
               disabled={loading}
             >
-              ← Prev month
+              ← Prev Month
             </button>
             <button
               type="button"
@@ -89,7 +89,7 @@ export default function ReportsPage({ token, profile }: { token: string; profile
               onClick={() => setAnchor((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))}
               disabled={loading}
             >
-              Next month →
+              Next Month →
             </button>
             <button type="button" className="btn secondary btn-sm" onClick={() => void load()} disabled={loading}>
               Refresh
@@ -102,35 +102,35 @@ export default function ReportsPage({ token, profile }: { token: string; profile
         ) : summary ? (
           <div className="form admin-form-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
             <div className="field">
-              <span>Total hours</span>
+              <span>Total Hours</span>
               <strong>{summary.totalHours.toFixed(2)}</strong>
             </div>
             <div className="field">
-              <span>Billable hours</span>
+              <span>Billable Hours</span>
               <strong>{summary.billableHours.toFixed(2)}</strong>
             </div>
             <div className="field">
-              <span>Non-billable hours</span>
+              <span>Non-Billable Hours</span>
               <strong>{summary.nonBillableHours.toFixed(2)}</strong>
             </div>
             <div className="field">
-              <span>Timesheet lines</span>
+              <span>Timesheet Lines</span>
               <strong>{summary.timesheetLineCount}</strong>
             </div>
             <div className="field">
-              <span>Expenses (count)</span>
+              <span>Expenses (Count)</span>
               <strong>{summary.expenseCount}</strong>
             </div>
             <div className="field">
-              <span>Expense pending $</span>
+              <span>Expense Pending $</span>
               <strong>{summary.expensePendingTotal.toFixed(2)}</strong>
             </div>
             <div className="field">
-              <span>Expense approved $</span>
+              <span>Expense Approved $</span>
               <strong>{summary.expenseApprovedTotal.toFixed(2)}</strong>
             </div>
             <div className="field">
-              <span>Expense rejected $</span>
+              <span>Expense Rejected $</span>
               <strong>{summary.expenseRejectedTotal.toFixed(2)}</strong>
             </div>
           </div>

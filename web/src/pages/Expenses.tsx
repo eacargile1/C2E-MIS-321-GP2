@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom'
 import {
   approveExpense,
   createExpense,
+  downloadExpenseInvoice,
   listClients,
   listMyExpenses,
   listPendingExpenseApprovals,
@@ -29,7 +30,7 @@ function todayYmd() {
 }
 
 export default function ExpensesPage({ token, profile }: { token: string; profile: MeProfile }) {
-  const canApprove = profile.role === 'Admin' || profile.role === 'Manager'
+  const canApprove = profile.role === 'Admin' || profile.role === 'Manager' || profile.role === 'Partner'
   const canFinance = profile.role === 'Admin' || profile.role === 'Finance'
   const canSeeTeamExpenseDetail = profile.role === 'Admin' || profile.role === 'Manager'
   const [rows, setRows] = useState<ExpenseRow[]>([])
@@ -45,6 +46,8 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
   const [category, setCategory] = useState('Meals')
   const [description, setDescription] = useState('')
   const [amount, setAmount] = useState('')
+  const [invoiceFile, setInvoiceFile] = useState<File | null>(null)
+  const [invoiceFieldKey, setInvoiceFieldKey] = useState(0)
   const [catalogClients, setCatalogClients] = useState<ClientRow[]>([])
   const [catalogProjects, setCatalogProjects] = useState<ProjectRow[]>([])
 
@@ -108,23 +111,41 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
     try {
       const parsed = Number(amount)
       if (!Number.isFinite(parsed) || parsed <= 0) throw new Error('Amount must be a positive number')
-      await createExpense(token, {
-        expenseDate,
-        client: client.trim(),
-        project: project.trim(),
-        category: category.trim(),
-        description: description.trim(),
-        amount: parsed,
-      })
+      if (invoiceFile && invoiceFile.size > 5 * 1024 * 1024) throw new Error('Invoice must be 5 MB or smaller')
+      await createExpense(
+        token,
+        {
+          expenseDate,
+          client: client.trim(),
+          project: project.trim(),
+          category: category.trim(),
+          description: description.trim(),
+          amount: parsed,
+        },
+        invoiceFile,
+      )
       setClient('')
       setProject('')
       setCategory('Meals')
       setDescription('')
       setAmount('')
+      setInvoiceFile(null)
+      setInvoiceFieldKey((k) => k + 1)
       pushToast('Expense submitted for approval', 'ok')
       await refresh()
     } catch (e2) {
       pushToast(e2 instanceof Error ? e2.message : 'Create failed', 'err')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const onDownloadInvoice = async (id: string) => {
+    setBusy(true)
+    try {
+      await downloadExpenseInvoice(token, id)
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : 'Download failed', 'err')
     } finally {
       setBusy(false)
     }
@@ -187,7 +208,7 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
                 }}
                 required
               >
-                <option value="">— Select client —</option>
+                <option value="">— Select Client —</option>
                 {catalogClients
                   .filter((c) => c.isActive)
                   .map((c) => (
@@ -205,7 +226,7 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
             {catalogClients.length > 0 &&
             (!project.trim() || catalogProjects.some((p) => p.clientName === client && p.name === project && p.isActive)) ? (
               <select value={project} onChange={(e) => setProject(e.target.value)} required disabled={!client.trim()}>
-                <option value="">— Select project —</option>
+                <option value="">— Select Project —</option>
                 {catalogProjects
                   .filter((p) => p.clientName === client && p.isActive)
                   .map((p) => (
@@ -230,8 +251,20 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
             <span>Amount</span>
             <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 42.33" required />
           </label>
+          <label className="field">
+            <span>Invoice / Receipt (Optional)</span>
+            <input
+              key={invoiceFieldKey}
+              type="file"
+              accept=".pdf,image/jpeg,image/png,image/webp"
+              onChange={(e) => setInvoiceFile(e.target.files?.[0] ?? null)}
+            />
+            <span className="admin-hint" style={{ marginTop: 4 }}>
+              PDF Or Image · Max 5 MB
+            </span>
+          </label>
           <button type="submit" className="btn primary" disabled={busy}>
-            Submit for approval
+            Submit For Approval
           </button>
         </form>
       </div>
@@ -257,6 +290,7 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
                   <th>Category</th>
                   <th>Description</th>
                   <th>Amount</th>
+                  <th>Invoice</th>
                   <th>Status</th>
                 </tr>
               </thead>
@@ -268,6 +302,20 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
                     <td>{r.category}</td>
                     <td>{r.description}</td>
                     <td>{usd.format(r.amount)}</td>
+                    <td>
+                      {r.hasInvoice ? (
+                        <button
+                          type="button"
+                          className="btn secondary btn-sm"
+                          onClick={() => void onDownloadInvoice(r.id)}
+                          disabled={busy}
+                        >
+                          Download
+                        </button>
+                      ) : (
+                        <span className="admin-hint">—</span>
+                      )}
+                    </td>
                     <td>{r.status}</td>
                   </tr>
                 ))}
@@ -279,7 +327,7 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
 
       {canSeeTeamExpenseDetail ? (
         <div className="card admin-card">
-          <h2 className="admin-h2">{profile.role === 'Admin' ? 'Org expense lines' : 'Team expense detail'}</h2>
+          <h2 className="admin-h2">{profile.role === 'Admin' ? 'Org Expense Lines' : 'Team Expense Detail'}</h2>
           {loading ? (
             <p className="admin-hint">Loading…</p>
           ) : teamRows.length === 0 ? (
@@ -295,6 +343,7 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
                     <th>Category</th>
                     <th>Description</th>
                     <th>Amount</th>
+                    <th>Invoice</th>
                     <th>Status</th>
                   </tr>
                 </thead>
@@ -309,6 +358,20 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
                       <td>{r.category}</td>
                       <td>{r.description}</td>
                       <td>{usd.format(r.amount)}</td>
+                      <td>
+                        {r.hasInvoice ? (
+                          <button
+                            type="button"
+                            className="btn secondary btn-sm"
+                            onClick={() => void onDownloadInvoice(r.id)}
+                            disabled={busy}
+                          >
+                            Download
+                          </button>
+                        ) : (
+                          <span className="admin-hint">—</span>
+                        )}
+                      </td>
                       <td>{r.status}</td>
                     </tr>
                   ))}
@@ -334,6 +397,7 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
                     <th>Client / Project</th>
                     <th>Description</th>
                     <th>Amount</th>
+                    <th>Invoice</th>
                     <th />
                   </tr>
                 </thead>
@@ -345,6 +409,20 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
                       <td>{r.client} / {r.project}</td>
                       <td>{r.description}</td>
                       <td>{usd.format(r.amount)}</td>
+                      <td>
+                        {r.hasInvoice ? (
+                          <button
+                            type="button"
+                            className="btn secondary btn-sm"
+                            onClick={() => void onDownloadInvoice(r.id)}
+                            disabled={busy}
+                          >
+                            View
+                          </button>
+                        ) : (
+                          <span className="admin-hint">—</span>
+                        )}
+                      </td>
                       <td className="admin-actions">
                         <button type="button" className="btn primary btn-sm" onClick={() => void onReview(r.id, 'approve')} disabled={busy}>
                           Approve

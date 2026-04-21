@@ -92,7 +92,7 @@ public class ProjectsApiTests
     }
 
     [Fact]
-    public async Task Manager_can_create_projects_patch_forbidden_ic_cannot_create()
+    public async Task Only_admin_and_partner_create_projects_manager_finance_forbidden_ic_lists()
     {
         using var factory = Factory();
         var client = factory.CreateClient();
@@ -104,15 +104,26 @@ public class ProjectsApiTests
 
         var managerToken = await CreateUserWithRoleAsync(client, "mgr.proj@local.test", "MgrProj1!", "Manager");
         var icToken = await CreateUserWithRoleAsync(client, "ic.proj@local.test", "IcProj1!", "IC");
+        var partnerToken = await CreateUserWithRoleAsync(client, "par.proj@local.test", "ParProjP1!", "Partner");
+        var finToken = await CreateUserWithRoleAsync(client, "fin.proj@local.test", "FinProjP1!", "Finance");
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", managerToken);
         var managerCreate = await client.PostAsJsonAsync("/api/projects", new
         {
-            name = "Internal Tooling",
+            name = "Manager should not create",
             clientId = delta.Id,
             budgetAmount = 1234m,
         });
-        Assert.Equal(HttpStatusCode.Created, managerCreate.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, managerCreate.StatusCode);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", finToken);
+        var finCreate = await client.PostAsJsonAsync("/api/projects", new
+        {
+            name = "Finance should not create",
+            clientId = delta.Id,
+            budgetAmount = 2m,
+        });
+        Assert.Equal(HttpStatusCode.Forbidden, finCreate.StatusCode);
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
         var icCreate = await client.PostAsJsonAsync("/api/projects", new
@@ -123,11 +134,6 @@ public class ProjectsApiTests
         });
         Assert.Equal(HttpStatusCode.Forbidden, icCreate.StatusCode);
 
-        var icList = await client.GetAsync("/api/projects");
-        icList.EnsureSuccessStatusCode();
-        Assert.Single((await icList.Content.ReadFromJsonAsync<List<ProjectDto>>())!);
-
-        var partnerToken = await CreateUserWithRoleAsync(client, "par.proj@local.test", "ParProjP1!", "Partner");
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", partnerToken);
         var partnerCreate = await client.PostAsJsonAsync("/api/projects", new
         {
@@ -137,31 +143,21 @@ public class ProjectsApiTests
         });
         Assert.Equal(HttpStatusCode.Created, partnerCreate.StatusCode);
 
-        var finToken = await CreateUserWithRoleAsync(client, "fin.proj@local.test", "FinProjP1!", "Finance");
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", finToken);
-        var finCreate = await client.PostAsJsonAsync("/api/projects", new
-        {
-            name = "Finance engagement",
-            clientId = delta.Id,
-            budgetAmount = 2m,
-        });
-        Assert.Equal(HttpStatusCode.Created, finCreate.StatusCode);
-
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
         var icListAfter = await client.GetAsync("/api/projects");
         icListAfter.EnsureSuccessStatusCode();
-        Assert.Equal(3, (await icListAfter.Content.ReadFromJsonAsync<List<ProjectDto>>())!.Count);
+        Assert.Single((await icListAfter.Content.ReadFromJsonAsync<List<ProjectDto>>())!);
 
-        var internalTooling = (await managerCreate.Content.ReadFromJsonAsync<ProjectDto>())!;
+        var partnerProject = (await partnerCreate.Content.ReadFromJsonAsync<ProjectDto>())!;
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", managerToken);
         var managerPatch = await client.PatchAsJsonAsync(
-            $"/api/projects/{internalTooling.Id}",
+            $"/api/projects/{partnerProject.Id}",
             new { name = "Manager rename attempt" });
         Assert.Equal(HttpStatusCode.Forbidden, managerPatch.StatusCode);
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", partnerToken);
         var partnerPatch = await client.PatchAsJsonAsync(
-            $"/api/projects/{internalTooling.Id}",
+            $"/api/projects/{partnerProject.Id}",
             new { name = "Partner rename ok" });
         partnerPatch.EnsureSuccessStatusCode();
         var patched = await partnerPatch.Content.ReadFromJsonAsync<ProjectDto>();

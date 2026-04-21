@@ -23,6 +23,7 @@ import AdminUsers from './pages/AdminUsers'
 import ClientsPage from './pages/Clients'
 import ExpensesPage from './pages/Expenses'
 import FinancePage from './pages/Finance'
+import ProjectDetailPage from './pages/ProjectDetail'
 import ProjectsPage from './pages/Projects'
 import ReportsPage from './pages/Reports'
 import ResourceTracker from './pages/ResourceTracker'
@@ -77,13 +78,56 @@ function timesheetWeekStatusVariant(s: TimesheetWeekStatusPayload['status']): 'a
   return 'draft'
 }
 
+/** Hover copy for “Hours This Week” — weekly sign-off varies by role. */
+function hoursThisWeekHelpTooltip(
+  role: string,
+  weekHours: number,
+  snap: {
+    loading: boolean
+    error: string | null
+    myTimesheetWeek: TimesheetWeekStatusPayload | null
+  },
+): string {
+  if (snap.loading) return 'Loading timesheet status…'
+  if (snap.error) return snap.error
+  const tw = snap.myTimesheetWeek
+  if (!tw) return 'Timesheet status not available.'
+  const h = weekHours.toFixed(2)
+  const bill = tw.billableHours.toFixed(2)
+
+  const usesWeekSignoff =
+    role === 'IC' ||
+    role === 'Finance' ||
+    role === 'Manager' ||
+    role === 'Partner' ||
+    role === 'Admin'
+
+  if (!usesWeekSignoff) {
+    return `You have ${h}h logged this week (${bill}h billable).`
+  }
+
+  if (role === 'Admin') {
+    if (tw.status === 'Approved')
+      return `Admin weeks self-sign on submit (${bill}h billable in the signed week). You have ${h}h logged this calendar week on the grid.`
+    return `You have ${h}h logged this week (${bill}h billable). Submit from Timesheet when you want this week recorded as signed-off.`
+  }
+
+  if (tw.status === 'Pending')
+    return `All ${h}h you logged this week are pending approval (${bill}h billable in that submission).`
+  if (tw.status === 'Approved')
+    return `No hours pending approval — this week is approved (${bill}h billable were in the last submission).`
+  if (tw.status === 'Rejected')
+    return `No hours are in the approval queue right now (week was rejected). You still have ${h}h on the timesheet — edit and resubmit when ready.`
+  return `This week is not submitted yet (${h}h logged, ${bill}h billable on lines). Submit from Timesheet when totals are final.`
+}
+
 function HomeDashboard({ session }: { session: Session }) {
   const role = session.profile.role
   const isAdmin = role === 'Admin'
   const isFinanceHub = role === 'Admin' || role === 'Finance'
-  const isReviewer = role === 'Admin' || role === 'Manager'
+  const isReviewer = role === 'Admin' || role === 'Manager' || role === 'Partner'
   const quickCreateClient = role === 'Admin' || role === 'Partner' || role === 'Finance'
-  const quickCreateProject = role !== 'IC'
+  const quickCreateProject = role === 'Admin' || role === 'Partner'
   const [kpis, setKpis] = useState({
     activeClients: 0,
     activeProjects: 0,
@@ -96,7 +140,7 @@ function HomeDashboard({ session }: { session: Session }) {
     myExpenses: ExpenseRow[]
     teamPending: ExpenseRow[]
     quotes: QuoteRow[]
-    icTimesheetWeek: TimesheetWeekStatusPayload | null
+    myTimesheetWeek: TimesheetWeekStatusPayload | null
     pendingTimesheetWeeks: PendingTimesheetWeek[]
   }>({
     loading: true,
@@ -104,7 +148,7 @@ function HomeDashboard({ session }: { session: Session }) {
     myExpenses: [],
     teamPending: [],
     quotes: [],
-    icTimesheetWeek: null,
+    myTimesheetWeek: null,
     pendingTimesheetWeeks: [],
   })
   const [timesheetActionBusy, setTimesheetActionBusy] = useState<string | null>(null)
@@ -117,7 +161,6 @@ function HomeDashboard({ session }: { session: Session }) {
     setApprovalSnap((p) => ({ ...p, loading: true, error: null }))
     setTimesheetActionError(null)
     try {
-      const isIc = role === 'IC'
       const [
         clients,
         projects,
@@ -125,7 +168,7 @@ function HomeDashboard({ session }: { session: Session }) {
         myExpenses,
         teamPending,
         quotes,
-        icTimesheetWeek,
+        myTimesheetWeek,
         pendingTimesheetWeeks,
       ] = await Promise.all([
         listClients(session.token, undefined, isAdmin),
@@ -134,7 +177,7 @@ function HomeDashboard({ session }: { session: Session }) {
         listMyExpenses(session.token),
         isReviewer ? listPendingExpenseApprovals(session.token) : Promise.resolve([] as ExpenseRow[]),
         isFinanceHub ? listQuotes(session.token) : Promise.resolve([] as QuoteRow[]),
-        isIc ? getTimesheetWeekStatus(session.token, weekStart) : Promise.resolve(null as TimesheetWeekStatusPayload | null),
+        getTimesheetWeekStatus(session.token, weekStart),
         isReviewer
           ? listPendingTimesheetWeekApprovals(session.token)
           : Promise.resolve([] as PendingTimesheetWeek[]),
@@ -150,7 +193,7 @@ function HomeDashboard({ session }: { session: Session }) {
         myExpenses: mineSorted.slice(0, 10),
         teamPending: teamPending.slice(0, 10),
         quotes: quotes.slice(0, 8),
-        icTimesheetWeek,
+        myTimesheetWeek,
         pendingTimesheetWeeks: pendingTimesheetWeeks.slice(0, 10),
       })
     } catch {
@@ -161,7 +204,7 @@ function HomeDashboard({ session }: { session: Session }) {
         myExpenses: [],
         teamPending: [],
         quotes: [],
-        icTimesheetWeek: null,
+        myTimesheetWeek: null,
         pendingTimesheetWeeks: [],
       })
     }
@@ -179,7 +222,7 @@ function HomeDashboard({ session }: { session: Session }) {
           Welcome back, {session.profile.displayName} ({session.profile.role})
         </p>
         <p className="admin-hint" style={{ marginBottom: 0 }}>
-          Use top navigation for full modules; quick actions and the status panel summarize common follow-ups.
+          Use top navigation for full modules; quick actions and the Status panel summarize common follow-ups.
         </p>
       </section>
 
@@ -193,7 +236,17 @@ function HomeDashboard({ session }: { session: Session }) {
           <p className="kpi-value">{kpis.loading ? '--' : kpis.activeProjects}</p>
         </article>
         <article className="card admin-card kpi-card">
-          <p className="kpi-label">Hours This Week</p>
+          <p className="kpi-label kpi-label-with-help">
+            <span>Hours This Week</span>
+            <span
+              className="kpi-help-trigger"
+              tabIndex={0}
+              title={hoursThisWeekHelpTooltip(role, kpis.weekHours, approvalSnap)}
+              aria-label={hoursThisWeekHelpTooltip(role, kpis.weekHours, approvalSnap)}
+            >
+              ⓘ
+            </span>
+          </p>
           <p className="kpi-value">{kpis.loading ? '--' : kpis.weekHours.toFixed(2)}</p>
         </article>
       </section>
@@ -204,58 +257,58 @@ function HomeDashboard({ session }: { session: Session }) {
           <div className="quick-action-grid">
             <NavLink to="/timesheet" className="quick-action-tile qa-timesheet">
               <span className="quick-action-title">Timesheet</span>
-              <span className="quick-action-sub">Log hours by client, project, and task</span>
+              <span className="quick-action-sub">Log Hours By Client, Project, And Task</span>
             </NavLink>
             <NavLink to="/resource-tracker" className="quick-action-tile qa-projects">
-              <span className="quick-action-title">Resource tracker</span>
-              <span className="quick-action-sub">Org month view from logged hours</span>
+              <span className="quick-action-title">Resource Tracker</span>
+              <span className="quick-action-sub">Org Month View From Logged Hours</span>
             </NavLink>
             <NavLink to="/expenses" className="quick-action-tile qa-projects">
               <span className="quick-action-title">Track Expense</span>
-              <span className="quick-action-sub">Submit expenses for approval</span>
+              <span className="quick-action-sub">Submit Expenses For Approval</span>
             </NavLink>
             {quickCreateClient ? (
               <NavLink to="/clients" className="quick-action-tile qa-clients">
-                <span className="quick-action-title">Create client</span>
-                <span className="quick-action-sub">Add a customer (Partner, Finance, or Admin)</span>
+                <span className="quick-action-title">Create Client</span>
+                <span className="quick-action-sub">Add A Customer (Partner, Finance, Or Admin)</span>
               </NavLink>
             ) : (
               <NavLink to="/clients" className="quick-action-tile qa-clients">
                 <span className="quick-action-title">Clients</span>
-                <span className="quick-action-sub">Browse directory; new clients are created by Partner or Finance</span>
+                <span className="quick-action-sub">Browse Directory; New Clients Are Created By Partner Or Finance</span>
               </NavLink>
             )}
             {quickCreateProject ? (
               <NavLink to="/projects" className="quick-action-tile qa-projects">
                 <span className="quick-action-title">Create project</span>
-                <span className="quick-action-sub">Start an engagement (everyone except IC)</span>
+                <span className="quick-action-sub">Start An Engagement (Admin Or Partner)</span>
               </NavLink>
             ) : (
               <NavLink to="/projects" className="quick-action-tile qa-projects">
                 <span className="quick-action-title">Projects</span>
-                <span className="quick-action-sub">Browse engagements assigned in the directory</span>
+                <span className="quick-action-sub">Browse Engagements And Budget In The Directory</span>
               </NavLink>
             )}
             {isFinanceHub ? (
               <NavLink to="/finance" className="quick-action-tile qa-clients">
-                <span className="quick-action-title">Finance hub</span>
-                <span className="quick-action-sub">Register, quotes, pipeline</span>
+                <span className="quick-action-title">Finance Hub</span>
+                <span className="quick-action-sub">Register, Quotes, Pipeline</span>
               </NavLink>
             ) : null}
             {isAdmin ? (
               <NavLink to="/admin/users" className="quick-action-tile qa-users">
                 <span className="quick-action-title">Add User</span>
-                <span className="quick-action-sub">Invite teammate + assign role</span>
+                <span className="quick-action-sub">Invite Teammate + Assign Role</span>
               </NavLink>
             ) : null}
           </div>
         </article>
 
         <article className="card admin-card status-snapshot-card">
-          <h2 className="admin-h2">Approvals &amp; status</h2>
+          <h2 className="admin-h2">Approvals &amp; Status</h2>
           <p className="status-snapshot-hint">
-            Expenses and IC weekly timesheets show approval state here. ICs submit each week for manager sign-off on
-            billable hours; open Timesheet to edit or submit.
+            Expenses and weekly timesheet sign-off (IC & Finance → delivery manager path; Manager & Partner → engagement
+            partner; Admin self-signs). Open Timesheet to edit or submit.
           </p>
           {timesheetActionError ? (
             <p className="admin-hint" style={{ marginBottom: 8, color: 'var(--danger, #b42318)' }}>
@@ -272,26 +325,31 @@ function HomeDashboard({ session }: { session: Session }) {
             </p>
           ) : (
             <div className="status-snapshot-body">
-              {role === 'IC' && approvalSnap.icTimesheetWeek ? (
+              {approvalSnap.myTimesheetWeek &&
+              (role === 'IC' ||
+                role === 'Finance' ||
+                role === 'Manager' ||
+                role === 'Partner' ||
+                role === 'Admin') ? (
                 <div className="status-block">
-                  <h3 className="status-block-title">Your timesheet (this week)</h3>
+                  <h3 className="status-block-title">Your Timesheet (This Week)</h3>
                   <ul className="status-row-list">
                     <li className="home-status-row">
                       <NavLink
-                        to={`/timesheet?week=${encodeURIComponent(approvalSnap.icTimesheetWeek.weekStart)}`}
+                        to={`/timesheet?week=${encodeURIComponent(approvalSnap.myTimesheetWeek.weekStart)}`}
                         className="home-status-label"
                       >
-                        Week of {approvalSnap.icTimesheetWeek.weekStart} ·{' '}
-                        {approvalSnap.icTimesheetWeek.totalHours.toFixed(2)}h total ·{' '}
-                        {approvalSnap.icTimesheetWeek.billableHours.toFixed(2)}h billable
+                        Week of {approvalSnap.myTimesheetWeek.weekStart} ·{' '}
+                        {approvalSnap.myTimesheetWeek.totalHours.toFixed(2)}h total ·{' '}
+                        {approvalSnap.myTimesheetWeek.billableHours.toFixed(2)}h billable
                       </NavLink>
-                      <StatusBadge variant={timesheetWeekStatusVariant(approvalSnap.icTimesheetWeek.status)} />
+                      <StatusBadge variant={timesheetWeekStatusVariant(approvalSnap.myTimesheetWeek.status)} />
                     </li>
                   </ul>
                 </div>
               ) : null}
               <div className="status-block">
-                <h3 className="status-block-title">Your expenses</h3>
+                <h3 className="status-block-title">Your Expenses</h3>
                 {approvalSnap.myExpenses.length === 0 ? (
                   <p className="status-empty">No expenses yet.</p>
                 ) : (
@@ -309,7 +367,7 @@ function HomeDashboard({ session }: { session: Session }) {
               </div>
               {isReviewer ? (
                 <div className="status-block">
-                  <h3 className="status-block-title">Team queue (your review)</h3>
+                  <h3 className="status-block-title">Team Queue (Your Review)</h3>
                   {approvalSnap.teamPending.length === 0 ? (
                     <p className="status-empty">Nothing waiting for you.</p>
                   ) : (
@@ -325,10 +383,10 @@ function HomeDashboard({ session }: { session: Session }) {
                     </ul>
                   )}
                   <h3 className="status-block-title" style={{ marginTop: '1rem' }}>
-                    Timesheet weeks (pending)
+                    Timesheet Weeks (Pending)
                   </h3>
                   {approvalSnap.pendingTimesheetWeeks.length === 0 ? (
-                    <p className="status-empty">No IC timesheets awaiting approval.</p>
+                    <p className="status-empty">No timesheet weeks awaiting your approval.</p>
                   ) : (
                     <ul className="status-row-list">
                       {approvalSnap.pendingTimesheetWeeks.map((t) => {
@@ -337,7 +395,7 @@ function HomeDashboard({ session }: { session: Session }) {
                         return (
                           <li key={key} className="home-status-row home-status-row-wrap">
                             <span className="home-status-label">
-                              {t.userEmail} · week {t.weekStart} · {t.billableHours.toFixed(2)}h billable
+                              {t.userEmail} · Week Of {t.weekStart} · {t.billableHours.toFixed(2)}h billable
                             </span>
                             <span className="home-status-ts-actions">
                               <NavLink
@@ -423,12 +481,12 @@ function HomeDashboard({ session }: { session: Session }) {
         <ul className="dashboard-list">
           <li>Authentication and role-based access controls</li>
           <li>
-            Timesheet weekly entry and org resource tracker (split views); IC browses clients/projects only; Partner and
-            Finance create clients; Admin/Manager/Partner/Finance can add projects; editing project records is Admin,
-            Partner, or Finance only
+            Timesheet weekly entry and org Resource Tracker (split views); IC browses clients/projects only; Partner and
+            Finance create clients; Admin and Partner create projects and staffing; Finance updates budget on assigned
+            projects; Managers see project and expense rollups without editing the catalog
           </li>
           <li>Client management directory</li>
-          <li>Project directory (filters; edits per role as above)</li>
+          <li>Project directory (filters; catalog edits Admin or Partner; per-project detail for rollups and finance budget)</li>
           <li>Personal reports (time + expense totals by month)</li>
           {isAdmin ? <li>User administration and role assignment</li> : null}
           {isFinanceHub ? <li>Finance register and client quoting</li> : null}
@@ -468,7 +526,7 @@ function LoginPage({ onSignedIn }: { onSignedIn: (s: Session) => void }) {
     <main className="shell">
       <div className="card">
         <h1 className="title">C2E</h1>
-        <p className="subtitle">Sign in with your work email</p>
+        <p className="subtitle">Sign In With Your Work Email</p>
         <form className="form" onSubmit={onSubmit}>
           <label className="field">
             <span>Email</span>
@@ -490,7 +548,7 @@ function LoginPage({ onSignedIn }: { onSignedIn: (s: Session) => void }) {
             </p>
           ) : null}
           <button type="submit" className="btn primary" disabled={busy}>
-            {busy ? 'Signing in...' : 'Sign in'}
+            {busy ? 'Signing In...' : 'Sign In'}
           </button>
         </form>
       </div>
@@ -532,7 +590,7 @@ function AuthenticatedLayout({
             Timesheet
           </NavLink>
           <NavLink to="/resource-tracker" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
-            Resource tracker
+            Resource Tracker
           </NavLink>
           <NavLink to="/expenses" className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
             Expenses
@@ -559,11 +617,11 @@ function AuthenticatedLayout({
         </nav>
         <div className="topbar-user">
           <button type="button" className="btn secondary btn-sm" onClick={toggleDensity}>
-            {density === 'comfortable' ? 'Compact view' : 'Comfortable view'}
+            {density === 'comfortable' ? 'Compact View' : 'Comfortable View'}
           </button>
           <span>{session.profile.displayName}</span>
           <button type="button" className="btn secondary btn-sm" onClick={onSignOut}>
-            Sign out
+            Sign Out
           </button>
         </div>
       </header>
@@ -587,7 +645,11 @@ function TimesheetRoute({ session }: { session: Session | null }) {
 
 function TimesheetApprovalReviewRoute({ session }: { session: Session | null }) {
   if (!session) return <Navigate to="/login" replace />
-  if (session.profile.role !== 'Admin' && session.profile.role !== 'Manager') {
+  if (
+    session.profile.role !== 'Admin' &&
+    session.profile.role !== 'Manager' &&
+    session.profile.role !== 'Partner'
+  ) {
     return <Navigate to="/" replace />
   }
   return <TimesheetApprovalReview token={session.token} profile={session.profile} />
@@ -611,6 +673,11 @@ function ExpensesRoute({ session }: { session: Session | null }) {
 function ProjectsRoute({ session }: { session: Session | null }) {
   if (!session) return <Navigate to="/login" replace />
   return <ProjectsPage token={session.token} profile={session.profile} />
+}
+
+function ProjectDetailRoute({ session }: { session: Session | null }) {
+  if (!session) return <Navigate to="/login" replace />
+  return <ProjectDetailPage token={session.token} profile={session.profile} />
 }
 
 function ReportsRoute({ session }: { session: Session | null }) {
@@ -639,6 +706,7 @@ function AppRoutes() {
         <Route path="/expenses" element={<ExpensesRoute session={session} />} />
         <Route path="/clients" element={<ClientsRoute session={session} />} />
         <Route path="/projects" element={<ProjectsRoute session={session} />} />
+        <Route path="/projects/:projectId" element={<ProjectDetailRoute session={session} />} />
         <Route path="/reports" element={<ReportsRoute session={session} />} />
         <Route path="/finance" element={<FinanceRoute session={session} />} />
       </Route>
