@@ -18,3 +18,15 @@
 
 - **`RbacRoleSets.AdminAndFinance` bundles three matrix rows:** If org-timesheets, billing-rates, and invoice-generate ever need different role sets, split into separate constants or named policies.
 - **`web/dist/` in version control:** Generated SPA assets add review noise; prefer CI build or ignore `dist` unless deployment model requires committed artifacts.
+
+## Deferred from: code review of S-E9-01-personal-utilization-reports.md (2026-04-21)
+
+- **`personal-summary` missing-query guard:** `ReportsController.PersonalSummary` passes nullable query strings into `TryParseDateOnly` (which trims input), so missing `from`/`to` can throw before the intended 400 response. Pre-existing in summary path; defer to a shared date-validation hardening pass.
+
+## Deferred from: code review of S-E9-02-manager-team-reports.md (2026-04-21)
+
+- **`personal-summary` null query parsing risk:** `ReportsController.PersonalSummary` still parses nullable `from`/`to` without null-coalescing, so missing params may throw before the expected 400 response. Pre-existing behavior outside S-E9-02 scope; defer to shared reports date-validation hardening.
+
+## Deferred from: code review of S-E9-04-report-filters.md (2026-04-21)
+
+- **Reports page request race:** `Reports.tsx` `load()` can allow an older in-flight response to overwrite newer period state when users change period quickly. Existing reports flow behavior; defer to a follow-up that adds request-id or cancellation guards.

@@ -245,6 +245,112 @@ export async function getPersonalSummary(token: string, from: string, to: string
   }
 }
 
+export type PersonalDetailRow = {
+  client: string
+  project: string
+  totalHours: number
+  billableHours: number
+  nonBillableHours: number
+}
+
+export type PersonalDetail = {
+  from: string
+  to: string
+  rows: PersonalDetailRow[]
+}
+
+export async function getPersonalDetail(token: string, from: string, to: string): Promise<PersonalDetail> {
+  const qs = new URLSearchParams({ from, to })
+  const res = await fetch(`${base}/api/reports/personal-detail?${qs}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load detail report'))
+  const r = (await res.json()) as Record<string, unknown>
+  if (typeof r.from !== 'string' || typeof r.to !== 'string' || !Array.isArray(r.rows))
+    throw new Error('Could not load detail report')
+  const rows = r.rows.map((row) => {
+    const x = row as Record<string, unknown>
+    if (
+      typeof x.client !== 'string' ||
+      typeof x.project !== 'string' ||
+      typeof x.totalHours !== 'number' ||
+      typeof x.billableHours !== 'number' ||
+      typeof x.nonBillableHours !== 'number'
+    )
+      throw new Error('Could not load detail report')
+    return {
+      client: x.client,
+      project: x.project,
+      totalHours: x.totalHours,
+      billableHours: x.billableHours,
+      nonBillableHours: x.nonBillableHours,
+    }
+  })
+  return { from: r.from, to: r.to, rows }
+}
+
+export type TeamMemberRow = {
+  userId: string
+  email: string
+  displayName: string
+  role: string
+  totalHours: number
+  billableHours: number
+  nonBillableHours: number
+  timesheetLineCount: number
+  expenseCount: number
+  expensePendingTotal: number
+  expenseApprovedTotal: number
+}
+
+export type TeamSummary = {
+  from: string
+  to: string
+  rows: TeamMemberRow[]
+}
+
+export async function getTeamSummary(token: string, from: string, to: string): Promise<TeamSummary> {
+  const qs = new URLSearchParams({ from, to })
+  const res = await fetch(`${base}/api/reports/team-summary?${qs}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load team report'))
+  const r = (await res.json()) as Record<string, unknown>
+  if (typeof r.from !== 'string' || typeof r.to !== 'string' || !Array.isArray(r.rows))
+    throw new Error('Could not load team report')
+  const rows = r.rows.map((row) => {
+    const x = row as Record<string, unknown>
+    if (
+      typeof x.userId !== 'string' ||
+      typeof x.email !== 'string' ||
+      typeof x.displayName !== 'string' ||
+      typeof x.role !== 'string' ||
+      typeof x.totalHours !== 'number' ||
+      typeof x.billableHours !== 'number' ||
+      typeof x.nonBillableHours !== 'number' ||
+      typeof x.timesheetLineCount !== 'number' ||
+      typeof x.expenseCount !== 'number' ||
+      typeof x.expensePendingTotal !== 'number' ||
+      typeof x.expenseApprovedTotal !== 'number'
+    )
+      throw new Error('Could not load team report')
+    return {
+      userId: x.userId,
+      email: x.email,
+      displayName: x.displayName,
+      role: x.role,
+      totalHours: x.totalHours,
+      billableHours: x.billableHours,
+      nonBillableHours: x.nonBillableHours,
+      timesheetLineCount: x.timesheetLineCount,
+      expenseCount: x.expenseCount,
+      expensePendingTotal: x.expensePendingTotal,
+      expenseApprovedTotal: x.expenseApprovedTotal,
+    }
+  })
+  return { from: r.from, to: r.to, rows }
+}
+
 export type ClientRow = {
   id: string
   name: string
