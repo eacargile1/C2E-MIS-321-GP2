@@ -58,13 +58,6 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
             ? UserProfileName.DefaultFromEmail(normalized)
             : body.DisplayName.Trim();
 
-        if (body.ManagerUserId is { } midCreate)
-        {
-            var err = await ValidateManagerAssignmentAsync(midCreate, userBeingEdited: null, ct);
-            if (err is not null)
-                return BadRequest(new AuthErrorResponse { Message = err });
-        }
-
         AppRole role = AppRole.IC;
         if (!string.IsNullOrWhiteSpace(body.Role))
         {
@@ -77,6 +70,56 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
             role = Enum.Parse<AppRole>(roleTrimmed, ignoreCase: true);
         }
 
+        if (role == AppRole.IC && body.ManagerUserId is null)
+            return BadRequest(new AuthErrorResponse
+            {
+                Message = "IC accounts require org manager (managerUserId) referencing an active Manager.",
+            });
+
+        if (role == AppRole.Manager)
+        {
+            var anyExistingManager =
+                await db.Users.AsNoTracking().AnyAsync(u => u.IsActive && u.Role == AppRole.Manager, ct);
+            if (anyExistingManager && body.ManagerUserId is null)
+                return BadRequest(new AuthErrorResponse
+                {
+                    Message =
+                        "Manager accounts require org manager (managerUserId) referencing an active Manager when another Manager already exists.",
+                });
+            if (anyExistingManager && body.PartnerUserId is null)
+                return BadRequest(new AuthErrorResponse
+                {
+                    Message =
+                        "Manager accounts require reporting partner (partnerUserId) referencing an active Partner when another Manager already exists.",
+                });
+        }
+
+        Guid? effectivePartnerUserId = body.PartnerUserId;
+        if (role == AppRole.Finance)
+        {
+            effectivePartnerUserId ??= await ResolveDefaultReportingPartnerIdAsync(excludeUserId: null, ct);
+            if (effectivePartnerUserId is null)
+                return BadRequest(new AuthErrorResponse
+                {
+                    Message =
+                        "Finance accounts need a reporting partner. Add at least one active Partner user, or pass partnerUserId explicitly.",
+                });
+        }
+
+        if (body.ManagerUserId is { } midCreate)
+        {
+            var err = await ValidateOrgManagerTargetAsync(midCreate, subjectUserId: null, ct);
+            if (err is not null)
+                return BadRequest(new AuthErrorResponse { Message = err });
+        }
+
+        if (effectivePartnerUserId is { } pidVal)
+        {
+            var errP = await ValidateReportingPartnerTargetAsync(pidVal, subjectUserId: null, ct);
+            if (errP is not null)
+                return BadRequest(new AuthErrorResponse { Message = errP });
+        }
+
         var user = new AppUser
         {
             Id = Guid.NewGuid(),
@@ -86,8 +129,14 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
             Role = role,
             IsActive = true,
             ManagerUserId = body.ManagerUserId,
+            PartnerUserId = role == AppRole.Finance ? effectivePartnerUserId : body.PartnerUserId,
         };
         user.PasswordHash = passwordHasher.HashPassword(user, body.Password);
+
+        var createInvariant = await ValidateAllUserReportingAsync(user, ct);
+        if (createInvariant is not null)
+            return BadRequest(new AuthErrorResponse { Message = createInvariant });
+
         db.Users.Add(user);
         foreach (var skill in NormalizeSkills(body.Skills))
         {
@@ -98,6 +147,7 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
                 CreatedAtUtc = DateTime.UtcNow,
             });
         }
+
         await db.SaveChangesAsync(ct);
         var createdSkills = await db.UserSkills
             .AsNoTracking()
@@ -113,11 +163,12 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
         if (!ModelState.IsValid) return BadRequest(ModelState);
 
         if (body.Email is null && body.Password is null && body.IsActive is null && body.Role is null &&
-            body.DisplayName is null && body.AssignManager != true && body.Skills is null)
+            body.DisplayName is null && body.AssignManager != true && body.AssignPartner != true && body.Skills is null)
         {
             return BadRequest(new AuthErrorResponse
             {
-                    Message = "Provide at least one of email, password, isActive, role, displayName, assignManager, or skills.",
+                    Message =
+                        "Provide at least one of email, password, isActive, role, displayName, assignManager, assignPartner, or skills.",
             });
         }
 
@@ -176,7 +227,7 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
         {
             if (body.ManagerUserId is { } mid)
             {
-                var err = await ValidateManagerAssignmentAsync(mid, user.Id, ct);
+                var err = await ValidateOrgManagerTargetAsync(mid, user.Id, ct);
                 if (err is not null)
                     return BadRequest(new AuthErrorResponse { Message = err });
                 if (await WouldCreateManagerCycleAsync(user.Id, mid, ct))
@@ -184,7 +235,43 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
                 user.ManagerUserId = mid;
             }
             else
+            {
+                if (user.Role is AppRole.IC or AppRole.Manager)
+                    return BadRequest(new AuthErrorResponse
+                    {
+                        Message = "Cannot remove org manager from IC or Manager accounts.",
+                    });
                 user.ManagerUserId = null;
+            }
+        }
+
+        if (body.AssignPartner == true)
+        {
+            if (body.ClearPartner)
+                user.PartnerUserId = null;
+            else if (body.PartnerUserId is { } pid)
+            {
+                var errP = await ValidateReportingPartnerTargetAsync(pid, user.Id, ct);
+                if (errP is not null)
+                    return BadRequest(new AuthErrorResponse { Message = errP });
+                user.PartnerUserId = pid;
+            }
+            else
+            {
+                if (user.Role == AppRole.Finance)
+                    return BadRequest(new AuthErrorResponse
+                    {
+                        Message = "Cannot remove reporting partner from Finance accounts.",
+                    });
+                var peers = await db.Users.AsNoTracking()
+                    .AnyAsync(u => u.IsActive && u.Role == AppRole.Manager && u.Id != user.Id, ct);
+                if (user.Role == AppRole.Manager && peers)
+                    return BadRequest(new AuthErrorResponse
+                    {
+                        Message = "Cannot remove reporting partner from Manager accounts when another Manager exists.",
+                    });
+                user.PartnerUserId = null;
+            }
         }
 
         if (body.DisplayName is not null)
@@ -210,6 +297,22 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
             }
         }
 
+        if (user.Role == AppRole.Finance && user.PartnerUserId is null)
+        {
+            var defPid = await ResolveDefaultReportingPartnerIdAsync(user.Id, ct);
+            if (defPid is null)
+                return BadRequest(new AuthErrorResponse
+                {
+                    Message =
+                        "Finance accounts need an active Partner as reporting partner. Add a Partner user or set partnerUserId when changing role to Finance.",
+                });
+            user.PartnerUserId = defPid;
+        }
+
+        var invariantErr = await ValidateAllUserReportingAsync(user, ct);
+        if (invariantErr is not null)
+            return BadRequest(new AuthErrorResponse { Message = invariantErr });
+
         await db.SaveChangesAsync(ct);
         var savedSkills = await db.UserSkills
             .AsNoTracking()
@@ -220,15 +323,87 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
         return Ok(ToResponse(user, savedSkills));
     }
 
-    private async Task<string?> ValidateManagerAssignmentAsync(Guid managerId, Guid? userBeingEdited, CancellationToken ct)
+    /// <summary>First active Partner by email (deterministic default for new Finance users).</summary>
+    private async Task<Guid?> ResolveDefaultReportingPartnerIdAsync(Guid? excludeUserId, CancellationToken ct)
     {
-        if (userBeingEdited is { } uid && managerId == uid)
-            return "A user cannot be their own manager.";
+        var q = db.Users.AsNoTracking().Where(u => u.IsActive && u.Role == AppRole.Partner);
+        if (excludeUserId is { } ex)
+            q = q.Where(u => u.Id != ex);
+        var id = await q.OrderBy(u => u.Email).Select(u => u.Id).FirstOrDefaultAsync(ct);
+        return id == default ? null : id;
+    }
 
-        var mgr = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == managerId, ct);
+    /// <summary>Org manager must be an active <see cref="AppRole.Manager"/> (same rule as assignments org-manager).</summary>
+    private async Task<string?> ValidateOrgManagerTargetAsync(Guid managerUserId, Guid? subjectUserId, CancellationToken ct)
+    {
+        if (subjectUserId is { } uid && managerUserId == uid)
+            return "A user cannot be their own org manager.";
+
+        var mgr = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == managerUserId, ct);
         if (mgr is null || !mgr.IsActive)
-            return "Manager must reference an active user.";
+            return "Org manager must reference an active user.";
+        if (mgr.Role != AppRole.Manager)
+            return "Org manager must be an active account with role Manager.";
+        return null;
+    }
 
+    private async Task<string?> ValidateIcOrManagerHasOrgManagerAsync(AppUser user, CancellationToken ct)
+    {
+        if (user.Role == AppRole.IC)
+        {
+            if (user.ManagerUserId is null)
+                return "IC accounts must have an org manager (active Manager) assigned.";
+            return await ValidateOrgManagerTargetAsync(user.ManagerUserId.Value, user.Id, ct);
+        }
+
+        if (user.Role != AppRole.Manager)
+            return null;
+
+        if (user.ManagerUserId is { } mid)
+            return await ValidateOrgManagerTargetAsync(mid, user.Id, ct);
+
+        var otherActiveManagers = await db.Users.AsNoTracking()
+            .AnyAsync(u => u.IsActive && u.Role == AppRole.Manager && u.Id != user.Id, ct);
+        return otherActiveManagers
+            ? "Manager accounts must have an org manager (active Manager) assigned when another Manager exists."
+            : null;
+    }
+
+    private async Task<string?> ValidateFinanceAndManagerReportingPartnersAsync(AppUser user, CancellationToken ct)
+    {
+        if (user.Role == AppRole.Finance)
+        {
+            if (user.PartnerUserId is null)
+                return "Finance accounts must have a reporting partner (active Partner) assigned.";
+            return await ValidateReportingPartnerTargetAsync(user.PartnerUserId.Value, user.Id, ct);
+        }
+
+        if (user.Role != AppRole.Manager)
+            return null;
+
+        var peers = await db.Users.AsNoTracking()
+            .AnyAsync(u => u.IsActive && u.Role == AppRole.Manager && u.Id != user.Id, ct);
+        if (peers && user.PartnerUserId is null)
+            return "Manager accounts must have a reporting partner when another Manager exists.";
+        if (user.PartnerUserId is { } pid)
+            return await ValidateReportingPartnerTargetAsync(pid, user.Id, ct);
+        return null;
+    }
+
+    private async Task<string?> ValidateAllUserReportingAsync(AppUser user, CancellationToken ct)
+    {
+        var a = await ValidateIcOrManagerHasOrgManagerAsync(user, ct);
+        if (a is not null) return a;
+        return await ValidateFinanceAndManagerReportingPartnersAsync(user, ct);
+    }
+
+    private async Task<string?> ValidateReportingPartnerTargetAsync(Guid partnerUserId, Guid? subjectUserId, CancellationToken ct)
+    {
+        if (subjectUserId is { } uid && partnerUserId == uid)
+            return "A user cannot be their own reporting partner.";
+        var p = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == partnerUserId, ct);
+        if (p is null || !p.IsActive || p.Role != AppRole.Partner)
+            return "Reporting partner must be an active account with role Partner.";
         return null;
     }
 
@@ -259,6 +434,7 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
         Role = u.Role.ToString(),
         IsActive = u.IsActive,
         ManagerUserId = u.ManagerUserId,
+        PartnerUserId = u.PartnerUserId,
         Skills = skills
             .Where(s => !string.IsNullOrWhiteSpace(s))
             .Select(s => s.Trim())

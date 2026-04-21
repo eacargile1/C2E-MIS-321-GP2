@@ -1,19 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
+  approvePtoRequest,
   approveTimesheetWeek,
+  createPtoRequest,
   getTimesheetWeek,
   getTimesheetWeekStatus,
   listClients,
+  listMyPtoRequests,
+  listPendingPtoRequests,
   listPendingTimesheetWeekApprovals,
   listProjects,
   putTimesheetWeek,
+  rejectPtoRequest,
   rejectTimesheetWeek,
   submitTimesheetWeekForApproval,
   type ClientRow,
   type MeProfile,
   type PendingTimesheetWeek,
   type ProjectRow,
+  type PtoRequestRow,
   type TimesheetLine,
   type TimesheetWeekStatusPayload,
 } from '../api'
@@ -135,6 +141,13 @@ export default function TimesheetWeek({
   const [pendingTeamWeeks, setPendingTeamWeeks] = useState<PendingTimesheetWeek[]>([])
   const [submittingWeek, setSubmittingWeek] = useState(false)
   const [reviewBusyKey, setReviewBusyKey] = useState<string | null>(null)
+  const [ptoMine, setPtoMine] = useState<PtoRequestRow[]>([])
+  const [ptoPending, setPtoPending] = useState<PtoRequestRow[]>([])
+  const [ptoStart, setPtoStart] = useState('')
+  const [ptoEnd, setPtoEnd] = useState('')
+  const [ptoReason, setPtoReason] = useState('')
+  const [ptoBusy, setPtoBusy] = useState(false)
+  const [ptoReviewBusy, setPtoReviewBusy] = useState<string | null>(null)
   const lastLoadId = useRef(0)
 
   const usesPendingWeekLock =
@@ -145,6 +158,7 @@ export default function TimesheetWeek({
   const canSubmitWeekForApproval =
     usesPendingWeekLock || profile.role === 'Admin'
   const isReviewer = profile.role === 'Admin' || profile.role === 'Manager' || profile.role === 'Partner'
+  const isPtoReviewer = isReviewer
   const isIc = profile.role === 'IC'
   const weekLockedPending = usesPendingWeekLock && weekApproval?.status === 'Pending'
 
@@ -232,6 +246,32 @@ export default function TimesheetWeek({
     void refreshPendingTeamWeeks()
   }, [refreshPendingTeamWeeks])
 
+  const refreshPto = useCallback(async () => {
+    try {
+      const mine = await listMyPtoRequests(token)
+      setPtoMine(mine)
+      if (isPtoReviewer) {
+        const pend = await listPendingPtoRequests(token)
+        setPtoPending(pend)
+      } else setPtoPending([])
+    } catch {
+      setPtoMine([])
+      setPtoPending([])
+    }
+  }, [token, isPtoReviewer])
+
+  useEffect(() => {
+    void refreshPto()
+  }, [refreshPto])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || window.location.hash !== '#pto-requests') return
+    const t = window.setTimeout(() => {
+      document.getElementById('pto-requests')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 150)
+    return () => window.clearTimeout(t)
+  }, [weekStart])
+
   useEffect(() => {
     let cancelled = false
     async function loadCat() {
@@ -317,7 +357,7 @@ export default function TimesheetWeek({
   return (
     <div className="admin-wrap">
       <div className="card admin-card">
-        <h1 className="title admin-title">Timesheet</h1>
+        <h1 className="title admin-title">Time Tracking</h1>
         <p className="subtitle admin-sub">
           Signed in as {profile.displayName} · {profile.role}
         </p>
@@ -328,7 +368,7 @@ export default function TimesheetWeek({
               {' '}
               ·{' '}
               <Link to="/resource-tracker" style={{ textDecoration: 'underline' }}>
-                Resource tracker
+                Resource Tracker
               </Link>{' '}
               for the org month view.
             </>
@@ -347,7 +387,7 @@ export default function TimesheetWeek({
               ? ' — you can edit and save, then submit again when ready.'
               : null}
             {weekApproval.status === 'None'
-              ? ' — submit when the week is ready (IC & Finance → delivery manager path; Manager & Partner → engagement partner path; Admin self-signs).'
+              ? ' — submit when the week is ready (IC → project delivery manager, else engagement partner, else org manager; Finance → reporting partner; Manager & Partner → engagement partner on billable projects; Admin self-signs).'
               : null}
           </p>
         ) : null}
@@ -436,7 +476,7 @@ export default function TimesheetWeek({
                     <tr>
                       <td colSpan={8} className="admin-hint">
                         No lines yet for this week. Use Add line below
-                        {isIc ? '.' : ', or open a week from the resource tracker.'}
+                        {isIc ? '.' : ', or open a week from the Resource Tracker.'}
                       </td>
                     </tr>
                   ) : null}
@@ -593,12 +633,180 @@ export default function TimesheetWeek({
         )}
       </div>
 
+      <div className="card admin-card" id="pto-requests">
+        <h2 className="admin-h2">PTO Requests</h2>
+        <p className="admin-hint" style={{ marginBottom: 12 }}>
+          IC requests go to your org manager and reporting partner (when assigned); Manager and Finance to reporting
+          partner and org manager (when assigned). Either approver may act. Partner and Admin requests are auto-approved
+          when submitted.
+        </p>
+        <div className="form admin-form-grid" style={{ marginBottom: 16 }}>
+          <label className="field">
+            <span>Start</span>
+            <input type="date" value={ptoStart} onChange={(e) => setPtoStart(e.target.value)} />
+          </label>
+          <label className="field">
+            <span>End</span>
+            <input type="date" value={ptoEnd} onChange={(e) => setPtoEnd(e.target.value)} />
+          </label>
+          <label className="field" style={{ gridColumn: '1 / -1' }}>
+            <span>Reason (optional)</span>
+            <input
+              type="text"
+              value={ptoReason}
+              onChange={(e) => setPtoReason(e.target.value)}
+              maxLength={2000}
+              placeholder="e.g. family trip"
+            />
+          </label>
+          <button
+            type="button"
+            className="btn primary btn-sm"
+            disabled={ptoBusy || !ptoStart || !ptoEnd}
+            onClick={async () => {
+              setPtoBusy(true)
+              try {
+                await createPtoRequest(token, {
+                  startDate: ptoStart,
+                  endDate: ptoEnd,
+                  reason: ptoReason.trim() || undefined,
+                })
+                pushToast('PTO request submitted', 'ok')
+                setPtoReason('')
+                await refreshPto()
+              } catch (e) {
+                pushToast(e instanceof Error ? e.message : 'PTO submit failed', 'err')
+              } finally {
+                setPtoBusy(false)
+              }
+            }}
+          >
+            {ptoBusy ? 'Submitting…' : 'Submit PTO Request'}
+          </button>
+        </div>
+        <h3 className="admin-h3" style={{ fontSize: '1rem', marginBottom: 8 }}>
+          My Requests
+        </h3>
+        {ptoMine.length === 0 ? (
+          <p className="admin-hint">None yet.</p>
+        ) : (
+          <div className="table-scroll" style={{ marginBottom: 20 }}>
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Dates</th>
+                  <th>Status</th>
+                  <th>Approvers</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ptoMine.map((p) => (
+                  <tr key={p.id}>
+                    <td>
+                      {p.startDate} → {p.endDate}
+                    </td>
+                    <td>{p.status}</td>
+                    <td>
+                      {p.secondaryApproverEmail
+                        ? `${p.approverEmail}; ${p.secondaryApproverEmail}`
+                        : p.approverEmail}
+                    </td>
+                    <td>{p.reason || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {isPtoReviewer ? (
+          <>
+            <h3 className="admin-h3" style={{ fontSize: '1rem', marginBottom: 8 }}>
+              Pending Approval
+            </h3>
+            {ptoPending.length === 0 ? (
+              <p className="admin-hint" style={{ marginBottom: 0 }}>
+                Nothing pending.
+              </p>
+            ) : (
+              <div className="table-scroll">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Requester</th>
+                      <th>Dates</th>
+                      <th>Reason</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ptoPending.map((p) => {
+                      const busy = ptoReviewBusy === p.id
+                      return (
+                        <tr key={p.id}>
+                          <td>{p.userEmail}</td>
+                          <td>
+                            {p.startDate} → {p.endDate}
+                          </td>
+                          <td>{p.reason || '—'}</td>
+                          <td className="admin-actions">
+                            <button
+                              type="button"
+                              className="btn secondary btn-sm"
+                              disabled={busy}
+                              onClick={async () => {
+                                setPtoReviewBusy(p.id)
+                                try {
+                                  await approvePtoRequest(token, p.id)
+                                  pushToast('PTO approved', 'ok')
+                                  await refreshPto()
+                                } catch (e) {
+                                  pushToast(e instanceof Error ? e.message : 'Approve failed', 'err')
+                                } finally {
+                                  setPtoReviewBusy(null)
+                                }
+                              }}
+                            >
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              className="btn secondary btn-sm"
+                              disabled={busy}
+                              onClick={async () => {
+                                if (!window.confirm(`Reject PTO for ${p.userEmail}?`)) return
+                                setPtoReviewBusy(p.id)
+                                try {
+                                  await rejectPtoRequest(token, p.id)
+                                  pushToast('PTO rejected', 'ok')
+                                  await refreshPto()
+                                } catch (e) {
+                                  pushToast(e instanceof Error ? e.message : 'Reject failed', 'err')
+                                } finally {
+                                  setPtoReviewBusy(null)
+                                }
+                              }}
+                            >
+                              Reject
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        ) : null}
+      </div>
+
       {isReviewer ? (
         <div className="card admin-card">
           <h2 className="admin-h2">Team Timesheet Approvals</h2>
           <p className="admin-hint">
-            Pending weeks for delivery-manager sign-off (IC, Finance) and engagement-partner sign-off (Manager,
-            Partner). Same list appears on Home.
+            Pending weeks for IC (project delivery manager or engagement partner, else org manager), Finance (reporting
+            partner), and Manager/Partner (engagement partner on billable projects). Same list appears on Home.
           </p>
           {pendingTeamWeeks.length === 0 ? (
             <p className="admin-hint" style={{ marginBottom: 0 }}>

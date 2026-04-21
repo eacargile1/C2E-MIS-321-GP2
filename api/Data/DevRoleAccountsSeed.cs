@@ -54,13 +54,19 @@ public static class DevRoleAccountsSeed
 
         await db.SaveChangesAsync(ct);
 
+        var partner = await db.Users.FirstOrDefaultAsync(u => u.Email == DevPartnerEmail, ct);
         var mgr = await db.Users.FirstOrDefaultAsync(u => u.Email == DevManagerEmail, ct);
+        var finance = await db.Users.FirstOrDefaultAsync(u => u.Email == DevFinanceEmail, ct);
         var ic = await db.Users.FirstOrDefaultAsync(u => u.Email == DevIcEmail, ct);
-        if (mgr is not null && ic is not null)
+        if (partner is not null)
         {
-            ic.ManagerUserId = mgr.Id;
-            await db.SaveChangesAsync(ct);
+            if (finance is not null) finance.PartnerUserId = partner.Id;
+            if (mgr is not null) mgr.PartnerUserId = partner.Id;
         }
+
+        if (mgr is not null && ic is not null) ic.ManagerUserId = mgr.Id;
+
+        await db.SaveChangesAsync(ct);
     }
 
     /// <summary>
@@ -100,12 +106,18 @@ public static class DevRoleAccountsSeed
 
         await db.SaveChangesAsync(ct);
 
+        var partner = await db.Users.FirstOrDefaultAsync(u => u.Email == DevPartnerEmail, ct);
         var mgr = await db.Users.FirstOrDefaultAsync(u => u.Email == DevManagerEmail, ct);
+        var finance = await db.Users.FirstOrDefaultAsync(u => u.Email == DevFinanceEmail, ct);
         var ic = await db.Users.FirstOrDefaultAsync(u => u.Email == DevIcEmail, ct);
-        if (mgr is not null && ic is not null && ic.ManagerUserId is null)
+        if (partner is not null)
         {
-            ic.ManagerUserId = mgr.Id;
-            await db.SaveChangesAsync(ct);
+            if (finance is not null && finance.PartnerUserId is null) finance.PartnerUserId = partner.Id;
+            if (mgr is not null && mgr.PartnerUserId is null) mgr.PartnerUserId = partner.Id;
         }
+
+        if (mgr is not null && ic is not null && ic.ManagerUserId is null) ic.ManagerUserId = mgr.Id;
+
+        await db.SaveChangesAsync(ct);
     }
 }

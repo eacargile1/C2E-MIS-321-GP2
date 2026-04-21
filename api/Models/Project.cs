@@ -29,4 +29,6 @@ public sealed class Project
     public DateTime UpdatedAtUtc { get; set; }
 
     public ICollection<ProjectEmployeeAssignment> EmployeeAssignments { get; set; } = new List<ProjectEmployeeAssignment>();
+
+    public ICollection<ProjectTask> Tasks { get; set; } = new List<ProjectTask>();
 }

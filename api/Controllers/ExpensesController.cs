@@ -156,16 +156,19 @@ public sealed class ExpensesController(AppDbContext db) : ControllerBase
             {
                 var submitter = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == row.UserId, ct);
                 if (submitter is null) return Forbid();
-                if (!await ProjectApprovalRouting.ManagerMayApproveIcExpenseAsync(db, userId, row, submitter, ct))
-                    return Forbid();
+                var okIc = await ProjectApprovalRouting.ManagerMayApproveIcExpenseAsync(db, userId, row, submitter, ct);
+                var okFin = await ProjectApprovalRouting.ReviewerMayApproveFinanceExpenseAsync(db, userId, row, submitter, ct);
+                var okMgr = await ProjectApprovalRouting.PartnerMayApproveManagerExpenseAsync(db, userId, row, submitter, ct);
+                if (!okIc && !okFin && !okMgr) return Forbid();
             }
             else if (User.IsInRole(nameof(AppRole.Partner)))
             {
                 var submitter = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == row.UserId, ct);
                 if (submitter is null) return Forbid();
+                var okFinance = await ProjectApprovalRouting.ReviewerMayApproveFinanceExpenseAsync(db, userId, row, submitter, ct);
                 var okPartner = await ProjectApprovalRouting.PartnerMayApproveManagerExpenseAsync(db, userId, row, submitter, ct);
                 var okDm = await ProjectApprovalRouting.ManagerMayApproveIcExpenseAsync(db, userId, row, submitter, ct);
-                if (!okPartner && !okDm) return Forbid();
+                if (!okFinance && !okPartner && !okDm) return Forbid();
             }
             else
                 return Forbid();
@@ -211,15 +214,23 @@ public sealed class ExpensesController(AppDbContext db) : ControllerBase
             var ok = false;
             if (User.IsInRole(nameof(AppRole.Partner)))
             {
-                if (await ProjectApprovalRouting.PartnerMayApproveManagerExpenseAsync(db, reviewerId, e, sub, ct))
+                if (await ProjectApprovalRouting.ReviewerMayApproveFinanceExpenseAsync(db, reviewerId, e, sub, ct))
+                    ok = true;
+                else if (await ProjectApprovalRouting.PartnerMayApproveManagerExpenseAsync(db, reviewerId, e, sub, ct))
                     ok = true;
                 else if (await ProjectApprovalRouting.ManagerMayApproveIcExpenseAsync(db, reviewerId, e, sub, ct))
                     ok = true;
             }
 
-            if (!ok && User.IsInRole(nameof(AppRole.Manager)) &&
-                await ProjectApprovalRouting.ManagerMayApproveIcExpenseAsync(db, reviewerId, e, sub, ct))
-                ok = true;
+            if (!ok && User.IsInRole(nameof(AppRole.Manager)))
+            {
+                if (await ProjectApprovalRouting.ManagerMayApproveIcExpenseAsync(db, reviewerId, e, sub, ct))
+                    ok = true;
+                else if (await ProjectApprovalRouting.ReviewerMayApproveFinanceExpenseAsync(db, reviewerId, e, sub, ct))
+                    ok = true;
+                else if (await ProjectApprovalRouting.PartnerMayApproveManagerExpenseAsync(db, reviewerId, e, sub, ct))
+                    ok = true;
+            }
             if (ok)
                 rows.Add(e);
         }
@@ -253,15 +264,23 @@ public sealed class ExpensesController(AppDbContext db) : ControllerBase
             var ok = false;
             if (User.IsInRole(nameof(AppRole.Partner)))
             {
-                if (await ProjectApprovalRouting.PartnerMayApproveManagerExpenseAsync(db, userId, row, submitter, ct))
+                if (await ProjectApprovalRouting.ReviewerMayApproveFinanceExpenseAsync(db, userId, row, submitter, ct))
+                    ok = true;
+                else if (await ProjectApprovalRouting.PartnerMayApproveManagerExpenseAsync(db, userId, row, submitter, ct))
                     ok = true;
                 else if (await ProjectApprovalRouting.ManagerMayApproveIcExpenseAsync(db, userId, row, submitter, ct))
                     ok = true;
             }
 
-            if (!ok && User.IsInRole(nameof(AppRole.Manager)) &&
-                await ProjectApprovalRouting.ManagerMayApproveIcExpenseAsync(db, userId, row, submitter, ct))
-                ok = true;
+            if (!ok && User.IsInRole(nameof(AppRole.Manager)))
+            {
+                if (await ProjectApprovalRouting.ManagerMayApproveIcExpenseAsync(db, userId, row, submitter, ct))
+                    ok = true;
+                else if (await ProjectApprovalRouting.ReviewerMayApproveFinanceExpenseAsync(db, userId, row, submitter, ct))
+                    ok = true;
+                else if (await ProjectApprovalRouting.PartnerMayApproveManagerExpenseAsync(db, userId, row, submitter, ct))
+                    ok = true;
+            }
             if (!ok) return Forbid();
         }
 

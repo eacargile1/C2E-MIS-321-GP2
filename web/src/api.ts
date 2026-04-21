@@ -62,6 +62,7 @@ export type UserRow = {
   role: string
   isActive: boolean
   managerUserId: string | null
+  partnerUserId: string | null
   skills: string[]
 }
 
@@ -139,9 +140,21 @@ function parseUserRow(r: Record<string, unknown>): UserRow {
   const mid = r.managerUserId
   const managerUserId =
     typeof mid === 'string' ? mid : mid === null || typeof mid === 'undefined' ? null : String(mid)
+  const pid = r.partnerUserId
+  const partnerUserId =
+    typeof pid === 'string' ? pid : pid === null || typeof pid === 'undefined' ? null : String(pid)
   const rawSkills = Array.isArray(r.skills) ? r.skills : []
   const skills = rawSkills.filter((x): x is string => typeof x === 'string')
-  return { id: r.id, email: r.email, displayName, role: r.role, isActive: r.isActive, managerUserId, skills }
+  return {
+    id: r.id,
+    email: r.email,
+    displayName,
+    role: r.role,
+    isActive: r.isActive,
+    managerUserId,
+    partnerUserId,
+    skills,
+  }
 }
 
 export async function listUsers(token: string): Promise<UserRow[]> {
@@ -156,12 +169,19 @@ export async function createUser(
   token: string,
   email: string,
   password: string,
-  opts?: { displayName?: string; managerUserId?: string | null; role?: string; skills?: string[] },
+  opts?: {
+    displayName?: string
+    managerUserId?: string | null
+    partnerUserId?: string | null
+    role?: string
+    skills?: string[]
+  },
 ): Promise<UserRow> {
   const body: Record<string, unknown> = { email, password }
   if (opts?.displayName !== undefined && opts.displayName.trim() !== '')
     body.displayName = opts.displayName.trim()
   if (opts?.managerUserId !== undefined) body.managerUserId = opts.managerUserId
+  if (opts?.partnerUserId !== undefined) body.partnerUserId = opts.partnerUserId
   if (opts?.role !== undefined && opts.role.trim() !== '') body.role = opts.role.trim()
   if (opts?.skills !== undefined) body.skills = opts.skills
   const res = await fetch(`${base}/api/users`, {
@@ -185,6 +205,9 @@ export async function patchUser(
     displayName?: string
     assignManager?: boolean
     managerUserId?: string | null
+    assignPartner?: boolean
+    partnerUserId?: string | null
+    clearPartner?: boolean
     skills?: string[]
   },
 ): Promise<UserRow> {
@@ -196,6 +219,115 @@ export async function patchUser(
   if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not update user'))
   const r = (await res.json()) as Record<string, unknown>
   return parseUserRow(r)
+}
+
+export type PtoRequestRow = {
+  id: string
+  userId: string
+  userEmail: string
+  startDate: string
+  endDate: string
+  reason: string
+  status: string
+  approverUserId: string
+  approverEmail: string
+  secondaryApproverUserId?: string | null
+  secondaryApproverEmail?: string | null
+  createdAtUtc: string
+  reviewedAtUtc: string | null
+  reviewedByUserId: string | null
+}
+
+function parseGuidString(x: unknown): string {
+  if (typeof x === 'string' && x.trim()) return x.trim()
+  throw new Error('Invalid PTO payload')
+}
+
+function parsePtoRequestRow(r: Record<string, unknown>): PtoRequestRow {
+  const secId = r.secondaryApproverUserId
+  const secEmail = r.secondaryApproverEmail
+  return {
+    id: parseGuidString(r.id),
+    userId: parseGuidString(r.userId),
+    userEmail: typeof r.userEmail === 'string' ? r.userEmail : '',
+    startDate: typeof r.startDate === 'string' ? r.startDate : '',
+    endDate: typeof r.endDate === 'string' ? r.endDate : '',
+    reason: typeof r.reason === 'string' ? r.reason : '',
+    status: typeof r.status === 'string' ? r.status : '',
+    approverUserId: parseGuidString(r.approverUserId),
+    approverEmail: typeof r.approverEmail === 'string' ? r.approverEmail : '',
+    secondaryApproverUserId:
+      typeof secId === 'string' && secId.trim() ? secId.trim() : secId === null ? null : undefined,
+    secondaryApproverEmail:
+      typeof secEmail === 'string' && secEmail.trim()
+        ? secEmail.trim()
+        : secEmail === null
+          ? null
+          : undefined,
+    createdAtUtc: typeof r.createdAtUtc === 'string' ? r.createdAtUtc : String(r.createdAtUtc ?? ''),
+    reviewedAtUtc:
+      r.reviewedAtUtc === null || typeof r.reviewedAtUtc === 'undefined'
+        ? null
+        : typeof r.reviewedAtUtc === 'string'
+          ? r.reviewedAtUtc
+          : null,
+    reviewedByUserId:
+      r.reviewedByUserId === null || typeof r.reviewedByUserId === 'undefined'
+        ? null
+        : typeof r.reviewedByUserId === 'string'
+          ? r.reviewedByUserId
+          : String(r.reviewedByUserId),
+  }
+}
+
+export async function createPtoRequest(
+  token: string,
+  body: { startDate: string; endDate: string; reason?: string },
+): Promise<PtoRequestRow> {
+  const res = await fetch(`${base}/api/pto-requests`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not submit PTO request'))
+  const r = (await res.json()) as Record<string, unknown>
+  return parsePtoRequestRow(r)
+}
+
+export async function listMyPtoRequests(token: string): Promise<PtoRequestRow[]> {
+  const res = await fetch(`${base}/api/pto-requests/mine`, { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load PTO requests'))
+  const data = (await res.json()) as unknown
+  if (!Array.isArray(data)) throw new Error('Could not load PTO requests')
+  return data.map((row) => parsePtoRequestRow(row as Record<string, unknown>))
+}
+
+export async function listPendingPtoRequests(token: string): Promise<PtoRequestRow[]> {
+  const res = await fetch(`${base}/api/pto-requests/pending-approval`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load pending PTO'))
+  const data = (await res.json()) as unknown
+  if (!Array.isArray(data)) throw new Error('Could not load pending PTO')
+  return data.map((row) => parsePtoRequestRow(row as Record<string, unknown>))
+}
+
+export async function approvePtoRequest(token: string, id: string): Promise<void> {
+  const res = await fetch(`${base}/api/pto-requests/${encodeURIComponent(id)}/approve`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: '{}',
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not approve PTO'))
+}
+
+export async function rejectPtoRequest(token: string, id: string): Promise<void> {
+  const res = await fetch(`${base}/api/pto-requests/${encodeURIComponent(id)}/reject`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: '{}',
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not reject PTO'))
 }
 
 export type PersonalSummary = {
@@ -380,6 +512,8 @@ export type AssignmentRow = {
   email: string
   displayName: string
   role: string
+  /** Present from directory list; org manager (Manager role). */
+  managerUserId?: string | null
 }
 
 export type StaffingRecommendationRow = {
@@ -410,11 +544,17 @@ function assertAssignment(x: unknown): AssignmentRow {
     typeof r.role !== 'string'
   )
     throw new Error('Could not load assignments')
+  let managerUserId: string | null | undefined
+  if ('managerUserId' in r) {
+    const mid = r.managerUserId
+    managerUserId = mid === null ? null : typeof mid === 'string' ? mid : undefined
+  }
   return {
     userId: r.userId,
     email: r.email,
     displayName: r.displayName,
     role: r.role,
+    managerUserId,
   }
 }
 
@@ -478,6 +618,117 @@ export async function unassignEmployeeFromProject(token: string, projectId: stri
   if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not unassign employee from project'))
 }
 
+export type ProjectTaskRow = {
+  id: string
+  projectId: string
+  clientName: string
+  projectName: string
+  title: string
+  description: string | null
+  requiredSkills: string[]
+  dueDate: string | null
+  assignedUserId: string | null
+  assignedEmail: string | null
+  status: string
+  createdByUserId: string
+  createdAtUtc: string
+  updatedAtUtc: string
+}
+
+function assertProjectTaskRow(x: unknown): ProjectTaskRow {
+  const r = x as Record<string, unknown>
+  const skills = r.requiredSkills
+  if (
+    typeof r.id !== 'string' ||
+    typeof r.projectId !== 'string' ||
+    typeof r.clientName !== 'string' ||
+    typeof r.projectName !== 'string' ||
+    typeof r.title !== 'string' ||
+    typeof r.status !== 'string' ||
+    typeof r.createdByUserId !== 'string' ||
+    typeof r.createdAtUtc !== 'string' ||
+    typeof r.updatedAtUtc !== 'string' ||
+    !Array.isArray(skills)
+  )
+    throw new Error('Could not load project task')
+  const parsedSkills = skills.filter((s): s is string => typeof s === 'string')
+  return {
+    id: r.id,
+    projectId: r.projectId,
+    clientName: r.clientName,
+    projectName: r.projectName,
+    title: r.title,
+    description: typeof r.description === 'string' ? r.description : null,
+    requiredSkills: parsedSkills,
+    dueDate: typeof r.dueDate === 'string' ? r.dueDate : null,
+    assignedUserId: typeof r.assignedUserId === 'string' ? r.assignedUserId : null,
+    assignedEmail: typeof r.assignedEmail === 'string' ? r.assignedEmail : null,
+    status: r.status,
+    createdByUserId: r.createdByUserId,
+    createdAtUtc: r.createdAtUtc,
+    updatedAtUtc: r.updatedAtUtc,
+  }
+}
+
+export async function listProjectTasks(token: string, projectId?: string): Promise<ProjectTaskRow[]> {
+  const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''
+  const res = await fetch(`${base}/api/project-tasks${qs}`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load project tasks'))
+  const data = (await res.json()) as unknown
+  if (!Array.isArray(data)) throw new Error('Could not load project tasks')
+  return data.map(assertProjectTaskRow)
+}
+
+export async function createProjectTask(
+  token: string,
+  body: {
+    projectId: string
+    title: string
+    description?: string | null
+    requiredSkills?: string[]
+    dueDate?: string | null
+    assignedUserId?: string | null
+  },
+): Promise<ProjectTaskRow> {
+  const res = await fetch(`${base}/api/project-tasks`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not create project task'))
+  return assertProjectTaskRow(await res.json())
+}
+
+export async function patchProjectTask(
+  token: string,
+  id: string,
+  body: {
+    title?: string
+    description?: string | null
+    requiredSkills?: string[]
+    dueDate?: string | null
+    assignedUserId?: string | null
+    clearAssignedUser?: boolean
+    status?: string
+  },
+): Promise<ProjectTaskRow> {
+  const res = await fetch(`${base}/api/project-tasks/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: authHeaders(token),
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not update project task'))
+  return assertProjectTaskRow(await res.json())
+}
+
+export async function deleteProjectTask(token: string, id: string): Promise<void> {
+  const res = await fetch(`${base}/api/project-tasks/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not delete project task'))
+}
+
 function assertRecommendationRow(x: unknown): StaffingRecommendationRow {
   const r = x as Record<string, unknown>
   if (
@@ -508,6 +759,17 @@ function assertRecommendationRow(x: unknown): StaffingRecommendationRow {
   }
 }
 
+function parseStaffingRecommendationPayload(raw: unknown): StaffingRecommendationResponse {
+  const data = raw as Record<string, unknown>
+  if (typeof data.fallbackMode !== 'string' || !Array.isArray(data.results))
+    throw new Error('Could not load recommendations')
+  return {
+    fallbackMode: data.fallbackMode,
+    warningMessage: typeof data.warningMessage === 'string' ? data.warningMessage : null,
+    results: data.results.map(assertRecommendationRow),
+  }
+}
+
 export async function getProjectStaffingRecommendations(
   token: string,
   projectId: string,
@@ -519,14 +781,17 @@ export async function getProjectStaffingRecommendations(
     body: JSON.stringify({ requiredSkills }),
   })
   if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load recommendations'))
-  const data = (await res.json()) as Record<string, unknown>
-  if (typeof data.fallbackMode !== 'string' || !Array.isArray(data.results))
-    throw new Error('Could not load recommendations')
-  return {
-    fallbackMode: data.fallbackMode,
-    warningMessage: typeof data.warningMessage === 'string' ? data.warningMessage : null,
-    results: data.results.map(assertRecommendationRow),
-  }
+  return parseStaffingRecommendationPayload(await res.json())
+}
+
+/** Uses the task’s project + required skills (same engine as project staffing recommendations). */
+export async function recommendProjectTask(token: string, taskId: string): Promise<StaffingRecommendationResponse> {
+  const res = await fetch(`${base}/api/project-tasks/${encodeURIComponent(taskId)}/recommendations`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load recommendations'))
+  return parseStaffingRecommendationPayload(await res.json())
 }
 
 function assertProject(x: unknown): ProjectRow {

@@ -103,7 +103,10 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
         });
     }
 
-    /// <summary>IC submits for delivery manager (or org manager); Manager submits for engagement partner.</summary>
+    /// <summary>
+    /// IC / Finance / Manager / Partner: project delivery manager, else engagement partner, else profile superior; Partner submitters resolve to self.
+    /// When the resolved approver is the submitter, the week is signed immediately (no pending queue).
+    /// </summary>
     [HttpPost("week/submit")]
     [Authorize]
     public async Task<IActionResult> SubmitWeekForApproval([FromQuery] string weekStart, CancellationToken ct)
@@ -145,34 +148,53 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
             return NoContent();
         }
 
-        if (ProjectApprovalRouting.UsesDeliveryManagerWeekApproval(user.Role))
+        HashSet<Guid>? resolvedApprovers = null;
+
+        if (ProjectApprovalRouting.UsesFinancePartnerWeekApproval(user.Role))
+        {
+            var err = await ProjectApprovalRouting.ValidateFinanceWeekSubmitAsync(db, userId, start, ct);
+            if (err is not null)
+                return BadRequest(new AuthErrorResponse { Message = err });
+            var (ap, _) = await ProjectApprovalRouting.ResolveFinanceWeekApproverIdsAsync(db, userId, start, ct);
+            resolvedApprovers = ap;
+        }
+        else if (ProjectApprovalRouting.UsesDeliveryManagerWeekApproval(user.Role))
         {
             var err = await ProjectApprovalRouting.ValidateIcWeekSubmitAsync(db, userId, start, ct);
             if (err is not null)
                 return BadRequest(new AuthErrorResponse { Message = err });
+            var (ap, _) = await ProjectApprovalRouting.ResolveIcWeekApproverIdsAsync(db, userId, start, ct);
+            resolvedApprovers = ap;
         }
         else if (ProjectApprovalRouting.UsesEngagementPartnerWeekApproval(user.Role))
         {
             var err = await ProjectApprovalRouting.ValidateManagerWeekSubmitAsync(db, userId, start, ct);
             if (err is not null)
                 return BadRequest(new AuthErrorResponse { Message = err });
+            var (ap, _) = await ProjectApprovalRouting.ResolveManagerPartnerWeekApproverIdsAsync(db, userId, start, ct);
+            resolvedApprovers = ap;
         }
         else
             return BadRequest(new AuthErrorResponse { Message = "Weekly submit is not configured for this role." });
+
+        var selfSign =
+            resolvedApprovers is { Count: 1 } ids && ids.Contains(userId);
 
         db.TimesheetWeekApprovals.Add(new TimesheetWeekApproval
         {
             Id = Guid.NewGuid(),
             UserId = userId,
             WeekStartMonday = start,
-            Status = TimesheetWeekApprovalStatus.Pending,
+            Status = selfSign ? TimesheetWeekApprovalStatus.Approved : TimesheetWeekApprovalStatus.Pending,
             SubmittedAtUtc = now,
+            ReviewedByUserId = selfSign ? userId : null,
+            ReviewedAtUtc = selfSign ? now : null,
         });
         await db.SaveChangesAsync(ct);
         return NoContent();
     }
 
-    /// <summary>Pending IC weeks (delivery manager / org manager) and Manager weeks (engagement partner).</summary>
+    /// <summary>Pending IC / Finance / Manager weeks (project DM / EP / profile superior); self-signed weeks never appear here.</summary>
     [HttpGet("approvals/pending-weeks")]
     [Authorize(Roles = RbacRoleSets.AdminManagerPartner)]
     public async Task<ActionResult<IReadOnlyList<PendingTimesheetWeekResponse>>> ListPendingTimesheetWeeks(CancellationToken ct)
@@ -193,9 +215,15 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
             if (!User.IsInRole(nameof(AppRole.Admin)))
             {
                 var ok = false;
-                if (User.IsInRole(nameof(AppRole.Partner)) &&
+                if ((User.IsInRole(nameof(AppRole.Manager)) || User.IsInRole(nameof(AppRole.Partner))) &&
                     ProjectApprovalRouting.UsesEngagementPartnerWeekApproval(x.Role) &&
                     await ProjectApprovalRouting.PartnerMayApproveManagerTimesheetWeekAsync(
+                        db, reviewerId, x.a.UserId, x.a.WeekStartMonday, ct))
+                    ok = true;
+                if (!ok &&
+                    (User.IsInRole(nameof(AppRole.Manager)) || User.IsInRole(nameof(AppRole.Partner))) &&
+                    ProjectApprovalRouting.UsesFinancePartnerWeekApproval(x.Role) &&
+                    await ProjectApprovalRouting.PartnerMayApproveFinanceTimesheetWeekAsync(
                         db, reviewerId, x.a.UserId, x.a.WeekStartMonday, ct))
                     ok = true;
                 if (!ok &&
@@ -224,7 +252,7 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
     }
 
     /// <summary>
-    /// Full timesheet lines for a pending IC week (delivery manager / org manager) or Manager week (engagement partner).
+    /// Full timesheet lines for a pending IC / Finance / Manager week (project DM / EP / profile superior).
     /// </summary>
     [HttpGet("approvals/week/{userId:guid}/pending-review")]
     [Authorize(Roles = RbacRoleSets.AdminManagerPartner)]
@@ -244,15 +272,21 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
         if (target.Role == AppRole.Admin)
             return BadRequest(new AuthErrorResponse { Message = "Admin weeks are self-signed in the app; there is no reviewer queue for them." });
         if (!ProjectApprovalRouting.UsesDeliveryManagerWeekApproval(target.Role) &&
+            !ProjectApprovalRouting.UsesFinancePartnerWeekApproval(target.Role) &&
             !ProjectApprovalRouting.UsesEngagementPartnerWeekApproval(target.Role))
             return BadRequest(new AuthErrorResponse { Message = "Weekly approval does not apply to this account type." });
 
         if (!User.IsInRole(nameof(AppRole.Admin)))
         {
             var ok = false;
-            if (User.IsInRole(nameof(AppRole.Partner)) &&
+            if ((User.IsInRole(nameof(AppRole.Manager)) || User.IsInRole(nameof(AppRole.Partner))) &&
                 ProjectApprovalRouting.UsesEngagementPartnerWeekApproval(target.Role) &&
                 await ProjectApprovalRouting.PartnerMayApproveManagerTimesheetWeekAsync(db, reviewerId, userId, start, ct))
+                ok = true;
+            if (!ok &&
+                (User.IsInRole(nameof(AppRole.Manager)) || User.IsInRole(nameof(AppRole.Partner))) &&
+                ProjectApprovalRouting.UsesFinancePartnerWeekApproval(target.Role) &&
+                await ProjectApprovalRouting.PartnerMayApproveFinanceTimesheetWeekAsync(db, reviewerId, userId, start, ct))
                 ok = true;
             if (!ok &&
                 (User.IsInRole(nameof(AppRole.Manager)) || User.IsInRole(nameof(AppRole.Partner))) &&
@@ -434,9 +468,14 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
             if (sub is null) return Forbid();
 
             var ok = false;
-            if (User.IsInRole(nameof(AppRole.Partner)) &&
+            if ((User.IsInRole(nameof(AppRole.Manager)) || User.IsInRole(nameof(AppRole.Partner))) &&
                 ProjectApprovalRouting.UsesEngagementPartnerWeekApproval(sub.Role) &&
                 await ProjectApprovalRouting.PartnerMayApproveManagerTimesheetWeekAsync(db, reviewerId, targetUserId, start, ct))
+                ok = true;
+            if (!ok &&
+                (User.IsInRole(nameof(AppRole.Manager)) || User.IsInRole(nameof(AppRole.Partner))) &&
+                ProjectApprovalRouting.UsesFinancePartnerWeekApproval(sub.Role) &&
+                await ProjectApprovalRouting.PartnerMayApproveFinanceTimesheetWeekAsync(db, reviewerId, targetUserId, start, ct))
                 ok = true;
             if (!ok &&
                 (User.IsInRole(nameof(AppRole.Manager)) || User.IsInRole(nameof(AppRole.Partner))) &&
@@ -473,6 +512,7 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
         var role = await db.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => u.Role).FirstOrDefaultAsync(ct);
         if (role == AppRole.Admin) return true;
         if (!ProjectApprovalRouting.UsesDeliveryManagerWeekApproval(role) &&
+            !ProjectApprovalRouting.UsesFinancePartnerWeekApproval(role) &&
             !ProjectApprovalRouting.UsesEngagementPartnerWeekApproval(role))
             return true;
         return !await db.TimesheetWeekApprovals.AnyAsync(
@@ -484,6 +524,7 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
     {
         var role = await db.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => u.Role).FirstOrDefaultAsync(ct);
         if (!ProjectApprovalRouting.UsesDeliveryManagerWeekApproval(role) &&
+            !ProjectApprovalRouting.UsesFinancePartnerWeekApproval(role) &&
             !ProjectApprovalRouting.UsesEngagementPartnerWeekApproval(role))
             return;
         var rows = await db.TimesheetWeekApprovals
@@ -729,7 +770,7 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
     }
 
     /// <summary>
-    /// Billable hours on a project: IC / Finance lines when that calendar week is delivery-manager-approved;
+    /// Billable hours on a project: IC lines when that calendar week is delivery-manager-approved; Finance when partner-approved;
     /// Manager / Partner when engagement-partner-approved; Admin always; other roles count immediately.
     /// </summary>
     private async Task<decimal> SumConsumedBillableHoursForProjectAsync(
@@ -747,21 +788,21 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
         if (lines.Count == 0)
             return 0m;
 
-        var deliveryPathUserIds = lines
-            .Where(x => x.Role != AppRole.Admin && ProjectApprovalRouting.UsesDeliveryManagerWeekApproval(x.Role))
+        var icFinanceWeekGateUserIds = lines
+            .Where(x => x.Role != AppRole.Admin && (x.Role == AppRole.IC || x.Role == AppRole.Finance))
             .Select(x => x.UserId)
             .Distinct()
             .ToList();
-        HashSet<(Guid UserId, DateOnly WeekStart)>? approvedDeliveryPathWeeks = null;
-        if (deliveryPathUserIds.Count > 0)
+        HashSet<(Guid UserId, DateOnly WeekStart)>? approvedIcFinanceWeeks = null;
+        if (icFinanceWeekGateUserIds.Count > 0)
         {
             var approvedRows = await db.TimesheetWeekApprovals.AsNoTracking()
                 .Where(a =>
                     a.Status == TimesheetWeekApprovalStatus.Approved &&
-                    deliveryPathUserIds.Contains(a.UserId))
+                    icFinanceWeekGateUserIds.Contains(a.UserId))
                 .Select(a => new { a.UserId, a.WeekStartMonday })
                 .ToListAsync(ct);
-            approvedDeliveryPathWeeks = approvedRows
+            approvedIcFinanceWeeks = approvedRows
                 .Select(a => (a.UserId, a.WeekStartMonday))
                 .ToHashSet();
         }
@@ -794,11 +835,11 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
                 continue;
             }
 
-            if (ProjectApprovalRouting.UsesDeliveryManagerWeekApproval(x.Role))
+            if (x.Role == AppRole.IC || x.Role == AppRole.Finance)
             {
-                if (approvedDeliveryPathWeeks is null) continue;
+                if (approvedIcFinanceWeeks is null) continue;
                 var mon = WeekStartMondayForWorkDate(x.WorkDate);
-                if (!approvedDeliveryPathWeeks.Contains((x.UserId, mon)))
+                if (!approvedIcFinanceWeeks.Contains((x.UserId, mon)))
                     continue;
             }
             else if (ProjectApprovalRouting.UsesEngagementPartnerWeekApproval(x.Role))

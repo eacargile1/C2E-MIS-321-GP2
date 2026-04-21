@@ -90,9 +90,10 @@ public class AuthLoginTests
             new { email = "test@local.test", password = "TestPass!9" });
         var adminToken = (await adminLogin.Content.ReadFromJsonAsync<LoginResponseDto>())!.AccessToken;
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+        var mgrId = await ApiTestUsers.SeededDevManagerIdAsync(client);
         var create = await client.PostAsJsonAsync(
             "/api/users",
-            new { email = "ic.tok@local.test", password = "IcTokPass1!" });
+            new { email = "ic.tok@local.test", password = "IcTokPass1!", managerUserId = mgrId });
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
         var created = await create.Content.ReadFromJsonAsync<UserDto>();
         client.DefaultRequestHeaders.Authorization = null;
@@ -121,9 +122,10 @@ public class AuthLoginTests
             new { email = "test@local.test", password = "TestPass!9" });
         var adminToken = (await adminLogin.Content.ReadFromJsonAsync<LoginResponseDto>())!.AccessToken;
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+        var mgrId = await ApiTestUsers.SeededDevManagerIdAsync(client);
         var create = await client.PostAsJsonAsync(
             "/api/users",
-            new { email = "inactive@local.test", password = "InactiveP1!" });
+            new { email = "inactive@local.test", password = "InactiveP1!", managerUserId = mgrId });
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
         var created = await create.Content.ReadFromJsonAsync<UserDto>();
         await client.PatchAsJsonAsync(

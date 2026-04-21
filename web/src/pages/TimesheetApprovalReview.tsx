@@ -204,9 +204,9 @@ export default function TimesheetApprovalReview({
       <div className="card admin-card review-page-card">
         <header className="review-page-header">
           <div>
-            <h1 className="title admin-title review-page-title">Review Timesheet</h1>
+            <h1 className="title admin-title review-page-title">Review Time Tracking</h1>
             <p className="review-page-crumb">
-              <Link to="/">Home</Link> · <Link to="/timesheet">Your Timesheet</Link> · {profile.displayName}
+              <Link to="/">Home</Link> · <Link to="/timesheet">Time Tracking</Link> · {profile.displayName}
             </p>
           </div>
         </header>

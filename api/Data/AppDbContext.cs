@@ -16,6 +16,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<TimesheetWeekApproval> TimesheetWeekApprovals => Set<TimesheetWeekApproval>();
     public DbSet<ExpenseEntry> ExpenseEntries => Set<ExpenseEntry>();
     public DbSet<ClientQuote> ClientQuotes => Set<ClientQuote>();
+    public DbSet<ProjectTask> ProjectTasks => Set<ProjectTask>();
+    public DbSet<PtoRequest> PtoRequests => Set<PtoRequest>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -113,6 +115,39 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .WithMany(x => x.DirectReports)
                 .HasForeignKey(x => x.ManagerUserId)
                 .OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(x => x.PartnerUserId);
+            e.HasOne(x => x.Partner)
+                .WithMany()
+                .HasForeignKey(x => x.PartnerUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<PtoRequest>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.UserId);
+            e.HasIndex(x => x.ApproverUserId);
+            e.HasIndex(x => x.SecondaryApproverUserId);
+            e.HasIndex(x => new { x.Status, x.ApproverUserId });
+            e.HasIndex(x => new { x.Status, x.SecondaryApproverUserId });
+            e.Property(x => x.Reason).HasMaxLength(2000);
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
+            e.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Approver)
+                .WithMany()
+                .HasForeignKey(x => x.ApproverUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.SecondaryApprover)
+                .WithMany()
+                .HasForeignKey(x => x.SecondaryApproverUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.ReviewedBy)
+                .WithMany()
+                .HasForeignKey(x => x.ReviewedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<UserSkill>(e =>
@@ -187,6 +222,30 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasOne(x => x.Client)
                 .WithMany()
                 .HasForeignKey(x => x.ClientId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ProjectTask>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.ProjectId);
+            e.HasIndex(x => x.Status);
+            e.HasIndex(x => x.DueDate);
+            e.Property(x => x.Title).HasMaxLength(200);
+            e.Property(x => x.Description).HasMaxLength(2000);
+            e.Property(x => x.RequiredSkills).HasMaxLength(2000);
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(24);
+            e.HasOne(x => x.Project)
+                .WithMany(p => p.Tasks)
+                .HasForeignKey(x => x.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.AssignedUser)
+                .WithMany()
+                .HasForeignKey(x => x.AssignedUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.CreatedBy)
+                .WithMany()
+                .HasForeignKey(x => x.CreatedByUserId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
     }

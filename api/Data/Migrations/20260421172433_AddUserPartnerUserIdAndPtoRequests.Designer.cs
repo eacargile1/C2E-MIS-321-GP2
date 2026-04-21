@@ -4,6 +4,7 @@ using C2E.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace C2E.Api.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260421172433_AddUserPartnerUserIdAndPtoRequests")]
+    partial class AddUserPartnerUserIdAndPtoRequests
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -443,9 +446,6 @@ namespace C2E.Api.Data.Migrations
                     b.Property<Guid?>("ReviewedByUserId")
                         .HasColumnType("char(36)");
 
-                    b.Property<Guid?>("SecondaryApproverUserId")
-                        .HasColumnType("char(36)");
-
                     b.Property<DateOnly>("StartDate")
                         .HasColumnType("date");
 
@@ -463,13 +463,9 @@ namespace C2E.Api.Data.Migrations
 
                     b.HasIndex("ReviewedByUserId");
 
-                    b.HasIndex("SecondaryApproverUserId");
-
                     b.HasIndex("UserId");
 
                     b.HasIndex("Status", "ApproverUserId");
-
-                    b.HasIndex("Status", "SecondaryApproverUserId");
 
                     b.ToTable("PtoRequests");
                 });
@@ -746,11 +742,6 @@ namespace C2E.Api.Data.Migrations
                         .HasForeignKey("ReviewedByUserId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("C2E.Api.Models.AppUser", "SecondaryApprover")
-                        .WithMany()
-                        .HasForeignKey("SecondaryApproverUserId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("C2E.Api.Models.AppUser", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
@@ -760,8 +751,6 @@ namespace C2E.Api.Data.Migrations
                     b.Navigation("Approver");
 
                     b.Navigation("ReviewedBy");
-
-                    b.Navigation("SecondaryApprover");
 
                     b.Navigation("User");
                 });

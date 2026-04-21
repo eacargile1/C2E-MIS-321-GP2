@@ -4,6 +4,7 @@ using C2E.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace C2E.Api.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260421165919_AddProjectTasks")]
+    partial class AddProjectTasks
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -44,9 +47,6 @@ namespace C2E.Api.Data.Migrations
                     b.Property<Guid?>("ManagerUserId")
                         .HasColumnType("char(36)");
 
-                    b.Property<Guid?>("PartnerUserId")
-                        .HasColumnType("char(36)");
-
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasMaxLength(500)
@@ -63,8 +63,6 @@ namespace C2E.Api.Data.Migrations
                         .IsUnique();
 
                     b.HasIndex("ManagerUserId");
-
-                    b.HasIndex("PartnerUserId");
 
                     b.ToTable("Users");
                 });
@@ -417,63 +415,6 @@ namespace C2E.Api.Data.Migrations
                     b.ToTable("ProjectTeamMembers");
                 });
 
-            modelBuilder.Entity("C2E.Api.Models.PtoRequest", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
-
-                    b.Property<Guid>("ApproverUserId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<DateOnly>("EndDate")
-                        .HasColumnType("date");
-
-                    b.Property<string>("Reason")
-                        .IsRequired()
-                        .HasMaxLength(2000)
-                        .HasColumnType("varchar(2000)");
-
-                    b.Property<DateTime?>("ReviewedAtUtc")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<Guid?>("ReviewedByUserId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<Guid?>("SecondaryApproverUserId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<DateOnly>("StartDate")
-                        .HasColumnType("date");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("varchar(32)");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("char(36)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ApproverUserId");
-
-                    b.HasIndex("ReviewedByUserId");
-
-                    b.HasIndex("SecondaryApproverUserId");
-
-                    b.HasIndex("UserId");
-
-                    b.HasIndex("Status", "ApproverUserId");
-
-                    b.HasIndex("Status", "SecondaryApproverUserId");
-
-                    b.ToTable("PtoRequests");
-                });
-
             modelBuilder.Entity("C2E.Api.Models.TimesheetLine", b =>
                 {
                     b.Property<Guid>("Id")
@@ -597,14 +538,7 @@ namespace C2E.Api.Data.Migrations
                         .HasForeignKey("ManagerUserId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("C2E.Api.Models.AppUser", "Partner")
-                        .WithMany()
-                        .HasForeignKey("PartnerUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.Navigation("Manager");
-
-                    b.Navigation("Partner");
                 });
 
             modelBuilder.Entity("C2E.Api.Models.ClientEmployeeAssignment", b =>
@@ -729,39 +663,6 @@ namespace C2E.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Project");
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("C2E.Api.Models.PtoRequest", b =>
-                {
-                    b.HasOne("C2E.Api.Models.AppUser", "Approver")
-                        .WithMany()
-                        .HasForeignKey("ApproverUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("C2E.Api.Models.AppUser", "ReviewedBy")
-                        .WithMany()
-                        .HasForeignKey("ReviewedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("C2E.Api.Models.AppUser", "SecondaryApprover")
-                        .WithMany()
-                        .HasForeignKey("SecondaryApproverUserId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("C2E.Api.Models.AppUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Approver");
-
-                    b.Navigation("ReviewedBy");
-
-                    b.Navigation("SecondaryApprover");
 
                     b.Navigation("User");
                 });

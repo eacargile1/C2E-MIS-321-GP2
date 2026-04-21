@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createUser, listUsers, patchUser, type MeProfile, type UserRow } from '../api'
 import '../App.css'
 
@@ -26,6 +26,7 @@ export default function AdminUsers({
   const [createDisplayName, setCreateDisplayName] = useState('')
   const [createRole, setCreateRole] = useState<string>('IC')
   const [createManagerId, setCreateManagerId] = useState('')
+  const [createPartnerId, setCreatePartnerId] = useState('')
   const [createSkills, setCreateSkills] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editEmail, setEditEmail] = useState('')
@@ -33,6 +34,7 @@ export default function AdminUsers({
   const [editPassword, setEditPassword] = useState('')
   const [editRole, setEditRole] = useState('')
   const [editManagerId, setEditManagerId] = useState('')
+  const [editPartnerId, setEditPartnerId] = useState('')
   const [editSkills, setEditSkills] = useState('')
   const [confirmDeactivateId, setConfirmDeactivateId] = useState<string | null>(null)
 
@@ -60,12 +62,31 @@ export default function AdminUsers({
     void refresh()
   }, [refresh])
 
+  const activeManagers = useMemo(() => users.filter((u) => u.role === 'Manager' && u.isActive), [users])
+  const activePartners = useMemo(() => users.filter((u) => u.role === 'Partner' && u.isActive), [users])
+  const createNeedsOrgManager =
+    createRole === 'IC' || (createRole === 'Manager' && activeManagers.length > 0)
+  const createNeedsReportingPartner = createRole === 'Manager' && activeManagers.length > 0
+
   const onCreate = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (createNeedsOrgManager && !createManagerId.trim()) {
+      pushToast('Select an org manager (active Manager) for IC and Manager accounts.', 'err')
+      return
+    }
+    if (createNeedsReportingPartner && !createPartnerId.trim()) {
+      pushToast('Select a reporting partner (active Partner) when another Manager already exists.', 'err')
+      return
+    }
+    if (createRole === 'Finance' && activePartners.length === 0 && !createPartnerId.trim()) {
+      pushToast('Create at least one Partner user before adding Finance (or pick a reporting partner explicitly).', 'err')
+      return
+    }
     try {
       await createUser(token, createEmail.trim(), createPassword, {
         displayName: createDisplayName.trim() || undefined,
         managerUserId: createManagerId.trim().length ? createManagerId.trim() : undefined,
+        partnerUserId: createPartnerId.trim().length ? createPartnerId.trim() : undefined,
         role: createRole,
         skills: parseSkillsCsv(createSkills),
       })
@@ -74,6 +95,7 @@ export default function AdminUsers({
       setCreateDisplayName('')
       setCreateRole('IC')
       setCreateManagerId('')
+      setCreatePartnerId('')
       setCreateSkills('')
       pushToast('User created', 'ok')
       await refresh()
@@ -89,6 +111,7 @@ export default function AdminUsers({
     setEditPassword('')
     setEditRole(u.role)
     setEditManagerId(u.managerUserId ?? '')
+    setEditPartnerId(u.partnerUserId ?? '')
     setEditSkills(u.skills.join(', '))
   }
 
@@ -99,10 +122,30 @@ export default function AdminUsers({
     setEditPassword('')
     setEditRole('')
     setEditManagerId('')
+    setEditPartnerId('')
     setEditSkills('')
   }
 
   const saveEdit = async (id: string) => {
+    const needsOrgMgr =
+      editRole === 'IC' || (editRole === 'Manager' && activeManagers.filter((m) => m.id !== id).length > 0)
+    const needsPartner = editRole === 'Manager' && activeManagers.filter((m) => m.id !== id).length > 0
+    if (needsOrgMgr && !editManagerId.trim()) {
+      pushToast('Select an org manager for IC and Manager accounts.', 'err')
+      return
+    }
+    if (needsPartner && !editPartnerId.trim()) {
+      pushToast('Select a reporting partner for Manager when another Manager exists.', 'err')
+      return
+    }
+    if (editRole === 'Finance' && activePartners.length === 0 && !editPartnerId.trim()) {
+      pushToast('Add a Partner user before assigning the Finance role (or pick a reporting partner explicitly).', 'err')
+      return
+    }
+    if (editRole === 'Finance' && !editPartnerId.trim() && (users.find((x) => x.id === id)?.partnerUserId ?? '')) {
+      pushToast('Finance accounts must keep a reporting partner; pick a Partner or cancel.', 'err')
+      return
+    }
     setBusyId(id)
     try {
       const body: {
@@ -112,6 +155,9 @@ export default function AdminUsers({
         displayName?: string
         assignManager?: boolean
         managerUserId?: string | null
+        assignPartner?: boolean
+        partnerUserId?: string | null
+        clearPartner?: boolean
         skills?: string[]
       } = {}
       const u = users.find((x) => x.id === id)
@@ -126,6 +172,14 @@ export default function AdminUsers({
         body.assignManager = true
         body.managerUserId = editManagerId.trim().length ? editManagerId.trim() : null
       }
+      const origPartner = u.partnerUserId ?? ''
+      if (editPartnerId !== origPartner) {
+        body.assignPartner = true
+        if (!editPartnerId.trim()) {
+          body.clearPartner = true
+          body.partnerUserId = null
+        } else body.partnerUserId = editPartnerId.trim()
+      }
       if (editSkills.trim() !== u.skills.join(', ')) body.skills = parseSkillsCsv(editSkills)
       if (Object.keys(body).length === 0) {
         cancelEdit()
@@ -137,7 +191,8 @@ export default function AdminUsers({
         body.email === undefined &&
         body.password === undefined &&
         body.displayName === undefined &&
-        body.assignManager !== true
+        body.assignManager !== true &&
+        body.assignPartner !== true
       pushToast(roleOnly ? 'Role updated' : 'User updated', 'ok')
       cancelEdit()
       if (id === profile.id && updated.role !== 'Admin') onSignOut()
@@ -191,7 +246,12 @@ export default function AdminUsers({
 
       <div className="card admin-card">
         <h2 className="admin-h2">Create User</h2>
-        <p className="admin-hint">Choose a role for the new account. Password min. 8 characters.</p>
+        <p className="admin-hint">
+          Choose a role for the new account. Password min. 8 characters. IC always needs an org manager (Manager
+          role). Additional Manager accounts need one too when any Manager already exists. Finance gets a reporting
+          partner automatically (first active Partner) if you leave the partner field blank. Managers need a partner
+          when another Manager already exists (PTO and timesheet routing).
+        </p>
         <form className="form admin-form-grid" onSubmit={onCreate}>
           <label className="field">
             <span>Display Name</span>
@@ -236,9 +296,9 @@ export default function AdminUsers({
             </select>
           </label>
           <label className="field">
-            <span>Manager (Optional)</span>
+            <span>Org manager {createNeedsOrgManager ? '(required)' : '(optional)'}</span>
             <select value={createManagerId} onChange={(e) => setCreateManagerId(e.target.value)}>
-              <option value="">— None —</option>
+              <option value="">— {createNeedsOrgManager ? 'Select manager —' : 'None —'}</option>
               {users
                 .filter((u) => u.role === 'Manager' && u.isActive)
                 .map((m) => (
@@ -246,6 +306,17 @@ export default function AdminUsers({
                     {m.email}
                   </option>
                 ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Reporting partner {createNeedsReportingPartner ? '(required)' : '(optional)'}</span>
+            <select value={createPartnerId} onChange={(e) => setCreatePartnerId(e.target.value)}>
+              <option value="">— {createNeedsReportingPartner ? 'Select partner —' : 'None —'}</option>
+              {activePartners.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.email}
+                </option>
+              ))}
             </select>
           </label>
           <label className="field">
@@ -282,6 +353,7 @@ export default function AdminUsers({
                   <th>Display Name</th>
                   <th>Role</th>
                   <th>Manager</th>
+                  <th>Partner</th>
                   <th>Skills</th>
                   <th>Status</th>
                   <th />
@@ -352,6 +424,27 @@ export default function AdminUsers({
                         </select>
                       ) : u.managerUserId ? (
                         users.find((x) => x.id === u.managerUserId)?.email ?? '—'
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td>
+                      {editingId === u.id ? (
+                        <select
+                          className="table-input"
+                          value={editPartnerId}
+                          onChange={(e) => setEditPartnerId(e.target.value)}
+                          aria-label="Reporting partner"
+                        >
+                          <option value="">— None —</option>
+                          {activePartners.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.email}
+                            </option>
+                          ))}
+                        </select>
+                      ) : u.partnerUserId ? (
+                        users.find((x) => x.id === u.partnerUserId)?.email ?? '—'
                       ) : (
                         '—'
                       )}

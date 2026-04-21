@@ -61,7 +61,9 @@ public class AssignmentsApiTests
         var adminToken = await LoginTokenAsync(client, "admin@local.test", "AdminPass!9");
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
 
-        var createUser = await client.PostAsJsonAsync("/api/users", new { email = "new.user@local.test", password = "NewUserPass1!" });
+        var createUser = await client.PostAsJsonAsync(
+            "/api/users",
+            new { email = "new.user@local.test", password = "NewUserPass1!", role = "Partner" });
         createUser.EnsureSuccessStatusCode();
 
         var createdClient = await client.PostAsJsonAsync("/api/clients", new { name = "Fallback Client" });
@@ -83,6 +85,100 @@ public class AssignmentsApiTests
         var body = await res.Content.ReadFromJsonAsync<RecommendationResponseDto>();
         Assert.NotNull(body);
         Assert.Contains(body!.Results, r => r.FallbackReason == "insufficient_history");
+    }
+
+    [Fact]
+    public async Task Org_manager_Admin_sets_IC_reports_to_Manager_IC_forbidden()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        var adminToken = await LoginTokenAsync(client, "admin@local.test", "AdminPass!9");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+
+        var seedMgrId = await ApiTestUsers.SeededDevManagerIdAsync(client);
+        var seedParId = await ApiTestUsers.SeededDevPartnerIdAsync(client);
+        var mgrCreate = await client.PostAsJsonAsync(
+            "/api/users",
+            new
+            {
+                email = "mgr.om@local.test",
+                password = "MgrOmPass1!",
+                role = "Manager",
+                managerUserId = seedMgrId,
+                partnerUserId = seedParId,
+            });
+        mgrCreate.EnsureSuccessStatusCode();
+        var mgr = await mgrCreate.Content.ReadFromJsonAsync<UserIdDto>();
+
+        var icCreate = await client.PostAsJsonAsync(
+            "/api/users",
+            new { email = "ic.om@local.test", password = "IcOmPass1!", role = "IC", managerUserId = mgr!.Id });
+        icCreate.EnsureSuccessStatusCode();
+        var ic = await icCreate.Content.ReadFromJsonAsync<UserIdDto>();
+
+        await client.PostAsJsonAsync(
+            "/api/users",
+            new { email = "par.om@local.test", password = "ParOmPass1!", role = "Partner" });
+
+        var ok = await client.PatchAsJsonAsync(
+            $"/api/assignments/users/{ic!.Id}/org-manager",
+            new { managerUserId = mgr!.Id });
+        Assert.Equal(HttpStatusCode.NoContent, ok.StatusCode);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+        var icRow = await client.GetAsync($"/api/users/{ic.Id}");
+        icRow.EnsureSuccessStatusCode();
+        var icBody = await icRow.Content.ReadFromJsonAsync<UserWithManagerDto>();
+        Assert.Equal(mgr.Id, icBody!.ManagerUserId);
+
+        client.DefaultRequestHeaders.Authorization = null;
+        var icToken = await LoginTokenAsync(client, "ic.om@local.test", "IcOmPass1!");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
+        var forbidden = await client.PatchAsJsonAsync(
+            $"/api/assignments/users/{ic.Id}/org-manager",
+            new { managerUserId = (Guid?)null });
+        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+    }
+
+    [Fact]
+    public async Task Org_manager_Partner_forbidden_on_org_manager_endpoint()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        var adminToken = await LoginTokenAsync(client, "admin@local.test", "AdminPass!9");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+        var seedMgrId = await ApiTestUsers.SeededDevManagerIdAsync(client);
+        var seedParId = await ApiTestUsers.SeededDevPartnerIdAsync(client);
+        var mgrCreate = await client.PostAsJsonAsync(
+            "/api/users",
+            new
+            {
+                email = "mgr.om2@local.test",
+                password = "MgrOm2Pass1!",
+                role = "Manager",
+                managerUserId = seedMgrId,
+                partnerUserId = seedParId,
+            });
+        mgrCreate.EnsureSuccessStatusCode();
+        var mgr = await mgrCreate.Content.ReadFromJsonAsync<UserIdDto>();
+
+        var me = await client.GetAsync("/api/auth/me");
+        me.EnsureSuccessStatusCode();
+        var adminId = (await me.Content.ReadFromJsonAsync<MeIdDto>())!.Id;
+
+        var parCreate = await client.PostAsJsonAsync(
+            "/api/users",
+            new { email = "par.om2@local.test", password = "ParOm2Pass1!", role = "Partner" });
+        parCreate.EnsureSuccessStatusCode();
+
+        client.DefaultRequestHeaders.Authorization = null;
+        var partnerToken = await LoginTokenAsync(client, "par.om2@local.test", "ParOm2Pass1!");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", partnerToken);
+
+        var res = await client.PatchAsJsonAsync(
+            $"/api/assignments/users/{adminId}/org-manager",
+            new { managerUserId = mgr!.Id });
+        Assert.Equal(HttpStatusCode.Forbidden, res.StatusCode);
     }
 
     [Fact]
@@ -123,6 +219,9 @@ public class AssignmentsApiTests
     }
 
     private sealed record LoginResponseDto(string AccessToken, string TokenType, int ExpiresInSeconds);
+    private sealed record UserIdDto(Guid Id);
+    private sealed record UserWithManagerDto(Guid Id, Guid? ManagerUserId, List<string>? Skills);
+    private sealed record MeIdDto(Guid Id);
     private sealed record ClientDto(Guid Id, string Name);
     private sealed record ProjectDto(Guid Id, string Name, Guid ClientId, bool IsActive);
     private sealed record RecommendationResponseDto(string FallbackMode, List<RecommendationResultDto> Results);

@@ -6,6 +6,15 @@ public sealed class AssignmentResponse
     public required string Email { get; init; }
     public required string DisplayName { get; init; }
     public required string Role { get; init; }
+
+    /// <summary>Org hierarchy: who this user reports to (Manager role), when set.</summary>
+    public Guid? ManagerUserId { get; init; }
+}
+
+/// <summary>Admin-only: set or clear a user&apos;s org manager (must be an active Manager). Prefer User Management PATCH.</summary>
+public sealed class SetOrgManagerRequest
+{
+    public Guid? ManagerUserId { get; init; }
 }
 
 public sealed class StaffingRecommendationRequestDto

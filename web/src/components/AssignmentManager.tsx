@@ -14,6 +14,7 @@ export default function AssignmentManager({
   unassign,
   loadRecommendations,
   canManage,
+  preferredUserId,
 }: {
   token: string
   title: string
@@ -29,6 +30,8 @@ export default function AssignmentManager({
     requiredSkills: string[],
   ) => Promise<StaffingRecommendationResponse>
   canManage: boolean
+  /** When set and that user is assignable to the current target, they stay selected in the Employee dropdown. */
+  preferredUserId?: string | null
 }) {
   const activeTargets = useMemo(
     () => targetOptions.filter((t) => t.isActive !== false),
@@ -104,10 +107,16 @@ export default function AssignmentManager({
       setSelectedUserId('')
       return
     }
-    setSelectedUserId((prev) =>
-      prev && assignableEmployees.some((e) => e.userId === prev) ? prev : assignableEmployees[0]!.userId,
-    )
-  }, [assignableEmployees])
+    const prefer =
+      preferredUserId && assignableEmployees.some((e) => e.userId === preferredUserId)
+        ? preferredUserId
+        : null
+    setSelectedUserId((prev) => {
+      if (prefer) return prefer
+      if (prev && assignableEmployees.some((e) => e.userId === prev)) return prev
+      return assignableEmployees[0]!.userId
+    })
+  }, [assignableEmployees, preferredUserId])
 
   const onAssign = async () => {
     if (!selectedTargetId || !selectedUserId) return

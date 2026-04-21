@@ -36,11 +36,11 @@ public class ExpensesApiTests
     {
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
-        var create = await client.PostAsJsonAsync("/api/users", new { email, password });
+        var mgrId = await ApiTestUsers.SeededDevManagerIdAsync(client);
+        var create = await client.PostAsJsonAsync("/api/users", new { email, password, managerUserId = mgrId });
         create.EnsureSuccessStatusCode();
         var created = await create.Content.ReadFromJsonAsync<UserDto>();
-        var patch = await client.PatchAsJsonAsync($"/api/users/{created!.Id}", new { role });
-        patch.EnsureSuccessStatusCode();
+        await ApiTestUsers.PatchUserRoleFromBootstrapIcAsync(client, created!.Id, role);
         client.DefaultRequestHeaders.Authorization = null;
         return await LoginTokenAsync(client, email, password);
     }
@@ -53,11 +53,11 @@ public class ExpensesApiTests
     {
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
-        var create = await client.PostAsJsonAsync("/api/users", new { email, password });
+        var mgrId = await ApiTestUsers.SeededDevManagerIdAsync(client);
+        var create = await client.PostAsJsonAsync("/api/users", new { email, password, managerUserId = mgrId });
         create.EnsureSuccessStatusCode();
         var created = await create.Content.ReadFromJsonAsync<UserDto>();
-        var patch = await client.PatchAsJsonAsync($"/api/users/{created!.Id}", new { role });
-        patch.EnsureSuccessStatusCode();
+        await ApiTestUsers.PatchUserRoleFromBootstrapIcAsync(client, created!.Id, role);
         client.DefaultRequestHeaders.Authorization = null;
         return created!.Id;
     }

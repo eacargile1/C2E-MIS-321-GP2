@@ -2,6 +2,7 @@ using C2E.Api;
 using C2E.Api.Authorization;
 using C2E.Api.Data;
 using C2E.Api.Dtos;
+using C2E.Api.Models;
 using C2E.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -30,6 +31,7 @@ public sealed class AssignmentsController(AppDbContext db, IStaffingRecommendati
                     ? UserProfileName.DefaultFromEmail(u.Email)
                     : u.DisplayName,
                 Role = u.Role.ToString(),
+                ManagerUserId = u.ManagerUserId,
             })
             .ToListAsync(ct);
 
@@ -59,6 +61,7 @@ public sealed class AssignmentsController(AppDbContext db, IStaffingRecommendati
                     u.Email,
                     u.DisplayName,
                     u.Role,
+                    u.ManagerUserId,
                 })
             .OrderBy(u => u.DisplayName)
             .ThenBy(u => u.Email)
@@ -72,6 +75,7 @@ public sealed class AssignmentsController(AppDbContext db, IStaffingRecommendati
                 ? UserProfileName.DefaultFromEmail(u.Email)
                 : u.DisplayName,
             Role = u.Role.ToString(),
+            ManagerUserId = u.ManagerUserId,
         }).ToList());
     }
 
@@ -139,6 +143,7 @@ public sealed class AssignmentsController(AppDbContext db, IStaffingRecommendati
                     u.Email,
                     u.DisplayName,
                     u.Role,
+                    u.ManagerUserId,
                 })
             .OrderBy(u => u.DisplayName)
             .ThenBy(u => u.Email)
@@ -152,6 +157,7 @@ public sealed class AssignmentsController(AppDbContext db, IStaffingRecommendati
                 ? UserProfileName.DefaultFromEmail(u.Email)
                 : u.DisplayName,
             Role = u.Role.ToString(),
+            ManagerUserId = u.ManagerUserId,
         }).ToList());
     }
 
@@ -214,5 +220,63 @@ public sealed class AssignmentsController(AppDbContext db, IStaffingRecommendati
             req?.RequiredSkills ?? [],
             ct);
         return Ok(response);
+    }
+
+    /// <summary>Admin only: set who a user reports to (org manager). Use User Management create/edit for the primary UX.</summary>
+    [HttpPatch("users/{userId:guid}/org-manager")]
+    [Authorize(Roles = RbacRoleSets.AdminOnly)]
+    public async Task<ActionResult> SetOrgManager(Guid userId, [FromBody] SetOrgManagerRequest? body, CancellationToken ct)
+    {
+        if (body is null)
+            return BadRequest(new AuthErrorResponse { Message = "Request body is required." });
+
+        var target = await db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (target is null)
+            return NotFound(new AuthErrorResponse { Message = "User not found." });
+
+        if (body.ManagerUserId is { } mid)
+        {
+            var err = await ValidateOrgManagerAsync(mid, userId, ct);
+            if (err is not null)
+                return BadRequest(new AuthErrorResponse { Message = err });
+            if (await WouldCreateManagerCycleAsync(userId, mid, ct))
+                return BadRequest(new AuthErrorResponse { Message = "That manager assignment would create a cycle." });
+            target.ManagerUserId = mid;
+        }
+        else
+            target.ManagerUserId = null;
+
+        await db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    private async Task<string?> ValidateOrgManagerAsync(Guid managerUserId, Guid subjectUserId, CancellationToken ct)
+    {
+        if (managerUserId == subjectUserId)
+            return "A user cannot be their own manager.";
+
+        var mgr = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == managerUserId, ct);
+        if (mgr is null || !mgr.IsActive)
+            return "Manager must reference an active user.";
+        if (mgr.Role != AppRole.Manager)
+            return "Org manager must be an active account with role Manager.";
+        return null;
+    }
+
+    private async Task<bool> WouldCreateManagerCycleAsync(Guid userId, Guid newManagerId, CancellationToken ct)
+    {
+        var step = newManagerId;
+        for (var i = 0; i < 32; i++)
+        {
+            if (step == userId) return true;
+            var next = await db.Users.AsNoTracking()
+                .Where(u => u.Id == step)
+                .Select(u => u.ManagerUserId)
+                .FirstOrDefaultAsync(ct);
+            if (next is null) return false;
+            step = next.Value;
+        }
+
+        return true;
     }
 }

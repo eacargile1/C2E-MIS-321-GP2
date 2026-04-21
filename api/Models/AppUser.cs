@@ -14,6 +14,10 @@ public class AppUser
     public Guid? ManagerUserId { get; set; }
     public AppUser? Manager { get; set; }
     public ICollection<AppUser> DirectReports { get; set; } = new List<AppUser>();
+
+    /// <summary>Reporting partner for Manager/Finance: PTO, finance timesheet week sign-off, and finance expenses.</summary>
+    public Guid? PartnerUserId { get; set; }
+    public AppUser? Partner { get; set; }
     public ICollection<ClientEmployeeAssignment> ClientAssignments { get; set; } = new List<ClientEmployeeAssignment>();
     public ICollection<ProjectEmployeeAssignment> ProjectAssignments { get; set; } = new List<ProjectEmployeeAssignment>();
     public ICollection<UserSkill> Skills { get; set; } = new List<UserSkill>();

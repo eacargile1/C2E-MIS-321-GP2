@@ -226,28 +226,29 @@ export default function ProjectDetailPage({ token, profile }: { token: string; p
                   />
                 </label>
                 <button type="button" className="btn primary btn-sm" disabled={savingBudget} onClick={() => void onSaveBudget()}>
-                  {savingBudget ? 'Saving…' : 'Save budget'}
+                  {savingBudget ? 'Saving…' : 'Save Budget'}
                 </button>
               </div>
             ) : null}
 
             {canSeeStaffingLabels ? (
               <section style={{ marginTop: 20 }}>
-                <h2 className="admin-h2">Staffing</h2>
+                <h2 className="admin-h2">Project Staffing</h2>
                 {canEditStaffing ? (
                   <>
                     <p className="admin-hint">
-                      IC and Finance weekly sign-offs and expenses against this client + project name route to the{' '}
-                      <strong>delivery manager</strong> when set; otherwise the submitter&apos;s org manager. Manager
-                      and Partner timesheets route to the <strong>engagement partner</strong> when set (must match the
-                      partner who should see the week in their queue). Partner-created projects default you as
-                      engagement partner if you leave that field blank on create.
+                      For hours/expenses booked to this client + project name: IC uses the project{' '}
+                      <strong>Delivery Manager</strong> when set, otherwise the <strong>Engagement Partner</strong>,
+                      otherwise the submitter&apos;s <strong>Org Manager</strong> (set on the user). Finance uses the
+                      submitter&apos;s Reporting Partner. Manager and Partner timesheets use the Engagement Partner on
+                      billable lines (must match who should see the week in their queue). Partner-created projects
+                      default you as Engagement Partner if you leave that field blank on create.
                     </p>
                     <div className="form admin-form-grid" style={{ marginTop: 12, maxWidth: 520 }}>
                       <label className="field">
-                        <span>Delivery manager</span>
+                        <span>Delivery Manager</span>
                         <select value={staffDm} onChange={(e) => setStaffDm(e.target.value)}>
-                          <option value="">— None (use org manager for IC path)</option>
+                          <option value="">— None (IC: engagement partner or org manager next)</option>
                           {managers.map((u) => (
                             <option key={u.id} value={u.id}>
                               {u.displayName || u.email}
@@ -256,7 +257,7 @@ export default function ProjectDetailPage({ token, profile }: { token: string; p
                         </select>
                       </label>
                       <label className="field">
-                        <span>Engagement partner</span>
+                        <span>Engagement Partner</span>
                         <select value={staffEp} onChange={(e) => setStaffEp(e.target.value)}>
                           <option value="">— None</option>
                           {partners.map((u) => (
@@ -267,7 +268,7 @@ export default function ProjectDetailPage({ token, profile }: { token: string; p
                         </select>
                       </label>
                       <label className="field">
-                        <span>Assigned finance</span>
+                        <span>Assigned Finance</span>
                         <select value={staffFin} onChange={(e) => setStaffFin(e.target.value)}>
                           <option value="">— None</option>
                           {financeUsers.map((u) => (
@@ -277,13 +278,23 @@ export default function ProjectDetailPage({ token, profile }: { token: string; p
                           ))}
                         </select>
                       </label>
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 16,
+                        paddingTop: 16,
+                        borderTop: '1px solid var(--border, #e5e7eb)',
+                        display: 'flex',
+                        justifyContent: 'flex-end',
+                      }}
+                    >
                       <button
                         type="button"
-                        className="btn primary btn-sm"
+                        className="btn primary"
                         disabled={savingStaffing}
                         onClick={() => void onSaveStaffing()}
                       >
-                        {savingStaffing ? 'Saving…' : 'Save staffing'}
+                        {savingStaffing ? 'Saving…' : 'Save Staffing'}
                       </button>
                     </div>
                   </>
@@ -291,14 +302,14 @@ export default function ProjectDetailPage({ token, profile }: { token: string; p
                   <>
                     <p className="admin-hint">Only Admin or Partner can change these assignments.</p>
                     <ul className="admin-hint" style={{ listStyle: 'disc', paddingLeft: 20 }}>
-                      <li>Delivery manager: {labelForStaff(project.deliveryManagerUserId ?? null, staff)}</li>
-                      <li>Engagement partner: {labelForStaff(project.engagementPartnerUserId ?? null, staff)}</li>
-                      <li>Assigned finance: {labelForStaff(project.assignedFinanceUserId ?? null, staff)}</li>
+                      <li>Delivery Manager: {labelForStaff(project.deliveryManagerUserId ?? null, staff)}</li>
+                      <li>Engagement Partner: {labelForStaff(project.engagementPartnerUserId ?? null, staff)}</li>
+                      <li>Assigned Finance: {labelForStaff(project.assignedFinanceUserId ?? null, staff)}</li>
                     </ul>
                   </>
                 )}
                 <h2 className="admin-h2" style={{ marginTop: 24 }}>
-                  Team roster (optional)
+                  Team Roster (Optional)
                 </h2>
                 <p className="admin-hint">
                   Who is associated with this engagement. Timesheets and expenses still use the{' '}
@@ -338,15 +349,19 @@ export default function ProjectDetailPage({ token, profile }: { token: string; p
                         ))
                       )}
                     </div>
-                    <button
-                      type="button"
-                      className="btn primary btn-sm"
-                      style={{ marginTop: 10 }}
-                      disabled={savingTeam}
-                      onClick={() => void onSaveTeamRoster()}
+                    <div
+                      style={{
+                        marginTop: 16,
+                        paddingTop: 16,
+                        borderTop: '1px solid var(--border, #e5e7eb)',
+                        display: 'flex',
+                        justifyContent: 'flex-end',
+                      }}
                     >
-                      {savingTeam ? 'Saving…' : 'Save team roster'}
-                    </button>
+                      <button type="button" className="btn primary" disabled={savingTeam} onClick={() => void onSaveTeamRoster()}>
+                        {savingTeam ? 'Saving…' : 'Save Team Roster'}
+                      </button>
+                    </div>
                   </>
                 ) : (
                   <ul className="admin-hint" style={{ listStyle: 'disc', paddingLeft: 20, marginTop: 8 }}>

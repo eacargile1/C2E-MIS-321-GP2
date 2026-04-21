@@ -32,6 +32,62 @@ public class UsersAdminTests
     }
 
     [Fact]
+    public async Task Users_create_Finance_without_partnerUserId_assigns_default_partner()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        var expectedPartner = await ApiTestUsers.SeededDevPartnerIdAsync(client);
+
+        var create = await client.PostAsJsonAsync(
+            "/api/users",
+            new { email = "fin.auto@local.test", password = "FinAutoP1!", role = "Finance" });
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+        var created = await create.Content.ReadFromJsonAsync<UserDto>();
+        Assert.Equal("Finance", created?.Role);
+        Assert.Equal(expectedPartner, created?.PartnerUserId);
+    }
+
+    [Fact]
+    public async Task Users_patch_role_IC_to_Finance_without_partner_assigns_default_partner()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        var mgrId = await ApiTestUsers.SeededDevManagerIdAsync(client);
+        var expectedPartner = await ApiTestUsers.SeededDevPartnerIdAsync(client);
+
+        var create = await client.PostAsJsonAsync(
+            "/api/users",
+            new { email = "ic.to.fin@local.test", password = "IcToFinP1!", managerUserId = mgrId });
+        var created = (await create.Content.ReadFromJsonAsync<UserDto>())!;
+
+        var p2 = await client.PatchAsJsonAsync($"/api/users/{created.Id}", new { role = "Finance" });
+        Assert.Equal(HttpStatusCode.OK, p2.StatusCode);
+        var u2 = await p2.Content.ReadFromJsonAsync<UserDto>();
+        Assert.Equal("Finance", u2?.Role);
+        Assert.Equal(expectedPartner, u2?.PartnerUserId);
+    }
+
+    [Fact]
+    public async Task Users_create_IC_without_org_manager_returns_400()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+
+        var res = await client.PostAsJsonAsync(
+            "/api/users",
+            new { email = "no.mgr@local.test", password = "NoMgrPass1!" });
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        var err = await res.Content.ReadFromJsonAsync<AuthErrorDto>();
+        Assert.Contains("IC accounts require org manager", err?.Message ?? "");
+    }
+
+    [Fact]
     public async Task Users_list_as_admin_returns_seed_and_created_users()
     {
         using var factory = Factory();
@@ -45,9 +101,10 @@ public class UsersAdminTests
         Assert.NotNull(users);
         Assert.Contains(users, u => u.Email == "admin@local.test" && u.Role == "Admin" && u.IsActive);
 
+        var mgrId = await ApiTestUsers.SeededDevManagerIdAsync(client);
         var create = await client.PostAsJsonAsync(
             "/api/users",
-            new { email = "new.ic@local.test", password = "NewUserP1!" });
+            new { email = "new.ic@local.test", password = "NewUserP1!", managerUserId = mgrId });
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
         var created = await create.Content.ReadFromJsonAsync<UserDto>();
         Assert.Equal("IC", created?.Role);
@@ -64,9 +121,10 @@ public class UsersAdminTests
         var client = factory.CreateClient();
         var adminToken = await AdminTokenAsync(client);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+        var mgrId = await ApiTestUsers.SeededDevManagerIdAsync(client);
         await client.PostAsJsonAsync(
             "/api/users",
-            new { email = "ic.only@local.test", password = "IcOnlyPa1!" });
+            new { email = "ic.only@local.test", password = "IcOnlyPa1!", managerUserId = mgrId });
         client.DefaultRequestHeaders.Authorization = null;
 
         var icLogin = await client.PostAsJsonAsync(
@@ -88,9 +146,10 @@ public class UsersAdminTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        var mgrId = await ApiTestUsers.SeededDevManagerIdAsync(client);
         var create = await client.PostAsJsonAsync(
             "/api/users",
-            new { email = "patch.me@local.test", password = "Original1!" });
+            new { email = "patch.me@local.test", password = "Original1!", managerUserId = mgrId });
         var created = (await create.Content.ReadFromJsonAsync<UserDto>())!;
 
         var patch = await client.PatchAsJsonAsync(
@@ -176,14 +235,16 @@ public class UsersAdminTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        var mgrId = await ApiTestUsers.SeededDevManagerIdAsync(client);
         var create = await client.PostAsJsonAsync(
             "/api/users",
-            new { email = "role.chain@local.test", password = "RoleChain1!" });
+            new { email = "role.chain@local.test", password = "RoleChain1!", managerUserId = mgrId });
         var created = (await create.Content.ReadFromJsonAsync<UserDto>())!;
 
+        var partnerId = await ApiTestUsers.SeededDevPartnerIdAsync(client);
         var p1 = await client.PatchAsJsonAsync(
             $"/api/users/{created.Id}",
-            new { role = "Manager" });
+            new { role = "Manager", assignPartner = true, partnerUserId = partnerId });
         Assert.Equal(HttpStatusCode.OK, p1.StatusCode);
         var u1 = await p1.Content.ReadFromJsonAsync<UserDto>();
         Assert.Equal("Manager", u1?.Role);
@@ -203,9 +264,10 @@ public class UsersAdminTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        var mgrId = await ApiTestUsers.SeededDevManagerIdAsync(client);
         var create = await client.PostAsJsonAsync(
             "/api/users",
-            new { email = "to.partner@local.test", password = "ToPartner1!" });
+            new { email = "to.partner@local.test", password = "ToPartner1!", managerUserId = mgrId });
         var created = (await create.Content.ReadFromJsonAsync<UserDto>())!;
 
         var p1 = await client.PatchAsJsonAsync($"/api/users/{created.Id}", new { role = "Partner" });
@@ -221,14 +283,16 @@ public class UsersAdminTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        var mgrId = await ApiTestUsers.SeededDevManagerIdAsync(client);
         var create = await client.PostAsJsonAsync(
             "/api/users",
-            new { email = "case.role@local.test", password = "CaseRoleP1!" });
+            new { email = "case.role@local.test", password = "CaseRoleP1!", managerUserId = mgrId });
         var created = (await create.Content.ReadFromJsonAsync<UserDto>())!;
 
+        var partnerId = await ApiTestUsers.SeededDevPartnerIdAsync(client);
         var p1 = await client.PatchAsJsonAsync(
             $"/api/users/{created.Id}",
-            new { role = "manager" });
+            new { role = "manager", assignPartner = true, partnerUserId = partnerId });
         Assert.Equal(HttpStatusCode.OK, p1.StatusCode);
         var u1 = await p1.Content.ReadFromJsonAsync<UserDto>();
         Assert.Equal("Manager", u1?.Role);
@@ -248,9 +312,10 @@ public class UsersAdminTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        var mgrId = await ApiTestUsers.SeededDevManagerIdAsync(client);
         var create = await client.PostAsJsonAsync(
             "/api/users",
-            new { email = "empty.patch@local.test", password = "EmptyPat1!" });
+            new { email = "empty.patch@local.test", password = "EmptyPat1!", managerUserId = mgrId });
         var created = (await create.Content.ReadFromJsonAsync<UserDto>())!;
 
         var res = await client.PatchAsync(
@@ -259,7 +324,7 @@ public class UsersAdminTests
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
         var err = await res.Content.ReadFromJsonAsync<AuthErrorDto>();
         Assert.Equal(
-            "Provide at least one of email, password, isActive, role, displayName, assignManager, or skills.",
+            "Provide at least one of email, password, isActive, role, displayName, assignManager, assignPartner, or skills.",
             err?.Message);
     }
 
@@ -270,9 +335,10 @@ public class UsersAdminTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        var mgrId = await ApiTestUsers.SeededDevManagerIdAsync(client);
         var create = await client.PostAsJsonAsync(
             "/api/users",
-            new { email = "numeric.role@local.test", password = "NumericRo1!" });
+            new { email = "numeric.role@local.test", password = "NumericRo1!", managerUserId = mgrId });
         var created = (await create.Content.ReadFromJsonAsync<UserDto>())!;
 
         var res = await client.PatchAsJsonAsync(
@@ -291,9 +357,10 @@ public class UsersAdminTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        var mgrId = await ApiTestUsers.SeededDevManagerIdAsync(client);
         var create = await client.PostAsJsonAsync(
             "/api/users",
-            new { email = "bad.role@local.test", password = "BadRolePa1!" });
+            new { email = "bad.role@local.test", password = "BadRolePa1!", managerUserId = mgrId });
         var created = (await create.Content.ReadFromJsonAsync<UserDto>())!;
 
         var res = await client.PatchAsJsonAsync(
@@ -312,9 +379,10 @@ public class UsersAdminTests
         var client = factory.CreateClient();
         var adminToken = await AdminTokenAsync(client);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+        var mgrIdIc = await ApiTestUsers.SeededDevManagerIdAsync(client);
         await client.PostAsJsonAsync(
             "/api/users",
-            new { email = "ic.patch@local.test", password = "IcPatchP1!" });
+            new { email = "ic.patch@local.test", password = "IcPatchP1!", managerUserId = mgrIdIc });
         var target = await client.GetFromJsonAsync<List<UserDto>>("/api/users");
         var adminId = target!.First(u => u.Email == "admin@local.test").Id;
 
@@ -340,9 +408,10 @@ public class UsersAdminTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        var mgrId = await ApiTestUsers.SeededDevManagerIdAsync(client);
         var create = await client.PostAsJsonAsync(
             "/api/users",
-            new { email = "promote.admin@local.test", password = "PromoteAd1!" });
+            new { email = "promote.admin@local.test", password = "PromoteAd1!", managerUserId = mgrId });
         var created = (await create.Content.ReadFromJsonAsync<UserDto>())!;
         Assert.Equal("IC", created.Role);
 
@@ -377,12 +446,16 @@ public class UsersAdminTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        var mgrId = await ApiTestUsers.SeededDevManagerIdAsync(client);
         var create = await client.PostAsJsonAsync(
             "/api/users",
-            new { email = "me.role@local.test", password = "MeRolePa1!" });
+            new { email = "me.role@local.test", password = "MeRolePa1!", managerUserId = mgrId });
         var created = (await create.Content.ReadFromJsonAsync<UserDto>())!;
 
-        await client.PatchAsJsonAsync($"/api/users/{created.Id}", new { role = "Manager" });
+        var partnerId = await ApiTestUsers.SeededDevPartnerIdAsync(client);
+        await client.PatchAsJsonAsync(
+            $"/api/users/{created.Id}",
+            new { role = "Manager", assignPartner = true, partnerUserId = partnerId });
 
         client.DefaultRequestHeaders.Authorization = null;
         var login = await client.PostAsJsonAsync(
@@ -399,7 +472,7 @@ public class UsersAdminTests
 
     private sealed record AuthErrorDto(string Message);
 
-    private sealed record UserDto(Guid Id, string Email, string Role, bool IsActive, Guid? ManagerUserId = null);
+    private sealed record UserDto(Guid Id, string Email, string Role, bool IsActive, Guid? ManagerUserId = null, Guid? PartnerUserId = null);
 
     private sealed record MeDto(Guid Id, string Email, string Role, bool IsActive);
 }

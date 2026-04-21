@@ -22,6 +22,13 @@ public class UpdateUserRequest
 
     public Guid? ManagerUserId { get; init; }
 
+    /// <summary>When true, <see cref="PartnerUserId"/> is applied (including null to clear when allowed).</summary>
+    public bool? AssignPartner { get; init; }
+
+    public Guid? PartnerUserId { get; init; }
+
+    public bool ClearPartner { get; init; }
+
     /// <summary>When provided, replaces all user skills with this list.</summary>
     public List<string>? Skills { get; init; }
 }
