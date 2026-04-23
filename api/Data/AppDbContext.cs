@@ -18,6 +18,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ClientQuote> ClientQuotes => Set<ClientQuote>();
     public DbSet<ProjectTask> ProjectTasks => Set<ProjectTask>();
     public DbSet<PtoRequest> PtoRequests => Set<PtoRequest>();
+    public DbSet<IssuedInvoice> IssuedInvoices => Set<IssuedInvoice>();
+    public DbSet<IssuedInvoiceLine> IssuedInvoiceLines => Set<IssuedInvoiceLine>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -247,6 +249,44 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .WithMany()
                 .HasForeignKey(x => x.CreatedByUserId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<IssuedInvoice>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.IssueNumber).IsUnique();
+            e.HasIndex(x => new { x.ProjectId, x.IssuedAtUtc });
+            e.Property(x => x.IssueNumber).HasMaxLength(40);
+            e.Property(x => x.Kind).HasConversion<string>().HasMaxLength(32);
+            e.HasOne(x => x.Project)
+                .WithMany()
+                .HasForeignKey(x => x.ProjectId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Payee)
+                .WithMany()
+                .HasForeignKey(x => x.PayeeUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.IssuedBy)
+                .WithMany()
+                .HasForeignKey(x => x.IssuedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.Property(x => x.TotalAmount).HasPrecision(18, 2);
+        });
+
+        modelBuilder.Entity<IssuedInvoiceLine>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.IssuedInvoiceId);
+            e.Property(x => x.Description).HasMaxLength(500);
+            e.Property(x => x.Amount).HasPrecision(18, 2);
+            e.HasOne(x => x.IssuedInvoice)
+                .WithMany(i => i.Lines)
+                .HasForeignKey(x => x.IssuedInvoiceId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.ExpenseEntry)
+                .WithMany()
+                .HasForeignKey(x => x.ExpenseEntryId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
     }
 }

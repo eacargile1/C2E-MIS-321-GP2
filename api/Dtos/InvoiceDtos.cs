@@ -35,3 +35,43 @@ public sealed class DraftInvoiceResponse
     public required decimal Subtotal { get; init; }
     public required string Note { get; init; }
 }
+
+public sealed class IssueProjectInvoiceRequest
+{
+    [Required]
+    public Guid ProjectId { get; init; }
+
+    [Required]
+    public required string PeriodStart { get; init; }
+
+    [Required]
+    public required string PeriodEnd { get; init; }
+}
+
+public sealed class IssueProjectInvoiceResponse
+{
+    public required Guid InvoiceId { get; init; }
+    public required string IssueNumber { get; init; }
+    public required decimal TotalAmount { get; init; }
+    public int LineCount { get; init; }
+}
+
+public sealed class IssuePayoutInvoicesResponse
+{
+    public required IReadOnlyList<IssueProjectInvoiceResponse> Invoices { get; init; }
+}
+
+public sealed class IssuedInvoiceListItemDto
+{
+    public required Guid Id { get; init; }
+    public required string Kind { get; init; }
+    public required Guid ProjectId { get; init; }
+    public required string ProjectName { get; init; }
+    public required string ClientName { get; init; }
+    public string? PayeeEmail { get; init; }
+    public required string PeriodStart { get; init; }
+    public required string PeriodEnd { get; init; }
+    public required string IssueNumber { get; init; }
+    public DateTime IssuedAtUtc { get; init; }
+    public decimal TotalAmount { get; init; }
+}

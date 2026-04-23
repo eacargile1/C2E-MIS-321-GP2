@@ -38,6 +38,8 @@ builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IStaffingRecommendationService, StaffingRecommendationService>();
 builder.Services.AddHttpClient(nameof(OpenAiStaffingReranker));
 builder.Services.AddScoped<IOpenAiStaffingReranker, OpenAiStaffingReranker>();
+builder.Services.AddHttpClient(nameof(FinanceExpenseAiNarrativeService));
+builder.Services.AddScoped<IFinanceExpenseAiNarrativeService, FinanceExpenseAiNarrativeService>();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(o =>
@@ -143,7 +145,9 @@ await using (var scope = app.Services.CreateAsyncScope())
 
     if (env.IsDevelopment() && cfg.GetValue("Seed:EnsureDevRoleAccounts", false))
         await DevRoleAccountsSeed.EnsureAdditionalDevRoleUsersAsync(db, hasher, seedPassword);
-    if (env.IsDevelopment() && cfg.GetValue("Seed:DemoFinanceData", false))
+    if (env.IsDevelopment() && cfg.GetValue("Seed:DemoScenario", false))
+        await DemoScenarioSeed.EnsureAsync(db, hasher);
+    else if (env.IsDevelopment() && cfg.GetValue("Seed:DemoFinanceData", false))
         await DemoFinanceSeed.EnsureAsync(db, hasher);
 }
 

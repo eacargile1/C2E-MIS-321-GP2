@@ -2,12 +2,20 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   createQuote,
   downloadExpenseInvoice,
+  fetchFinanceExpenseNarrative,
+  issueProjectApprovedExpensesInvoice,
+  issueProjectPayoutInvoicesByUser,
   listClients,
   listFinanceExpenseLedger,
+  listIssuedInvoices,
+  listProjects,
   listQuotes,
+  openIssuedInvoicePrint,
   type ClientRow,
   type ExpenseRow,
+  type IssuedInvoiceListItem,
   type MeProfile,
+  type ProjectRow,
   type QuoteRow,
 } from '../api'
 import '../App.css'
@@ -42,6 +50,22 @@ export default function FinancePage({ token, profile }: { token: string; profile
   const [qValid, setQValid] = useState('')
   const [qStatus, setQStatus] = useState<'Draft' | 'Sent'>('Draft')
 
+  const [invProjects, setInvProjects] = useState<ProjectRow[]>([])
+  const [invProjectId, setInvProjectId] = useState('')
+  const defaultPeriod = useMemo(() => {
+    const t = new Date()
+    const y = t.getFullYear()
+    const m = String(t.getMonth() + 1).padStart(2, '0')
+    const start = `${y}-${m}-01`
+    const end = t.toISOString().slice(0, 10)
+    return { start, end }
+  }, [])
+  const [invStart, setInvStart] = useState(defaultPeriod.start)
+  const [invEnd, setInvEnd] = useState(defaultPeriod.end)
+  const [issued, setIssued] = useState<IssuedInvoiceListItem[]>([])
+  const [aiNarrative, setAiNarrative] = useState('')
+  const [aiSource, setAiSource] = useState('')
+
   const pushToast = useCallback((message: string, variant: 'ok' | 'err') => {
     const id = Date.now()
     setToasts((t) => [...t, { id, message, variant }])
@@ -65,14 +89,18 @@ export default function FinancePage({ token, profile }: { token: string; profile
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      const [led, qt, cl] = await Promise.all([
+      const [led, qt, cl, pr, iss] = await Promise.all([
         listFinanceExpenseLedger(token),
         listQuotes(token),
         listClients(token, undefined, true),
+        listProjects(token),
+        listIssuedInvoices(token),
       ])
       setLedger(led)
       setQuotes(qt)
       setClients(cl.filter((c) => c.isActive))
+      setInvProjects(pr)
+      setIssued(iss)
     } catch (e) {
       pushToast(e instanceof Error ? e.message : 'Load failed', 'err')
     } finally {
@@ -150,6 +178,75 @@ export default function FinancePage({ token, profile }: { token: string; profile
     if (c?.defaultBillingRate != null && qRate === '') setQRate(String(c.defaultBillingRate))
   }, [clients, qClientId, qRate])
 
+  useEffect(() => {
+    if (invProjectId || invProjects.length === 0) return
+    setInvProjectId(invProjects[0].id)
+  }, [invProjectId, invProjects])
+
+  const onIssueProjectExpenses = async () => {
+    if (!invProjectId) {
+      pushToast('Select a project', 'err')
+      return
+    }
+    setBusy(true)
+    try {
+      const r = await issueProjectApprovedExpensesInvoice(token, {
+        projectId: invProjectId,
+        periodStart: invStart,
+        periodEnd: invEnd,
+      })
+      pushToast(`Issued ${r.issueNumber} (${r.lineCount} lines, ${usd.format(r.totalAmount)})`, 'ok')
+      setIssued(await listIssuedInvoices(token))
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : 'Issue failed', 'err')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const onIssuePayouts = async () => {
+    if (!invProjectId) {
+      pushToast('Select a project', 'err')
+      return
+    }
+    setBusy(true)
+    try {
+      const list = await issueProjectPayoutInvoicesByUser(token, {
+        projectId: invProjectId,
+        periodStart: invStart,
+        periodEnd: invEnd,
+      })
+      pushToast(`Created ${list.length} payout invoice(s).`, 'ok')
+      setIssued(await listIssuedInvoices(token))
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : 'Issue failed', 'err')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const onAiNarrative = async () => {
+    if (!invProjectId) {
+      pushToast('Select a project', 'err')
+      return
+    }
+    setBusy(true)
+    try {
+      const r = await fetchFinanceExpenseNarrative(token, {
+        projectId: invProjectId,
+        periodStart: invStart,
+        periodEnd: invEnd,
+      })
+      setAiNarrative(r.narrative)
+      setAiSource(r.source)
+      pushToast(r.source === 'openai' ? 'Narrative from OpenAI' : 'Heuristic narrative (add API key for OpenAI)', 'ok')
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : 'AI narrative failed', 'err')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="admin-wrap finance-hub">
       <div className="card admin-card">
@@ -180,6 +277,103 @@ export default function FinancePage({ token, profile }: { token: string; profile
           <p className="kpi-value">{loading ? '--' : usd.format(totals.quotePipeline)}</p>
         </article>
       </section>
+
+      <div className="card admin-card">
+        <h2 className="admin-h2">Issued invoices &amp; AI expense memo</h2>
+        <p className="admin-hint">
+          Issue documents from <strong>approved</strong> expenses that match the catalog project name and client (same
+          rules as project expense insights). You must be <strong>assigned finance</strong> on the project (or Admin).
+        </p>
+        <div className="form admin-form-grid" style={{ marginTop: '1rem' }}>
+          <label className="field">
+            <span>Project</span>
+            <select value={invProjectId} onChange={(e) => setInvProjectId(e.target.value)} disabled={invProjects.length === 0}>
+              {invProjects.length === 0 ? <option value="">No projects visible</option> : null}
+              {invProjects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.clientName} — {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Period start</span>
+            <input type="date" value={invStart} onChange={(e) => setInvStart(e.target.value)} />
+          </label>
+          <label className="field">
+            <span>Period end</span>
+            <input type="date" value={invEnd} onChange={(e) => setInvEnd(e.target.value)} />
+          </label>
+          <div className="field" style={{ alignSelf: 'end', display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <button type="button" className="btn primary" disabled={busy || !invProjectId} onClick={() => void onIssueProjectExpenses()}>
+              Issue project invoice
+            </button>
+            <button type="button" className="btn secondary" disabled={busy || !invProjectId} onClick={() => void onIssuePayouts()}>
+              Issue per-user payout invoices
+            </button>
+            <button type="button" className="btn secondary" disabled={busy || !invProjectId} onClick={() => void onAiNarrative()}>
+              AI expense narrative
+            </button>
+          </div>
+        </div>
+        {aiNarrative ? (
+          <div style={{ marginTop: '1rem' }}>
+            <p className="admin-hint" style={{ marginBottom: '0.35rem' }}>
+              Source: <strong>{aiSource}</strong> — aggregates only; review before external use.
+            </p>
+            <p style={{ whiteSpace: 'pre-wrap' }}>{aiNarrative}</p>
+          </div>
+        ) : null}
+        {issued.length === 0 ? (
+          <p className="admin-hint" style={{ marginTop: '1rem' }}>
+            No issued invoices yet.
+          </p>
+        ) : (
+          <div className="table-scroll" style={{ marginTop: '1rem' }}>
+            <table className="admin-table fin-table">
+              <thead>
+                <tr>
+                  <th>Number</th>
+                  <th>Kind</th>
+                  <th>Client / Project</th>
+                  <th>Payee</th>
+                  <th>Period</th>
+                  <th>Total</th>
+                  <th>Issued (UTC)</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {issued.map((x) => (
+                  <tr key={x.id}>
+                    <td className="fin-mono">{x.issueNumber}</td>
+                    <td>{x.kind}</td>
+                    <td>
+                      {x.clientName} / {x.projectName}
+                    </td>
+                    <td>{x.payeeEmail ?? '—'}</td>
+                    <td className="fin-mono">
+                      {x.periodStart} → {x.periodEnd}
+                    </td>
+                    <td className="fin-num">{usd.format(x.totalAmount)}</td>
+                    <td className="admin-hint">{x.issuedAtUtc.slice(0, 19)}Z</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn secondary btn-sm"
+                        disabled={busy}
+                        onClick={() => void openIssuedInvoicePrint(token, x.id).catch((e) => pushToast(e instanceof Error ? e.message : 'Print failed', 'err'))}
+                      >
+                        Print
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       <div className="card admin-card">
         <div className="admin-table-head">

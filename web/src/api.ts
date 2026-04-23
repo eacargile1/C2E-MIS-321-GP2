@@ -1167,6 +1167,151 @@ export async function listFinanceExpenseLedger(token: string): Promise<ExpenseRo
   return data.map(assertExpense)
 }
 
+export type IssuedInvoiceListItem = {
+  id: string
+  kind: string
+  projectId: string
+  projectName: string
+  clientName: string
+  payeeEmail: string | null
+  periodStart: string
+  periodEnd: string
+  issueNumber: string
+  issuedAtUtc: string
+  totalAmount: number
+}
+
+export type IssueInvoiceResult = {
+  invoiceId: string
+  issueNumber: string
+  totalAmount: number
+  lineCount: number
+}
+
+function assertIssuedInvoiceListItem(x: unknown): IssuedInvoiceListItem {
+  const r = x as Record<string, unknown>
+  if (
+    typeof r.id !== 'string' ||
+    typeof r.kind !== 'string' ||
+    typeof r.projectId !== 'string' ||
+    typeof r.projectName !== 'string' ||
+    typeof r.clientName !== 'string' ||
+    typeof r.periodStart !== 'string' ||
+    typeof r.periodEnd !== 'string' ||
+    typeof r.issueNumber !== 'string' ||
+    typeof r.issuedAtUtc !== 'string' ||
+    typeof r.totalAmount !== 'number'
+  )
+    throw new Error('Could not load issued invoices')
+  return {
+    id: r.id,
+    kind: r.kind,
+    projectId: r.projectId,
+    projectName: r.projectName,
+    clientName: r.clientName,
+    payeeEmail: typeof r.payeeEmail === 'string' ? r.payeeEmail : null,
+    periodStart: r.periodStart,
+    periodEnd: r.periodEnd,
+    issueNumber: r.issueNumber,
+    issuedAtUtc: r.issuedAtUtc,
+    totalAmount: r.totalAmount,
+  }
+}
+
+function assertIssueInvoiceResult(x: unknown): IssueInvoiceResult {
+  const r = x as Record<string, unknown>
+  if (
+    typeof r.invoiceId !== 'string' ||
+    typeof r.issueNumber !== 'string' ||
+    typeof r.totalAmount !== 'number' ||
+    typeof r.lineCount !== 'number'
+  )
+    throw new Error('Could not issue invoice')
+  return {
+    invoiceId: r.invoiceId,
+    issueNumber: r.issueNumber,
+    totalAmount: r.totalAmount,
+    lineCount: r.lineCount,
+  }
+}
+
+export async function listIssuedInvoices(token: string, projectId?: string): Promise<IssuedInvoiceListItem[]> {
+  const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''
+  const res = await fetch(`${base}/api/invoices/issued${qs}`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load issued invoices'))
+  const data = (await res.json()) as unknown
+  if (!Array.isArray(data)) throw new Error('Could not load issued invoices')
+  return data.map(assertIssuedInvoiceListItem)
+}
+
+export async function issueProjectApprovedExpensesInvoice(
+  token: string,
+  body: { projectId: string; periodStart: string; periodEnd: string },
+): Promise<IssueInvoiceResult> {
+  const res = await fetch(`${base}/api/invoices/issue-project-approved-expenses`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({
+      projectId: body.projectId,
+      periodStart: body.periodStart,
+      periodEnd: body.periodEnd,
+    }),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not issue invoice'))
+  return assertIssueInvoiceResult(await res.json())
+}
+
+export async function issueProjectPayoutInvoicesByUser(
+  token: string,
+  body: { projectId: string; periodStart: string; periodEnd: string },
+): Promise<IssueInvoiceResult[]> {
+  const res = await fetch(`${base}/api/invoices/issue-project-payouts-by-user`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({
+      projectId: body.projectId,
+      periodStart: body.periodStart,
+      periodEnd: body.periodEnd,
+    }),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not issue payout invoices'))
+  const data = (await res.json()) as Record<string, unknown>
+  const inv = data.invoices
+  if (!Array.isArray(inv)) throw new Error('Could not issue payout invoices')
+  return inv.map(assertIssueInvoiceResult)
+}
+
+/** Opens printable HTML (use browser Print / Save as PDF). */
+export async function openIssuedInvoicePrint(token: string, invoiceId: string): Promise<void> {
+  const res = await fetch(`${base}/api/invoices/${encodeURIComponent(invoiceId)}/print`, {
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not load invoice for print'))
+  const html = await res.text()
+  const w = window.open('', '_blank')
+  if (!w) throw new Error('Popup blocked — allow popups for print view')
+  w.document.open()
+  w.document.write(html)
+  w.document.close()
+}
+
+export type FinanceExpenseAiResponse = { narrative: string; source: string }
+
+export async function fetchFinanceExpenseNarrative(
+  token: string,
+  body: { projectId: string; periodStart: string; periodEnd: string },
+): Promise<FinanceExpenseAiResponse> {
+  const res = await fetch(`${base}/api/finance/insights/expense-narrative`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Could not build AI narrative'))
+  const r = (await res.json()) as Record<string, unknown>
+  if (typeof r.narrative !== 'string' || typeof r.source !== 'string') throw new Error('Could not build AI narrative')
+  return { narrative: r.narrative, source: r.source }
+}
+
 export type QuoteRow = {
   id: string
   clientId: string
