@@ -4,6 +4,7 @@
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>c2e-mis321-gp2-api-dev</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

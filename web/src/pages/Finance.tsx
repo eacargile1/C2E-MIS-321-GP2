@@ -1,15 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  auditFinanceLedgerAi,
   createQuote,
+  draftFinanceQuoteAi,
   downloadExpenseInvoice,
   listClients,
   listFinanceExpenseLedger,
   listQuotes,
   type ClientRow,
   type ExpenseRow,
+  type FinanceLedgerAuditResult,
+  type FinanceQuoteDraftResult,
   type MeProfile,
   type QuoteRow,
 } from '../api'
+import AiReviewPanel from '../components/AiReviewPanel'
 import '../App.css'
 
 type Toast = { id: number; message: string; variant: 'ok' | 'err' }
@@ -41,6 +46,26 @@ export default function FinancePage({ token, profile }: { token: string; profile
   const [qRate, setQRate] = useState('')
   const [qValid, setQValid] = useState('')
   const [qStatus, setQStatus] = useState<'Draft' | 'Sent'>('Draft')
+  const [qContextEmployeeEmail, setQContextEmployeeEmail] = useState('')
+
+  const [ledgerAuditEmployee, setLedgerAuditEmployee] = useState('')
+  const [ledgerAuditClient, setLedgerAuditClient] = useState('')
+  const [ledgerAuditResult, setLedgerAuditResult] = useState<FinanceLedgerAuditResult | null>(null)
+  const [ledgerAuditBusy, setLedgerAuditBusy] = useState(false)
+  const [quoteDraftResult, setQuoteDraftResult] = useState<FinanceQuoteDraftResult | null>(null)
+  const [quoteDraftBusy, setQuoteDraftBusy] = useState(false)
+
+  const ledgerEmployeeOptions = useMemo(() => {
+    const s = new Set<string>()
+    for (const r of ledger) s.add(r.userEmail)
+    return [...s].sort((a, b) => a.localeCompare(b))
+  }, [ledger])
+
+  const ledgerClientOptions = useMemo(() => {
+    const s = new Set<string>()
+    for (const r of ledger) s.add(r.client)
+    return [...s].sort((a, b) => a.localeCompare(b))
+  }, [ledger])
 
   const pushToast = useCallback((message: string, variant: 'ok' | 'err') => {
     const id = Date.now()
@@ -107,6 +132,45 @@ export default function FinancePage({ token, profile }: { token: string; profile
     const quotePipeline = quotes.reduce((s, q) => s + q.totalAmount, 0)
     return { pending, approved, rejected, quotePipeline }
   }, [ledger, quotes])
+
+  const onLedgerAudit = async () => {
+    if (!canCreateQuote) return
+    setLedgerAuditBusy(true)
+    try {
+      const r = await auditFinanceLedgerAi(token, {
+        employeeEmailContains: ledgerAuditEmployee.trim() || undefined,
+        clientNameContains: ledgerAuditClient.trim() || undefined,
+        maxRows: 100,
+      })
+      setLedgerAuditResult(r)
+    } catch (e2) {
+      pushToast(e2 instanceof Error ? e2.message : 'Ledger audit failed', 'err')
+    } finally {
+      setLedgerAuditBusy(false)
+    }
+  }
+
+  const onQuoteSuggest = async () => {
+    if (!canCreateQuote || !qClientId) return
+    setQuoteDraftBusy(true)
+    try {
+      const r = await draftFinanceQuoteAi(token, {
+        clientId: qClientId,
+        contextEmployeeEmail: qContextEmployeeEmail.trim() || undefined,
+      })
+      setQuoteDraftResult(r)
+      if (r.suggestedTitle?.trim()) setQTitle(r.suggestedTitle.trim())
+      if (r.suggestedScopeSummary?.trim()) setQScope(r.suggestedScopeSummary.trim())
+      if (r.suggestedHours != null && r.suggestedHours > 0) setQHours(String(r.suggestedHours))
+      if (r.suggestedHourlyRate != null && r.suggestedHourlyRate > 0) setQRate(String(r.suggestedHourlyRate))
+      if (r.suggestedValidThroughYmd?.trim()) setQValid(r.suggestedValidThroughYmd.trim())
+      pushToast('Quote fields updated from AI — review before Generate quote', 'ok')
+    } catch (e2) {
+      pushToast(e2 instanceof Error ? e2.message : 'Quote AI failed', 'err')
+    } finally {
+      setQuoteDraftBusy(false)
+    }
+  }
 
   const onCreateQuote = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -194,6 +258,40 @@ export default function FinancePage({ token, profile }: { token: string; profile
                 <option value="Rejected">Rejected</option>
               </select>
             </label>
+            {canCreateQuote ? (
+              <>
+                <label className="field inline">
+                  <span>AI · Employee</span>
+                  <select value={ledgerAuditEmployee} onChange={(e) => setLedgerAuditEmployee(e.target.value)}>
+                    <option value="">All</option>
+                    {ledgerEmployeeOptions.map((em) => (
+                      <option key={em} value={em}>
+                        {em}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field inline">
+                  <span>AI · Client</span>
+                  <select value={ledgerAuditClient} onChange={(e) => setLedgerAuditClient(e.target.value)}>
+                    <option value="">All</option>
+                    {ledgerClientOptions.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="btn secondary btn-sm"
+                  disabled={loading || busy || ledgerAuditBusy}
+                  onClick={() => void onLedgerAudit()}
+                >
+                  {ledgerAuditBusy ? 'Auditing…' : 'Audit ledger (AI + rules)'}
+                </button>
+              </>
+            ) : null}
             <button type="button" className="btn secondary btn-sm" onClick={() => void refresh()} disabled={loading || busy}>
               Refresh
             </button>
@@ -254,6 +352,16 @@ export default function FinancePage({ token, profile }: { token: string; profile
             </table>
           </div>
         )}
+        {ledgerAuditResult && canCreateQuote ? (
+          <AiReviewPanel
+            title={`Ledger audit · ${ledgerAuditResult.rowCount} row(s) · pending ${usd.format(ledgerAuditResult.totalPendingAmount)} · approved ${usd.format(ledgerAuditResult.totalApprovedAmount)}`}
+            usedLlm={ledgerAuditResult.usedLlm}
+            llmNote={ledgerAuditResult.llmNote}
+            insights={ledgerAuditResult.insights}
+            questions={ledgerAuditResult.summaryPoints}
+            questionsHeading="Summary / follow-ups"
+          />
+        ) : null}
       </div>
 
       <div className="finance-two-col">
@@ -313,6 +421,40 @@ export default function FinancePage({ token, profile }: { token: string; profile
                   ))}
                 </select>
               </label>
+              <label className="field">
+                <span>Context employee (optional)</span>
+                <select value={qContextEmployeeEmail} onChange={(e) => setQContextEmployeeEmail(e.target.value)}>
+                  <option value="">— None —</option>
+                  {ledgerEmployeeOptions.map((em) => (
+                    <option key={em} value={em}>
+                      {em}
+                    </option>
+                  ))}
+                </select>
+                <span className="admin-hint" style={{ marginTop: 4 }}>
+                  Pulled from people in the expense register; narrows AI context for quote text.
+                </span>
+              </label>
+              <div className="admin-header-actions" style={{ gridColumn: '1 / -1' }}>
+                <button
+                  type="button"
+                  className="btn secondary btn-sm"
+                  disabled={busy || quoteDraftBusy || !qClientId}
+                  onClick={() => void onQuoteSuggest()}
+                >
+                  {quoteDraftBusy ? 'Suggesting…' : 'Suggest quote fields (AI)'}
+                </button>
+              </div>
+              {quoteDraftResult && quoteDraftResult.reviewerChecklist.length > 0 ? (
+                <div className="admin-hint" style={{ gridColumn: '1 / -1' }}>
+                  <strong>Reviewer checklist</strong>
+                  <ul style={{ marginTop: 6, paddingLeft: '1.25rem' }}>
+                    {quoteDraftResult.reviewerChecklist.map((c, i) => (
+                      <li key={i}>{c}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
               <label className="field">
                 <span>Title</span>
                 <input

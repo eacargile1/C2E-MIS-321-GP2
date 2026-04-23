@@ -4,10 +4,13 @@ import {
   approveTimesheetWeek,
   getPendingTimesheetWeekForReview,
   rejectTimesheetWeek,
+  reviewTimesheetApproverAi,
   type MeProfile,
+  type OperationsTimesheetWeekAiReviewResult,
   type ProjectBudgetBar,
   type TimesheetPendingWeekReview,
 } from '../api'
+import AiReviewPanel from '../components/AiReviewPanel'
 import '../App.css'
 
 function isYmd(s: string) {
@@ -125,6 +128,8 @@ export default function TimesheetApprovalReview({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [approverAi, setApproverAi] = useState<OperationsTimesheetWeekAiReviewResult | null>(null)
+  const [approverAiBusy, setApproverAiBusy] = useState(false)
 
   const validParams = useMemo(
     () => userId.length > 0 && isYmd(week),
@@ -143,6 +148,7 @@ export default function TimesheetApprovalReview({
     try {
       const d = await getPendingTimesheetWeekForReview(token, userId, week)
       setData(d)
+      setApproverAi(null)
     } catch (e) {
       setData(null)
       setError(e instanceof Error ? e.message : 'Load failed')
@@ -181,6 +187,19 @@ export default function TimesheetApprovalReview({
       setError(e instanceof Error ? e.message : 'Approve failed')
     } finally {
       setBusy(false)
+    }
+  }
+
+  const onApproverAi = async () => {
+    if (!validParams) return
+    setApproverAiBusy(true)
+    try {
+      const r = await reviewTimesheetApproverAi(token, userId, week)
+      setApproverAi(r)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'AI review failed')
+    } finally {
+      setApproverAiBusy(false)
     }
   }
 
@@ -307,16 +326,35 @@ export default function TimesheetApprovalReview({
             </section>
 
             <footer className="review-actions">
-              <button type="button" className="btn primary" disabled={busy} onClick={() => void onApprove()}>
+              <button
+                type="button"
+                className="btn secondary"
+                disabled={busy || approverAiBusy}
+                onClick={() => void onApproverAi()}
+              >
+                {approverAiBusy ? 'Reviewing…' : 'Reviewer AI check'}
+              </button>
+              <button type="button" className="btn primary" disabled={busy || approverAiBusy} onClick={() => void onApprove()}>
                 Approve Week
               </button>
-              <button type="button" className="btn secondary" disabled={busy} onClick={() => void onReject()}>
+              <button type="button" className="btn secondary" disabled={busy || approverAiBusy} onClick={() => void onReject()}>
                 Reject Week
               </button>
               <button type="button" className="btn secondary btn-sm" disabled={busy} onClick={() => void load()}>
                 Refresh
               </button>
             </footer>
+            {approverAi ? (
+              <AiReviewPanel
+                title={`Approver review · ${approverAi.subjectEmail ?? data.userEmail} · week ${data.weekStart}`}
+                usedLlm={approverAi.usedLlm}
+                llmNote={approverAi.llmNote}
+                insights={approverAi.insights}
+                questions={approverAi.questionsForEmployee}
+                questionsHeading="Reviewer checklist / questions"
+                noteSuggestions={approverAi.noteSuggestions}
+              />
+            ) : null}
           </>
         ) : (
           <p className="review-muted">Nothing to show.</p>

@@ -41,6 +41,10 @@ builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IStaffingRecommendationService, StaffingRecommendationService>();
 builder.Services.AddHttpClient(nameof(OpenAiStaffingReranker));
 builder.Services.AddScoped<IOpenAiStaffingReranker, OpenAiStaffingReranker>();
+builder.Services.AddHttpClient(OperationsAiAdvisor.HttpClientName);
+builder.Services.AddScoped<IOperationsAiAdvisor, OperationsAiAdvisor>();
+builder.Services.AddHttpClient(FinanceAiAssistant.HttpClientName);
+builder.Services.AddScoped<IFinanceAiAssistant, FinanceAiAssistant>();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(o =>

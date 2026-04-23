@@ -14,15 +14,18 @@ import {
   putTimesheetWeek,
   rejectPtoRequest,
   rejectTimesheetWeek,
+  reviewTimesheetWeekAi,
   submitTimesheetWeekForApproval,
   type ClientRow,
   type MeProfile,
+  type OperationsTimesheetWeekAiReviewResult,
   type PendingTimesheetWeek,
   type ProjectRow,
   type PtoRequestRow,
   type TimesheetLine,
   type TimesheetWeekStatusPayload,
 } from '../api'
+import AiReviewPanel from '../components/AiReviewPanel'
 import {
   clampTimesheetWeekMondayYmd,
   timesheetNavMondayBounds,
@@ -153,6 +156,8 @@ export default function TimesheetWeek({
   const [ptoReason, setPtoReason] = useState('')
   const [ptoBusy, setPtoBusy] = useState(false)
   const [ptoReviewBusy, setPtoReviewBusy] = useState<string | null>(null)
+  const [timesheetAi, setTimesheetAi] = useState<OperationsTimesheetWeekAiReviewResult | null>(null)
+  const [timesheetAiBusy, setTimesheetAiBusy] = useState(false)
   const lastLoadId = useRef(0)
 
   const usesPendingWeekLock =
@@ -336,31 +341,35 @@ export default function TimesheetWeek({
   const prevWeekDisabled = loading || saving || ymdDateCompare(weekStartDate, navMinMonday) <= 0
   const nextWeekDisabled = loading || saving || ymdDateCompare(weekStartDate, navMaxMonday) >= 0
 
+  const buildTimesheetPayloadOrThrow = (): TimesheetLine[] => {
+    const filtered = lines.filter((r) => !isEmptyRow(r))
+    return filtered.map((r) => {
+      const hoursStr = r.hours.trim()
+      if (!hoursStr.length) throw new Error('Hours are required')
+      const hours = Number(hoursStr)
+      if (!Number.isFinite(hours)) throw new Error('Hours must be a number')
+      if (hours <= 0 || hours > 24) throw new Error('Hours must be > 0 and <= 24')
+      const q = hours * 4
+      const qRounded = Math.round(q)
+      if (Math.abs(q - qRounded) > 1e-9) throw new Error('Hours must be in 0.25 increments')
+      return {
+        workDate: r.workDate,
+        client: r.client.trim(),
+        project: r.project.trim(),
+        task: r.task.trim(),
+        hours,
+        isBillable: r.isBillable,
+        notes: r.notes.trim().length ? r.notes.trim() : null,
+      }
+    })
+  }
+
   const onSave = async () => {
     setSaving(true)
     try {
-      const filtered = lines.filter((r) => !isEmptyRow(r))
-      const payload: TimesheetLine[] = filtered.map((r) => {
-        const hoursStr = r.hours.trim()
-        if (!hoursStr.length) throw new Error('Hours are required')
-        const hours = Number(hoursStr)
-        if (!Number.isFinite(hours)) throw new Error('Hours must be a number')
-        if (hours <= 0 || hours > 24) throw new Error('Hours must be > 0 and <= 24')
-        const q = hours * 4
-        const qRounded = Math.round(q)
-        if (Math.abs(q - qRounded) > 1e-9) throw new Error('Hours must be in 0.25 increments')
-        return {
-          workDate: r.workDate,
-          client: r.client.trim(),
-          project: r.project.trim(),
-          task: r.task.trim(),
-          hours,
-          isBillable: r.isBillable,
-          notes: r.notes.trim().length ? r.notes.trim() : null,
-        }
-      })
-
+      const payload = buildTimesheetPayloadOrThrow()
       await putTimesheetWeek(token, weekStart, payload)
+      setTimesheetAi(null)
       pushToast('Saved', 'ok')
       await refresh()
       void refreshPendingTeamWeeks()
@@ -368,6 +377,19 @@ export default function TimesheetWeek({
       pushToast(e instanceof Error ? e.message : 'Save failed', 'err')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const onAiReviewTimesheet = async () => {
+    setTimesheetAiBusy(true)
+    try {
+      const payload = buildTimesheetPayloadOrThrow()
+      const r = await reviewTimesheetWeekAi(token, weekStart, payload)
+      setTimesheetAi(r)
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : 'AI review failed', 'err')
+    } finally {
+      setTimesheetAiBusy(false)
     }
   }
 
@@ -640,13 +662,31 @@ export default function TimesheetWeek({
               </button>
               <button
                 type="button"
+                className="btn secondary btn-sm"
+                onClick={() => void onAiReviewTimesheet()}
+                disabled={saving || weekLockedPending || timesheetAiBusy || loading}
+              >
+                {timesheetAiBusy ? 'Reviewing…' : 'Review Week (AI + Rules)'}
+              </button>
+              <button
+                type="button"
                 className="btn primary btn-sm"
                 onClick={() => void onSave()}
-                disabled={saving || weekLockedPending}
+                disabled={saving || weekLockedPending || timesheetAiBusy}
               >
                 {saving ? 'Saving…' : 'Save'}
               </button>
             </div>
+            {timesheetAi ? (
+              <AiReviewPanel
+                title={`Pre-submit review · week total ${timesheetAi.weekTotalHours.toFixed(2)}h (draft)`}
+                usedLlm={timesheetAi.usedLlm}
+                llmNote={timesheetAi.llmNote}
+                insights={timesheetAi.insights}
+                questions={timesheetAi.questionsForEmployee}
+                noteSuggestions={timesheetAi.noteSuggestions}
+              />
+            ) : null}
           </>
         )}
       </div>
