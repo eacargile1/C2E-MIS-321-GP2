@@ -8,6 +8,7 @@ import {
   listClients,
   listFinanceExpenseLedger,
   listIssuedInvoices,
+  listProjectStaffingUsers,
   listProjects,
   listQuotes,
   openIssuedInvoicePrint,
@@ -16,6 +17,7 @@ import {
   type IssuedInvoiceListItem,
   type MeProfile,
   type ProjectRow,
+  type ProjectStaffingUserRow,
   type QuoteRow,
 } from '../api'
 import '../App.css'
@@ -23,6 +25,12 @@ import '../App.css'
 type Toast = { id: number; message: string; variant: 'ok' | 'err' }
 const TOAST_MS = 4000
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
+
+function addDaysIso(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
+}
 
 function statusClass(status: string) {
   const s = status.toLowerCase()
@@ -43,12 +51,15 @@ export default function FinancePage({ token, profile }: { token: string; profile
   const [toasts, setToasts] = useState<Toast[]>([])
 
   const [qClientId, setQClientId] = useState('')
+  const [qProjectId, setQProjectId] = useState('')
+  const [qStaffUserId, setQStaffUserId] = useState('')
   const [qTitle, setQTitle] = useState('')
   const [qScope, setQScope] = useState('')
   const [qHours, setQHours] = useState('40')
   const [qRate, setQRate] = useState('')
   const [qValid, setQValid] = useState('')
   const [qStatus, setQStatus] = useState<'Draft' | 'Sent'>('Draft')
+  const [staffUsers, setStaffUsers] = useState<ProjectStaffingUserRow[]>([])
 
   const [invProjects, setInvProjects] = useState<ProjectRow[]>([])
   const [invProjectId, setInvProjectId] = useState('')
@@ -89,18 +100,20 @@ export default function FinancePage({ token, profile }: { token: string; profile
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      const [led, qt, cl, pr, iss] = await Promise.all([
+      const [led, qt, cl, pr, iss, staff] = await Promise.all([
         listFinanceExpenseLedger(token),
         listQuotes(token),
         listClients(token, undefined, true),
         listProjects(token),
         listIssuedInvoices(token),
+        listProjectStaffingUsers(token),
       ])
       setLedger(led)
       setQuotes(qt)
       setClients(cl.filter((c) => c.isActive))
       setInvProjects(pr)
       setIssued(iss)
+      setStaffUsers(staff)
     } catch (e) {
       pushToast(e instanceof Error ? e.message : 'Load failed', 'err')
     } finally {
@@ -112,11 +125,115 @@ export default function FinancePage({ token, profile }: { token: string; profile
     void refresh()
   }, [refresh])
 
+  const quoteClients = useMemo(() => {
+    if (profile.role !== 'Finance') return clients
+    return clients.filter((c) => c.financePortfolioMember === true)
+  }, [clients, profile.role])
+
   useEffect(() => {
-    if (qClientId || clients.length === 0) return
-    const first = clients.find((c) => c.isActive) ?? clients[0]
+    if (qClientId || quoteClients.length === 0) return
+    const first = quoteClients.find((c) => c.isActive) ?? quoteClients[0]
     if (first) setQClientId(first.id)
-  }, [clients, qClientId])
+  }, [quoteClients, qClientId])
+
+  useEffect(() => {
+    if (profile.role !== 'Finance') return
+    if (!qClientId) return
+    if (!quoteClients.some((c) => c.id === qClientId)) setQClientId('')
+  }, [profile.role, qClientId, quoteClients])
+
+  const selectedClient = useMemo(
+    () => clients.find((c) => c.id === qClientId) ?? null,
+    [clients, qClientId],
+  )
+
+  /** Expense register rows for the quote client (string match on client name). */
+  const ledgerRowsForQuoteClient = useMemo(() => {
+    const name = selectedClient?.name
+    if (!name) return []
+    return ledger.filter((r) => r.client === name)
+  }, [ledger, selectedClient?.name])
+
+  const quoteExpenseSnapshot = useMemo(() => {
+    let pending = 0
+    let approved = 0
+    let rejected = 0
+    let pendingAmt = 0
+    let approvedAmt = 0
+    for (const r of ledgerRowsForQuoteClient) {
+      if (r.status === 'Pending') {
+        pending++
+        pendingAmt += r.amount
+      } else if (r.status === 'Approved') {
+        approved++
+        approvedAmt += r.amount
+      } else if (r.status === 'Rejected') {
+        rejected++
+      }
+    }
+    return { pending, approved, rejected, pendingAmt, approvedAmt }
+  }, [ledgerRowsForQuoteClient])
+
+  const projectsForQuoteClient = useMemo(
+    () => invProjects.filter((p) => p.clientId === qClientId && p.isActive),
+    [invProjects, qClientId],
+  )
+
+  const projectsForStaffFilter = useMemo(() => {
+    if (!qStaffUserId) return projectsForQuoteClient
+    return projectsForQuoteClient.filter((p) => (p.teamMemberUserIds ?? []).includes(qStaffUserId))
+  }, [projectsForQuoteClient, qStaffUserId])
+
+  useEffect(() => {
+    if (!qProjectId) return
+    const pr = invProjects.find((p) => p.id === qProjectId)
+    if (!pr || pr.clientId !== qClientId) setQProjectId('')
+    else if (!projectsForStaffFilter.some((p) => p.id === qProjectId)) setQProjectId('')
+  }, [qClientId, qProjectId, invProjects, projectsForStaffFilter])
+
+  useEffect(() => {
+    if (!selectedClient) return
+    if (selectedClient.defaultBillingRate != null)
+      setQRate(String(selectedClient.defaultBillingRate))
+    else setQRate('')
+    setQValid((v) => (v.trim() === '' ? addDaysIso(60) : v))
+    setQTitle((t) => (t.trim() === '' ? `Fixed-fee quote · ${selectedClient.name}` : t))
+  }, [selectedClient?.id, selectedClient?.name, selectedClient?.defaultBillingRate])
+
+  const applyProjectPrefill = useCallback(
+    (projectId: string) => {
+      setQProjectId(projectId)
+      if (!projectId) return
+      const pr = invProjects.find((p) => p.id === projectId)
+      if (!pr) return
+      setQClientId(pr.clientId)
+      const c = clients.find((cl) => cl.id === pr.clientId)
+      const rate = c?.defaultBillingRate
+      if (rate != null && rate > 0) {
+        setQRate(String(rate))
+        const rawHrs = pr.budgetAmount / rate
+        const rounded = Math.round(rawHrs / 8) * 8
+        setQHours(String(Math.min(1920, Math.max(8, rounded || 40))))
+      } else {
+        setQHours('40')
+      }
+      const staffLine =
+        qStaffUserId !== ''
+          ? (() => {
+              const u = staffUsers.find((s) => s.id === qStaffUserId)
+              return u
+                ? `\nPrimary contributor context: ${u.displayName} (${u.email}, ${u.role}).`
+                : ''
+            })()
+          : ''
+      setQTitle(`Fixed-fee quote · ${pr.name}`)
+      setQScope(
+        `Engagement: ${pr.name} (${pr.clientName}). Budget envelope: ${usd.format(pr.budgetAmount)}.${staffLine}\n\nAdjust hours, rate, and text to match the negotiated SOW.`,
+      )
+      setQValid((v) => (v.trim() === '' ? addDaysIso(60) : v))
+    },
+    [clients, invProjects, qStaffUserId, staffUsers],
+  )
 
   const filteredLedger = useMemo(() => {
     if (statusFilter === 'All') return ledger
@@ -135,6 +252,24 @@ export default function FinancePage({ token, profile }: { token: string; profile
     const quotePipeline = quotes.reduce((s, q) => s + q.totalAmount, 0)
     return { pending, approved, rejected, quotePipeline }
   }, [ledger, quotes])
+
+  const fillHoursFromApprovedRegister = useCallback(() => {
+    const rate = Number(qRate)
+    if (!Number.isFinite(rate) || rate <= 0) {
+      pushToast('Set a positive hourly rate first', 'err')
+      return
+    }
+    if (quoteExpenseSnapshot.approvedAmt <= 0) {
+      pushToast('No approved expense total for this client in the register', 'err')
+      return
+    }
+    const hrs = Math.max(0.5, Math.round((quoteExpenseSnapshot.approvedAmt / rate) * 10) / 10)
+    setQHours(String(hrs))
+    setQScope((s) => {
+      const note = `\n\n(Draft hours from approved register: ${usd.format(quoteExpenseSnapshot.approvedAmt)} ÷ ${usd.format(rate)}/hr.)`
+      return s.includes('Draft hours from approved register') ? s : s.trim() + note
+    })
+  }, [pushToast, qRate, quoteExpenseSnapshot.approvedAmt])
 
   const onCreateQuote = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -163,6 +298,8 @@ export default function FinancePage({ token, profile }: { token: string; profile
       setQRate('')
       setQValid('')
       setQStatus('Draft')
+      setQProjectId('')
+      setQStaffUserId('')
       pushToast('Quote created', 'ok')
       await refresh()
     } catch (e2) {
@@ -248,7 +385,7 @@ export default function FinancePage({ token, profile }: { token: string; profile
   }
 
   return (
-    <div className="admin-wrap finance-hub">
+    <div className="admin-wrap finance-hub finance-hub-page">
       <div className="card admin-card">
         <h1 className="title admin-title">Finance</h1>
         <p className="subtitle admin-sub">
@@ -259,7 +396,7 @@ export default function FinancePage({ token, profile }: { token: string; profile
         </p>
       </div>
 
-      <section className="dashboard-kpis">
+      <section className="dashboard-kpis finance-kpis">
         <article className="card admin-card kpi-card">
           <p className="kpi-label">Pending Expenses</p>
           <p className="kpi-value">{loading ? '--' : usd.format(totals.pending)}</p>
@@ -284,7 +421,7 @@ export default function FinancePage({ token, profile }: { token: string; profile
           Issue documents from <strong>approved</strong> expenses that match the catalog project name and client (same
           rules as project expense insights). You must be <strong>assigned finance</strong> on the project (or Admin).
         </p>
-        <div className="form admin-form-grid" style={{ marginTop: '1rem' }}>
+        <div className="form admin-form-grid finance-invoice-row" style={{ marginTop: '1rem' }}>
           <label className="field">
             <span>Project</span>
             <select value={invProjectId} onChange={(e) => setInvProjectId(e.target.value)} disabled={invProjects.length === 0}>
@@ -450,8 +587,8 @@ export default function FinancePage({ token, profile }: { token: string; profile
         )}
       </div>
 
-      <div className="finance-two-col">
-        <div className="card admin-card">
+      <div className="finance-quotes-layout">
+        <div className="card admin-card finance-quotes-list">
           <h2 className="admin-h2">Client Quotes</h2>
           <p className="admin-hint">Fixed-fee style quotes from estimated hours × rate (snapshot at creation).</p>
           {quotes.length === 0 ? (
@@ -493,20 +630,118 @@ export default function FinancePage({ token, profile }: { token: string; profile
         </div>
 
         {canCreateQuote ? (
-          <div className="card admin-card">
+          <div className="card admin-card finance-quote-editor">
             <h2 className="admin-h2">New quote</h2>
-            <form className="form admin-form-grid" onSubmit={(e) => void onCreateQuote(e)}>
+            <p className="admin-hint finance-quote-lede">
+              {profile.role === 'Finance' ? (
+                <>
+                  Client list is limited to accounts where you are the rostered finance lead or assigned finance on an
+                  active project. Rate and validity default from the client; optionally narrow by team member or pre-fill
+                  from a project.
+                </>
+              ) : (
+                <>
+                  Pick a client — hourly rate and quote validity default from the client record. Optionally narrow by
+                  team member and pre-fill from an active project (hours estimated from budget ÷ rate). Everything
+                  stays editable.
+                </>
+              )}
+            </p>
+            {profile.role === 'Finance' && quoteClients.length === 0 ? (
+              <p className="admin-hint" style={{ marginTop: 8 }}>
+                No finance portfolio yet — ask a Partner to assign you as finance on a new client or on a project.
+              </p>
+            ) : null}
+            <form className="form finance-quote-form" onSubmit={(e) => void onCreateQuote(e)}>
               <label className="field">
                 <span>Client</span>
-                <select value={qClientId} onChange={(e) => setQClientId(e.target.value)} required>
-                  {clients.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                      {c.defaultBillingRate != null ? ` · ${usd.format(c.defaultBillingRate)}/hr` : ''}
+                <select
+                  value={qClientId}
+                  onChange={(e) => {
+                    setQClientId(e.target.value)
+                    setQProjectId('')
+                  }}
+                  required
+                >
+                  {quoteClients.length === 0 ? (
+                    <option value="">—</option>
+                  ) : (
+                    quoteClients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                        {c.defaultBillingRate != null ? ` · ${usd.format(c.defaultBillingRate)}/hr` : ''}
+                      </option>
+                    ))
+                  )}
+                </select>
+                {selectedClient?.defaultBillingRate == null ? (
+                  <span className="admin-hint">No default billing rate on file — enter rate manually.</span>
+                ) : null}
+              </label>
+              <label className="field">
+                <span>Team member (optional)</span>
+                <select
+                  value={qStaffUserId}
+                  onChange={(e) => {
+                    setQStaffUserId(e.target.value)
+                    setQProjectId('')
+                  }}
+                >
+                  <option value="">— Any —</option>
+                  {[...staffUsers]
+                    .sort((a, b) => {
+                      if (a.role === 'IC' && b.role !== 'IC') return -1
+                      if (b.role === 'IC' && a.role !== 'IC') return 1
+                      return a.displayName.localeCompare(b.displayName)
+                    })
+                    .map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.displayName} · {u.role}
+                      </option>
+                    ))}
+                </select>
+                <span className="admin-hint">Filters the project list to engagements that include this person.</span>
+              </label>
+              <label className="field finance-field-full">
+                <span>Pre-fill from project (optional)</span>
+                <select
+                  value={qProjectId}
+                  onChange={(e) => void applyProjectPrefill(e.target.value)}
+                  disabled={projectsForStaffFilter.length === 0}
+                >
+                  <option value="">— None —</option>
+                  {projectsForStaffFilter.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} · budget {usd.format(p.budgetAmount)}
                     </option>
                   ))}
                 </select>
+                {projectsForQuoteClient.length === 0 ? (
+                  <span className="admin-hint">No active projects for this client yet.</span>
+                ) : qStaffUserId && projectsForStaffFilter.length === 0 ? (
+                  <span className="admin-hint">No projects for this client include the selected team member.</span>
+                ) : null}
               </label>
+              {selectedClient ? (
+                <div className="admin-hint finance-quote-snapshot finance-field-full">
+                  <strong>Expense register ({selectedClient.name}):</strong>{' '}
+                  {quoteExpenseSnapshot.approved} approved ({usd.format(quoteExpenseSnapshot.approvedAmt)}),{' '}
+                  {quoteExpenseSnapshot.pending} pending ({usd.format(quoteExpenseSnapshot.pendingAmt)}),{' '}
+                  {quoteExpenseSnapshot.rejected} rejected — for context when pricing recovery into fixed fees.
+                  {quoteExpenseSnapshot.approvedAmt > 0 ? (
+                    <span style={{ display: 'block', marginTop: 8 }}>
+                      <button
+                        type="button"
+                        className="btn secondary btn-sm"
+                        disabled={busy}
+                        onClick={() => fillHoursFromApprovedRegister()}
+                      >
+                        Set hours from approved register
+                      </button>
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
               <label className="field">
                 <span>Title</span>
                 <input
@@ -516,7 +751,7 @@ export default function FinancePage({ token, profile }: { token: string; profile
                   required
                 />
               </label>
-              <label className="field" style={{ gridColumn: '1 / -1' }}>
+              <label className="field finance-field-full">
                 <span>Scope summary</span>
                 <textarea
                   className="fin-textarea"
@@ -551,9 +786,11 @@ export default function FinancePage({ token, profile }: { token: string; profile
                   <option value="Sent">Sent</option>
                 </select>
               </label>
-              <button type="submit" className="btn primary" disabled={busy || clients.length === 0}>
-                Generate quote
-              </button>
+              <div className="finance-field-full finance-quote-actions">
+                <button type="submit" className="btn primary" disabled={busy || quoteClients.length === 0}>
+                  Generate quote
+                </button>
+              </div>
             </form>
           </div>
         ) : (

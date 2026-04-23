@@ -59,8 +59,13 @@ public sealed class TimesheetWeekStatusResponse
     public required string WeekStart { get; init; }
     /// <summary>None, Pending, Approved, or Rejected (None when no submission exists).</summary>
     public required string Status { get; init; }
+    /// <summary>All hours on the timesheet grid for this week (current).</summary>
     public required decimal TotalHours { get; init; }
     public required decimal BillableHours { get; init; }
+    /// <summary>When <see cref="Status"/> is Pending: hours captured at submit (what reviewers evaluate). Null if legacy row.</summary>
+    public decimal? PendingSubmissionTotalHours { get; init; }
+    /// <summary>When Status is Pending: billable hours at submit. Null if legacy row.</summary>
+    public decimal? PendingSubmissionBillableHours { get; init; }
     public DateTime? SubmittedAtUtc { get; init; }
     public DateTime? ReviewedAtUtc { get; init; }
 }

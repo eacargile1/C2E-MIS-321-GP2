@@ -15,6 +15,7 @@ import {
   getTimesheetWeekStatus,
   listClients,
   listMyExpenses,
+  listMyPtoRequests,
   listPendingExpenseApprovals,
   listPendingTimesheetWeekApprovals,
   listProjects,
@@ -25,6 +26,7 @@ import {
   type ExpenseRow,
   type MeProfile,
   type PendingTimesheetWeek,
+  type PtoRequestRow,
   type QuoteRow,
   type TimesheetWeekStatusPayload,
 } from './api'
@@ -103,8 +105,11 @@ function hoursThisWeekHelpTooltip(
   if (snap.error) return snap.error
   const tw = snap.myTimesheetWeek
   if (!tw) return 'Time tracking status not available.'
-  const h = weekHours.toFixed(2)
-  const bill = tw.billableHours.toFixed(2)
+  const grid = tw.totalHours.toFixed(2)
+  const gridBill = tw.billableHours.toFixed(2)
+  const sub = (tw.pendingSubmissionTotalHours ?? tw.totalHours).toFixed(2)
+  const subBill = (tw.pendingSubmissionBillableHours ?? tw.billableHours).toFixed(2)
+  const kpi = weekHours.toFixed(2)
 
   const usesWeekSignoff =
     role === 'IC' ||
@@ -114,22 +119,23 @@ function hoursThisWeekHelpTooltip(
     role === 'Admin'
 
   if (!usesWeekSignoff) {
-    return `You have ${h}h logged this week (${bill}h billable).`
+    return `You have ${kpi}h logged this week (${gridBill}h billable on lines).`
   }
 
   if (role === 'Admin') {
     if (tw.status === 'Approved')
-      return `Admin weeks self-sign on submit (${bill}h billable in the signed week). You have ${h}h logged this calendar week on the grid.`
-    return `You have ${h}h logged this week (${bill}h billable). Submit from Time Tracking when you want this week recorded as signed-off.`
+      return `Admin weeks self-sign on submit (${gridBill}h billable in the signed week). You have ${kpi}h logged this calendar week on the grid.`
+    return `You have ${kpi}h logged this week (${gridBill}h billable). Submit from Time Tracking when you want this week recorded as signed-off.`
   }
 
-  if (tw.status === 'Pending')
-    return `All ${h}h you logged this week are pending approval (${bill}h billable in that submission).`
+  if (tw.status === 'Pending') {
+    return `This week is in the approval queue. Reviewers evaluate the submission snapshot: ${sub}h total (${subBill}h billable) — captured when you clicked Submit. Your timesheet grid currently shows ${grid}h total (${gridBill}h billable). If you had an earlier approval and then edited the week, the prior sign-off was cleared and the full week was re-submitted.`
+  }
   if (tw.status === 'Approved')
-    return `No hours pending approval — this week is approved (${bill}h billable were in the last submission).`
+    return `This week is signed off. Latest grid totals: ${grid}h (${gridBill}h billable). KPI uses ${kpi}h from the same week view.`
   if (tw.status === 'Rejected')
-    return `No hours are in the approval queue right now (week was rejected). You still have ${h}h on the timesheet — edit and resubmit when ready.`
-  return `This week is not submitted yet (${h}h logged, ${bill}h billable on lines). Submit from Time Tracking when totals are final.`
+    return `Week was rejected — nothing is in the approval queue until you resubmit. Grid: ${grid}h (${gridBill}h billable). KPI: ${kpi}h.`
+  return `Not submitted yet. Grid: ${grid}h (${gridBill}h billable). KPI: ${kpi}h. Submit from Time Tracking when totals are final.`
 }
 
 function HomeDashboard({ session }: { session: Session }) {
@@ -140,6 +146,7 @@ function HomeDashboard({ session }: { session: Session }) {
   const isReviewer = role === 'Admin' || role === 'Manager' || role === 'Partner'
   const quickCreateClient = role === 'Admin' || role === 'Partner' || role === 'Finance'
   const quickCreateProject = role === 'Admin' || role === 'Partner'
+  const usd = useMemo(() => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }), [])
   const [kpis, setKpis] = useState({
     activeClients: 0,
     activeProjects: 0,
@@ -150,6 +157,7 @@ function HomeDashboard({ session }: { session: Session }) {
     loading: boolean
     error: string | null
     myExpenses: ExpenseRow[]
+    myPtoRequests: PtoRequestRow[]
     teamPending: ExpenseRow[]
     quotes: QuoteRow[]
     myTimesheetWeek: TimesheetWeekStatusPayload | null
@@ -158,6 +166,7 @@ function HomeDashboard({ session }: { session: Session }) {
     loading: true,
     error: null,
     myExpenses: [],
+    myPtoRequests: [],
     teamPending: [],
     quotes: [],
     myTimesheetWeek: null,
@@ -178,6 +187,7 @@ function HomeDashboard({ session }: { session: Session }) {
         projects,
         lines,
         myExpenses,
+        myPtoRequests,
         teamPending,
         quotes,
         myTimesheetWeek,
@@ -187,6 +197,7 @@ function HomeDashboard({ session }: { session: Session }) {
         listProjects(session.token, { includeInactive: isAdmin }),
         getTimesheetWeek(session.token, weekStart),
         listMyExpenses(session.token),
+        listMyPtoRequests(session.token),
         isReviewer ? listPendingExpenseApprovals(session.token) : Promise.resolve([] as ExpenseRow[]),
         isFinanceHub ? listQuotes(session.token) : Promise.resolve([] as QuoteRow[]),
         getTimesheetWeekStatus(session.token, weekStart),
@@ -203,6 +214,7 @@ function HomeDashboard({ session }: { session: Session }) {
         loading: false,
         error: null,
         myExpenses: mineSorted.slice(0, 10),
+        myPtoRequests,
         teamPending: teamPending.slice(0, 10),
         quotes: quotes.slice(0, 8),
         myTimesheetWeek,
@@ -214,6 +226,7 @@ function HomeDashboard({ session }: { session: Session }) {
         loading: false,
         error: 'Could not load approval status.',
         myExpenses: [],
+        myPtoRequests: [],
         teamPending: [],
         quotes: [],
         myTimesheetWeek: null,
@@ -225,6 +238,21 @@ function HomeDashboard({ session }: { session: Session }) {
   useEffect(() => {
     void loadDashboard()
   }, [loadDashboard])
+
+  const myPendingExpenses = useMemo(
+    () => approvalSnap.myExpenses.filter((e) => e.status === 'Pending'),
+    [approvalSnap.myExpenses],
+  )
+  const myPendingPto = useMemo(
+    () => approvalSnap.myPtoRequests.filter((p) => p.status === 'Pending'),
+    [approvalSnap.myPtoRequests],
+  )
+  const timeWeekPending =
+    approvalSnap.myTimesheetWeek?.status === 'Pending' &&
+    (role === 'IC' || role === 'Finance' || role === 'Manager' || role === 'Partner' || role === 'Admin')
+
+  const pendingYourCount =
+    (timeWeekPending ? 1 : 0) + myPendingExpenses.length + myPendingPto.length
 
   return (
     <div className="dashboard">
@@ -262,6 +290,15 @@ function HomeDashboard({ session }: { session: Session }) {
             </span>
           </p>
           <p className="kpi-value">{kpis.loading ? '--' : kpis.weekHours.toFixed(2)}</p>
+          {!kpis.loading &&
+          approvalSnap.myTimesheetWeek?.status === 'Pending' &&
+          approvalSnap.myTimesheetWeek.pendingSubmissionTotalHours != null ? (
+            <p className="kpi-sub muted">
+              In approval queue (snapshot at submit):{' '}
+              {approvalSnap.myTimesheetWeek.pendingSubmissionTotalHours.toFixed(2)}h total ·{' '}
+              {(approvalSnap.myTimesheetWeek.pendingSubmissionBillableHours ?? 0).toFixed(2)}h billable
+            </p>
+          ) : null}
         </article>
       </section>
 
@@ -329,8 +366,10 @@ function HomeDashboard({ session }: { session: Session }) {
         <article className="card admin-card status-snapshot-card">
           <h2 className="admin-h2">Approvals &amp; Status</h2>
           <p className="status-snapshot-hint">
-            Expenses and weekly timesheet sign-off (IC: project DM or EP, else org manager; Finance → reporting partner;
-            Manager & Partner → engagement partner; Admin self-signs). Open Time Tracking to edit or submit.
+            <strong>Waiting on reviewers</strong> lists only items still pending (weekly time submission, expenses, PTO).
+            Time uses a snapshot at submit so the queue does not mix old totals with new grid edits. Routing: IC → project
+            DM or EP, else org manager; Finance → reporting partner; Manager &amp; Partner → engagement partner; Admin
+            self-signs.
           </p>
           {timesheetActionError ? (
             <p className="admin-hint" style={{ marginBottom: 8, color: 'var(--danger, #b42318)' }}>
@@ -347,6 +386,73 @@ function HomeDashboard({ session }: { session: Session }) {
             </p>
           ) : (
             <div className="status-snapshot-body">
+              <div className="status-block home-pending-block">
+                <h3 className="status-block-title">Waiting on reviewers (your submissions)</h3>
+                {pendingYourCount === 0 ? (
+                  <p className="status-empty">Nothing pending — you are not waiting on anyone for time, expenses, or PTO.</p>
+                ) : (
+                  <ul className="status-row-list home-pending-by-type">
+                    <li className="home-pending-type">
+                      <span className="home-pending-type-label">Time (week)</span>
+                      {timeWeekPending && approvalSnap.myTimesheetWeek ? (
+                        <ul className="status-row-list">
+                          <li className="home-status-row">
+                            <NavLink
+                              to={`/timesheet?week=${encodeURIComponent(approvalSnap.myTimesheetWeek.weekStart)}`}
+                              className="home-status-label"
+                            >
+                              Week of {approvalSnap.myTimesheetWeek.weekStart} · submission{' '}
+                              {(approvalSnap.myTimesheetWeek.pendingSubmissionTotalHours ?? approvalSnap.myTimesheetWeek.totalHours).toFixed(2)}h
+                              total (
+                              {(approvalSnap.myTimesheetWeek.pendingSubmissionBillableHours ?? approvalSnap.myTimesheetWeek.billableHours).toFixed(2)}
+                              h billable) · grid now {approvalSnap.myTimesheetWeek.totalHours.toFixed(2)}h
+                            </NavLink>
+                            <StatusBadge variant="pending" />
+                          </li>
+                        </ul>
+                      ) : (
+                        <p className="status-empty home-pending-none">None</p>
+                      )}
+                    </li>
+                    <li className="home-pending-type">
+                      <span className="home-pending-type-label">Expenses</span>
+                      {myPendingExpenses.length === 0 ? (
+                        <p className="status-empty home-pending-none">None</p>
+                      ) : (
+                        <ul className="status-row-list">
+                          {myPendingExpenses.map((e) => (
+                            <li key={e.id} className="home-status-row">
+                              <NavLink to="/expenses" className="home-status-label">
+                                {e.expenseDate} · {e.client} / {e.project} · {usd.format(e.amount)}
+                              </NavLink>
+                              <StatusBadge variant="pending" />
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                    <li className="home-pending-type">
+                      <span className="home-pending-type-label">PTO</span>
+                      {myPendingPto.length === 0 ? (
+                        <p className="status-empty home-pending-none">None</p>
+                      ) : (
+                        <ul className="status-row-list">
+                          {myPendingPto.map((p) => (
+                            <li key={p.id} className="home-status-row">
+                              <NavLink to="/timesheet#pto-requests" className="home-status-label">
+                                {p.startDate} → {p.endDate}
+                                {p.reason.trim() ? ` · ${p.reason.trim()}` : ''}
+                              </NavLink>
+                              <StatusBadge variant="pending" />
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  </ul>
+                )}
+              </div>
+
               {approvalSnap.myTimesheetWeek &&
               (role === 'IC' ||
                 role === 'Finance' ||
@@ -354,7 +460,7 @@ function HomeDashboard({ session }: { session: Session }) {
                 role === 'Partner' ||
                 role === 'Admin') ? (
                 <div className="status-block">
-                  <h3 className="status-block-title">Your Week (Time Tracking)</h3>
+                  <h3 className="status-block-title">Your week (status)</h3>
                   <ul className="status-row-list">
                     <li className="home-status-row">
                       <NavLink
@@ -362,7 +468,7 @@ function HomeDashboard({ session }: { session: Session }) {
                         className="home-status-label"
                       >
                         Week of {approvalSnap.myTimesheetWeek.weekStart} ·{' '}
-                        {approvalSnap.myTimesheetWeek.totalHours.toFixed(2)}h total ·{' '}
+                        {approvalSnap.myTimesheetWeek.totalHours.toFixed(2)}h on grid ·{' '}
                         {approvalSnap.myTimesheetWeek.billableHours.toFixed(2)}h billable
                       </NavLink>
                       <StatusBadge variant={timesheetWeekStatusVariant(approvalSnap.myTimesheetWeek.status)} />
@@ -371,7 +477,7 @@ function HomeDashboard({ session }: { session: Session }) {
                 </div>
               ) : null}
               <div className="status-block">
-                <h3 className="status-block-title">Your Expenses</h3>
+                <h3 className="status-block-title">Your expenses (recent)</h3>
                 {approvalSnap.myExpenses.length === 0 ? (
                   <p className="status-empty">No expenses yet.</p>
                 ) : (
@@ -379,7 +485,7 @@ function HomeDashboard({ session }: { session: Session }) {
                     {approvalSnap.myExpenses.map((e) => (
                       <li key={e.id} className="home-status-row">
                         <NavLink to="/expenses" className="home-status-label">
-                          Expense · {e.client} / {e.project}
+                          {e.expenseDate} · {e.client} / {e.project} · {usd.format(e.amount)}
                         </NavLink>
                         <StatusBadge variant={expenseUiStatus(e.status)} />
                       </li>

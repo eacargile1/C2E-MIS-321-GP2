@@ -145,8 +145,15 @@ await using (var scope = app.Services.CreateAsyncScope())
 
     if (env.IsDevelopment() && cfg.GetValue("Seed:EnsureDevRoleAccounts", false))
         await DevRoleAccountsSeed.EnsureAdditionalDevRoleUsersAsync(db, hasher, seedPassword);
+    if (env.IsDevelopment() &&
+        dbConnectivity.Kind != AppDatabaseKind.InMemory &&
+        cfg.GetValue("Seed:PurgeNonDemoData", false))
+        await DevelopmentDataPurge.PurgeNonDemoDataAsync(db, seedEmail);
     if (env.IsDevelopment() && cfg.GetValue("Seed:DemoScenario", false))
+    {
         await DemoScenarioSeed.EnsureAsync(db, hasher);
+        await DemoEmployeeSeed.EnsureAsync(db, hasher, seedPassword);
+    }
     else if (env.IsDevelopment() && cfg.GetValue("Seed:DemoFinanceData", false))
         await DemoFinanceSeed.EnsureAsync(db, hasher);
 }

@@ -60,7 +60,21 @@ public sealed class ClientsController(AppDbContext db) : ControllerBase
             .ToListAsync(ct);
 
         var billing = CanViewBillingRates();
-        return Ok(rows.Select(c => Map(c, billing)).ToList());
+        HashSet<Guid>? financePortfolio = null;
+        if (User.IsInRole(nameof(AppRole.Finance)) &&
+            Guid.TryParse(
+                User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue(ClaimTypes.Name),
+                out var financeActorId))
+        {
+            financePortfolio = await FinancePortfolioClientIdsForUserAsync(financeActorId, ct);
+        }
+
+        return Ok(rows
+            .Select(c => Map(
+                c,
+                billing,
+                financePortfolio is null ? null : financePortfolio.Contains(c.Id)))
+            .ToList());
     }
 
     [HttpGet("{id:guid}")]
@@ -75,7 +89,17 @@ public sealed class ClientsController(AppDbContext db) : ControllerBase
         if (!c.IsActive && !User.IsInRole(nameof(AppRole.Admin)))
             return NotFound();
 
-        return Ok(Map(c, CanViewBillingRates()));
+        HashSet<Guid>? financePortfolio = null;
+        if (User.IsInRole(nameof(AppRole.Finance)) &&
+            Guid.TryParse(
+                User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue(ClaimTypes.Name),
+                out var financeActorId))
+        {
+            financePortfolio = await FinancePortfolioClientIdsForUserAsync(financeActorId, ct);
+        }
+
+        var inPortfolio = financePortfolio is null ? (bool?)null : financePortfolio.Contains(c.Id);
+        return Ok(Map(c, CanViewBillingRates(), inPortfolio));
     }
 
     [HttpPost]
@@ -88,6 +112,24 @@ public sealed class ClientsController(AppDbContext db) : ControllerBase
         var normalized = body.Name.Trim();
         if (normalized.Length == 0)
             return BadRequest(new AuthErrorResponse { Message = "Name is required." });
+
+        if (User.IsInRole(nameof(AppRole.Partner)) && !body.FinanceLeadUserId.HasValue)
+        {
+            return BadRequest(new AuthErrorResponse
+            {
+                Message = "Partners must assign a finance lead (Finance role user) when creating a client.",
+            });
+        }
+
+        if (body.FinanceLeadUserId is { } finLeadId)
+        {
+            var finUser = await db.Users.AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Id == finLeadId && u.IsActive, ct);
+            if (finUser is null)
+                return BadRequest(new AuthErrorResponse { Message = "Finance lead must reference an active user." });
+            if (finUser.Role != AppRole.Finance)
+                return BadRequest(new AuthErrorResponse { Message = "Finance lead must be a user in the Finance role." });
+        }
 
         var now = DateTime.UtcNow;
         var entity = new Client
@@ -105,7 +147,24 @@ public sealed class ClientsController(AppDbContext db) : ControllerBase
         };
         db.Clients.Add(entity);
         await db.SaveChangesAsync(ct);
-        return CreatedAtAction(nameof(Get), new { id = entity.Id }, Map(entity, CanViewBillingRates()));
+
+        if (body.FinanceLeadUserId is { } rosterFinId)
+        {
+            var existsAssign = await db.ClientEmployeeAssignments
+                .AnyAsync(a => a.ClientId == entity.Id && a.UserId == rosterFinId, ct);
+            if (!existsAssign)
+            {
+                db.ClientEmployeeAssignments.Add(new ClientEmployeeAssignment
+                {
+                    ClientId = entity.Id,
+                    UserId = rosterFinId,
+                    AssignedAtUtc = now,
+                });
+                await db.SaveChangesAsync(ct);
+            }
+        }
+
+        return CreatedAtAction(nameof(Get), new { id = entity.Id }, Map(entity, CanViewBillingRates(), null));
     }
 
     [HttpPatch("{id:guid}")]
@@ -146,7 +205,7 @@ public sealed class ClientsController(AppDbContext db) : ControllerBase
 
         entity.UpdatedAtUtc = now;
         await db.SaveChangesAsync(ct);
-        return Ok(Map(entity, includeBilling: true));
+        return Ok(Map(entity, includeBilling: true, financePortfolioMember: null));
     }
 
     private bool CanViewBillingRates() =>
@@ -154,7 +213,7 @@ public sealed class ClientsController(AppDbContext db) : ControllerBase
         User.IsInRole(nameof(AppRole.Finance)) ||
         User.IsInRole(nameof(AppRole.Manager));
 
-    private static ClientResponse Map(Models.Client c, bool includeBilling) =>
+    private static ClientResponse Map(Models.Client c, bool includeBilling, bool? financePortfolioMember = null) =>
         new()
         {
             Id = c.Id,
@@ -170,7 +229,21 @@ public sealed class ClientsController(AppDbContext db) : ControllerBase
                 .OrderBy(p => p.Name)
                 .Select(p => new ClientProjectStubDto { Id = p.Id, Name = p.Name ?? "" })
                 .ToList(),
+            FinancePortfolioMember = financePortfolioMember,
         };
+
+    private async Task<HashSet<Guid>> FinancePortfolioClientIdsForUserAsync(Guid financeUserId, CancellationToken ct)
+    {
+        var roster = await db.ClientEmployeeAssignments.AsNoTracking()
+            .Where(a => a.UserId == financeUserId)
+            .Select(a => a.ClientId)
+            .ToListAsync(ct);
+        var fromProjects = await db.Projects.AsNoTracking()
+            .Where(p => p.IsActive && p.AssignedFinanceUserId == financeUserId)
+            .Select(p => p.ClientId)
+            .ToListAsync(ct);
+        return roster.Concat(fromProjects).ToHashSet();
+    }
 
     private string? FirstModelError()
     {

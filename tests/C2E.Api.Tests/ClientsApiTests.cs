@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Linq;
 using C2E.Api;
 using Microsoft.AspNetCore.Mvc.Testing;
 
@@ -148,10 +149,29 @@ public class ClientsApiTests
     {
         using var factory = Factory();
         var client = factory.CreateClient();
+        await CreateUserWithRoleAsync(client, "fin.parcl2@local.test", "FinParCl2!", "Finance");
         var partnerToken = await CreateUserWithRoleAsync(client, "par.cl2@local.test", "ParCl2Pa1!", "Partner");
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        var userRows = await client.GetFromJsonAsync<List<ApiTestUsers.UserListRow>>("/api/users");
+        var finId = userRows!.First(u =>
+            string.Equals(u.Email, "fin.parcl2@local.test", StringComparison.OrdinalIgnoreCase)).Id;
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", partnerToken);
-        var res = await client.PostAsJsonAsync("/api/clients", new { name = "FromPartnerCo" });
+        var res = await client.PostAsJsonAsync(
+            "/api/clients",
+            new { name = "FromPartnerCo", financeLeadUserId = finId });
         Assert.Equal(HttpStatusCode.Created, res.StatusCode);
+    }
+
+    [Fact]
+    public async Task Partner_create_without_finance_lead_is_bad_request()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        var partnerToken = await CreateUserWithRoleAsync(client, "par.nofin@local.test", "ParNoFin1!", "Partner");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", partnerToken);
+        var res = await client.PostAsJsonAsync("/api/clients", new { name = "NoFinCo" });
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
     }
 
     [Fact]

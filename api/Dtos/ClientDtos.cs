@@ -15,6 +15,12 @@ public sealed class ClientResponse
     public bool IsActive { get; init; }
     /// <summary>Placeholder until projects (E4) exist — PRD FR33/FR34.</summary>
     public IReadOnlyList<ClientProjectStubDto> Projects { get; init; } = [];
+
+    /// <summary>
+    /// When the caller is Finance: true if this user is on the client roster or assigned finance on an active project.
+    /// Otherwise null (not applicable).
+    /// </summary>
+    public bool? FinancePortfolioMember { get; init; }
 }
 
 public sealed class ClientProjectStubDto
@@ -44,6 +50,9 @@ public sealed class CreateClientRequest
 
     [MaxLength(2000)]
     public string? Notes { get; init; }
+
+    /// <summary>Required when a Partner creates the client — rostered finance lead for quoting and coverage.</summary>
+    public Guid? FinanceLeadUserId { get; init; }
 }
 
 public sealed class PatchClientRequest

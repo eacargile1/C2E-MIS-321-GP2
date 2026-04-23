@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Linq;
 using C2E.Api;
 using Microsoft.AspNetCore.Mvc.Testing;
 
@@ -224,8 +225,15 @@ public class RbacEnforcementTests
         var finCreate = await client.PostAsJsonAsync("/api/clients", new { name = "FinCo" });
         Assert.Equal(HttpStatusCode.Created, finCreate.StatusCode);
 
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+        var userRows = await client.GetFromJsonAsync<List<ApiTestUsers.UserListRow>>("/api/users");
+        var finId = userRows!.First(u =>
+            string.Equals(u.Email, "fin.cl@local.test", StringComparison.OrdinalIgnoreCase)).Id;
+
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", partnerToken);
-        var parCreate = await client.PostAsJsonAsync("/api/clients", new { name = "ParCo" });
+        var parCreate = await client.PostAsJsonAsync(
+            "/api/clients",
+            new { name = "ParCo", financeLeadUserId = finId });
         Assert.Equal(HttpStatusCode.Created, parCreate.StatusCode);
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", mgrToken);

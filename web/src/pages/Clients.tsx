@@ -7,6 +7,7 @@ import {
   listClients,
   patchClient,
   unassignEmployeeFromClient,
+  type AssignmentRow,
   type ClientRow,
   type MeProfile,
 } from '../api'
@@ -31,6 +32,7 @@ export default function ClientsPage({
     profile.role === 'Admin' || profile.role === 'Partner' || profile.role === 'Finance'
   const canEditClient = isAdmin
   const canManageAssignments = profile.role === 'Admin' || profile.role === 'Partner'
+  const isPartner = profile.role === 'Partner'
 
   const [rows, setRows] = useState<ClientRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -41,6 +43,8 @@ export default function ClientsPage({
   const [createName, setCreateName] = useState('')
   const [createEmail, setCreateEmail] = useState('')
   const [createRate, setCreateRate] = useState('')
+  const [financeLeadOptions, setFinanceLeadOptions] = useState<AssignmentRow[]>([])
+  const [createFinanceLeadId, setCreateFinanceLeadId] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [editActive, setEditActive] = useState(true)
@@ -67,19 +71,39 @@ export default function ClientsPage({
     void refresh()
   }, [refresh])
 
+  useEffect(() => {
+    if (!canCreateClient || !isPartner) return
+    void listAssignableEmployees(token)
+      .then((rows) => {
+        const fin = rows.filter((r) => r.role === 'Finance')
+        setFinanceLeadOptions(fin)
+        setCreateFinanceLeadId((prev) => {
+          if (prev) return prev
+          return fin[0]?.userId ?? ''
+        })
+      })
+      .catch((e) => pushToast(e instanceof Error ? e.message : 'Could not load finance roster', 'err'))
+  }, [canCreateClient, isPartner, token, pushToast])
+
   const onCreate = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!canCreateClient) return
+    if (isPartner && !createFinanceLeadId.trim()) {
+      pushToast('Select a finance lead for this client', 'err')
+      return
+    }
     try {
       const rateNum = createRate.trim() === '' ? undefined : Number(createRate)
       await createClient(token, {
         name: createName.trim(),
         contactEmail: createEmail.trim() || undefined,
         defaultBillingRate: canSeeRates && Number.isFinite(rateNum) ? rateNum : undefined,
+        financeLeadUserId: isPartner ? createFinanceLeadId.trim() : undefined,
       })
       setCreateName('')
       setCreateEmail('')
       setCreateRate('')
+      setCreateFinanceLeadId(financeLeadOptions[0]?.userId ?? '')
       pushToast('Client created', 'ok')
       await refresh()
     } catch (err) {
@@ -143,15 +167,38 @@ export default function ClientsPage({
         <div className="card admin-card">
           <h2 className="admin-h2">New Client</h2>
           <p className="admin-hint">
-            {canSeeRates
-              ? 'Billing rate is visible only to Admin and Finance (per PRD).'
-              : 'Partner creates the shell client; Admin or Finance can set billing rate when ready.'}
+            {isPartner
+              ? 'You must assign an active Finance user as the client finance lead (they are rostered on this client for quotes and coverage).'
+              : canSeeRates
+                ? 'Billing rate is visible only to Admin and Finance (per PRD).'
+                : 'Partner creates the shell client; Admin or Finance can set billing rate when ready.'}
           </p>
           <form className="form admin-form-grid" onSubmit={onCreate}>
             <label className="field">
               <span>Name</span>
               <input value={createName} onChange={(e) => setCreateName(e.target.value)} required />
             </label>
+            {isPartner ? (
+              <label className="field">
+                <span>Finance lead</span>
+                <select
+                  value={createFinanceLeadId}
+                  onChange={(e) => setCreateFinanceLeadId(e.target.value)}
+                  required
+                  disabled={financeLeadOptions.length === 0}
+                >
+                  {financeLeadOptions.length === 0 ? (
+                    <option value="">No Finance users available</option>
+                  ) : (
+                    financeLeadOptions.map((u) => (
+                      <option key={u.userId} value={u.userId}>
+                        {u.displayName} · {u.email}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
+            ) : null}
             <label className="field">
               <span>Contact Email</span>
               <input type="email" value={createEmail} onChange={(e) => setCreateEmail(e.target.value)} />

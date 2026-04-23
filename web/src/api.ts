@@ -392,6 +392,8 @@ export type ClientRow = {
   notes: string | null
   isActive: boolean
   projects: { id: string; name: string }[]
+  /** Present for Finance callers: roster or project-assigned finance for this client. */
+  financePortfolioMember?: boolean | null
 }
 
 function parseFiniteNumber(x: unknown): number | null {
@@ -410,6 +412,7 @@ function assertClient(x: unknown): ClientRow {
   const projectsRaw = r.projects
   const projects = Array.isArray(projectsRaw) ? projectsRaw : []
   const rate = parseFiniteNumber(r.defaultBillingRate)
+  const fpm = r.financePortfolioMember
   return {
     id: r.id,
     name: r.name,
@@ -419,6 +422,7 @@ function assertClient(x: unknown): ClientRow {
     defaultBillingRate: rate,
     notes: typeof r.notes === 'string' ? r.notes : null,
     isActive: r.isActive,
+    financePortfolioMember: typeof fpm === 'boolean' ? fpm : undefined,
     projects: projects.map((p) => {
       const o = p as Record<string, unknown>
       const id = typeof o.id === 'string' ? o.id : o.id != null ? String(o.id) : ''
@@ -451,6 +455,7 @@ export async function createClient(
     contactPhone?: string
     defaultBillingRate?: number
     notes?: string
+    financeLeadUserId?: string
   },
 ): Promise<ClientRow> {
   const res = await fetch(`${base}/api/clients`, {
@@ -1444,8 +1449,12 @@ export type TimesheetWeekApprovalStatus = 'None' | 'Pending' | 'Approved' | 'Rej
 export type TimesheetWeekStatusPayload = {
   weekStart: string
   status: TimesheetWeekApprovalStatus
+  /** Current sum of hours on the timesheet grid for the week. */
   totalHours: number
   billableHours: number
+  /** When status is Pending: hours frozen at submit (same as total unless legacy data). */
+  pendingSubmissionTotalHours: number | null
+  pendingSubmissionBillableHours: number | null
   submittedAtUtc: string | null
   reviewedAtUtc: string | null
 }
@@ -1462,11 +1471,15 @@ function assertTimesheetWeekStatus(x: unknown): TimesheetWeekStatusPayload {
   const st = r.status
   if (st !== 'None' && st !== 'Pending' && st !== 'Approved' && st !== 'Rejected')
     throw new Error('Could not load timesheet week status')
+  const pst = r.pendingSubmissionTotalHours
+  const psb = r.pendingSubmissionBillableHours
   return {
     weekStart: r.weekStart,
     status: st,
     totalHours: r.totalHours,
     billableHours: r.billableHours,
+    pendingSubmissionTotalHours: typeof pst === 'number' && Number.isFinite(pst) ? pst : null,
+    pendingSubmissionBillableHours: typeof psb === 'number' && Number.isFinite(psb) ? psb : null,
     submittedAtUtc: typeof r.submittedAtUtc === 'string' ? r.submittedAtUtc : null,
     reviewedAtUtc: typeof r.reviewedAtUtc === 'string' ? r.reviewedAtUtc : null,
   }

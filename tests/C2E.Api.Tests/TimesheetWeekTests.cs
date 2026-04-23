@@ -269,6 +269,15 @@ public class TimesheetWeekTests
             });
         var submit = await client.PostAsync($"/api/timesheets/week/submit?weekStart={weekStart}", null);
         Assert.Equal(HttpStatusCode.NoContent, submit.StatusCode);
+        var stPending = await client.GetAsync($"/api/timesheets/week/status?weekStart={weekStart}");
+        stPending.EnsureSuccessStatusCode();
+        var stBody = await stPending.Content.ReadFromJsonAsync<TimesheetWeekStatusDto>();
+        Assert.NotNull(stBody);
+        Assert.Equal("Pending", stBody!.Status);
+        Assert.Equal(2m, stBody.TotalHours);
+        Assert.Equal(2m, stBody.PendingSubmissionTotalHours);
+        Assert.Equal(2m, stBody.BillableHours);
+        Assert.Equal(2m, stBody.PendingSubmissionBillableHours);
         client.DefaultRequestHeaders.Authorization = null;
 
         var mgrBToken = await LoginTokenAsync(client, "mgr.ts.b@local.test", "MgrTsB1!");
@@ -584,7 +593,13 @@ public class TimesheetWeekTests
 
     private sealed record PendingTimesheetWeekDto(Guid UserId, string UserEmail, string WeekStart, decimal TotalHours, decimal BillableHours);
 
-    private sealed record TimesheetWeekStatusDto(string WeekStart, string Status, decimal TotalHours, decimal BillableHours);
+    private sealed record TimesheetWeekStatusDto(
+        string WeekStart,
+        string Status,
+        decimal TotalHours,
+        decimal BillableHours,
+        decimal? PendingSubmissionTotalHours,
+        decimal? PendingSubmissionBillableHours);
 
     private sealed record PendingWeekReviewLineDto(
         string WorkDate,

@@ -92,12 +92,22 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
         var appr = await db.TimesheetWeekApprovals.AsNoTracking()
             .FirstOrDefaultAsync(x => x.UserId == userId && x.WeekStartMonday == start, ct);
         var status = appr is null ? "None" : appr.Status.ToString();
+        decimal? pendingTot = null;
+        decimal? pendingBill = null;
+        if (appr is { Status: TimesheetWeekApprovalStatus.Pending })
+        {
+            pendingTot = appr.SubmittedTotalHours ?? total;
+            pendingBill = appr.SubmittedBillableHours ?? billable;
+        }
+
         return Ok(new TimesheetWeekStatusResponse
         {
             WeekStart = start.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             Status = status,
             TotalHours = total,
             BillableHours = billable,
+            PendingSubmissionTotalHours = pendingTot,
+            PendingSubmissionBillableHours = pendingBill,
             SubmittedAtUtc = appr?.SubmittedAtUtc,
             ReviewedAtUtc = appr?.ReviewedAtUtc,
         });
@@ -130,6 +140,8 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
             db.TimesheetWeekApprovals.Remove(existing);
 
         var now = DateTime.UtcNow;
+        var weekEndExclusive = start.AddDays(7);
+        var (submitTotal, submitBillable) = await SumWeekHoursAsync(userId, start, weekEndExclusive, ct);
 
         // Org admins self-sign weekly billable totals (no reviewer queue).
         if (user.Role == AppRole.Admin)
@@ -143,6 +155,8 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
                 SubmittedAtUtc = now,
                 ReviewedByUserId = userId,
                 ReviewedAtUtc = now,
+                SubmittedTotalHours = submitTotal,
+                SubmittedBillableHours = submitBillable,
             });
             await db.SaveChangesAsync(ct);
             return NoContent();
@@ -189,6 +203,8 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
             SubmittedAtUtc = now,
             ReviewedByUserId = selfSign ? userId : null,
             ReviewedAtUtc = selfSign ? now : null,
+            SubmittedTotalHours = submitTotal,
+            SubmittedBillableHours = submitBillable,
         });
         await db.SaveChangesAsync(ct);
         return NoContent();
@@ -236,7 +252,9 @@ public sealed class TimesheetsController(AppDbContext db) : ControllerBase
             }
 
             var weekEnd = x.a.WeekStartMonday.AddDays(7);
-            var (total, billable) = await SumWeekHoursAsync(x.a.UserId, x.a.WeekStartMonday, weekEnd, ct);
+            var (lineTotal, lineBillable) = await SumWeekHoursAsync(x.a.UserId, x.a.WeekStartMonday, weekEnd, ct);
+            var total = x.a.SubmittedTotalHours ?? lineTotal;
+            var billable = x.a.SubmittedBillableHours ?? lineBillable;
             result.Add(new PendingTimesheetWeekResponse
             {
                 UserId = x.a.UserId,

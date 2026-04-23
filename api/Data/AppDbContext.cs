@@ -181,6 +181,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => new { x.UserId, x.WeekStartMonday }).IsUnique();
             e.HasIndex(x => x.Status);
             e.Property(x => x.Status).HasConversion<string>().HasMaxLength(24);
+            e.Property(x => x.SubmittedTotalHours).HasPrecision(18, 4);
+            e.Property(x => x.SubmittedBillableHours).HasPrecision(18, 4);
             e.HasOne(x => x.User)
                 .WithMany()
                 .HasForeignKey(x => x.UserId)

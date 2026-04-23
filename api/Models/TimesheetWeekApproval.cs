@@ -13,6 +13,12 @@ public sealed class TimesheetWeekApproval
     public TimesheetWeekApprovalStatus Status { get; set; }
     public DateTime SubmittedAtUtc { get; set; }
 
+    /// <summary>Total hours on the timesheet grid when this submission was created (sign-off snapshot).</summary>
+    public decimal? SubmittedTotalHours { get; set; }
+
+    /// <summary>Billable hours on the grid when this submission was created.</summary>
+    public decimal? SubmittedBillableHours { get; set; }
+
     public Guid? ReviewedByUserId { get; set; }
     public AppUser? ReviewedBy { get; set; }
     public DateTime? ReviewedAtUtc { get; set; }
