@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
-import { NavLink } from 'react-router-dom'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { NavLink, useLocation } from 'react-router-dom'
 import {
   approveExpense,
   createExpense,
@@ -25,6 +25,15 @@ type Toast = { id: number; message: string; variant: 'ok' | 'err' }
 const TOAST_MS = 4000
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
 
+/** Accepts "42.33", "$42.33", "1,234.56" from the amount field. */
+function parsePositiveMoneyInput(raw: string): number {
+  const s = raw.replace(/\$/g, '').replace(/,/g, '').trim()
+  if (!s) throw new Error('Amount is required')
+  const parsed = Number(s)
+  if (!Number.isFinite(parsed) || parsed <= 0) throw new Error('Amount must be a positive number')
+  return parsed
+}
+
 function todayYmd() {
   const d = new Date()
   const y = d.getFullYear()
@@ -34,6 +43,8 @@ function todayYmd() {
 }
 
 export default function ExpensesPage({ token, profile }: { token: string; profile: MeProfile }) {
+  const location = useLocation()
+  const approverAiAnchorRef = useRef<HTMLDivElement | null>(null)
   const canApprove = profile.role === 'Admin' || profile.role === 'Manager' || profile.role === 'Partner'
   const canFinance = profile.role === 'Admin' || profile.role === 'Finance'
   const canSeeTeamExpenseDetail = profile.role === 'Admin' || profile.role === 'Manager'
@@ -91,6 +102,19 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
   }, [refresh])
 
   useEffect(() => {
+    if (location.hash === '#pending-expense-approvals') {
+      window.setTimeout(() => {
+        document.getElementById('pending-expense-approvals')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 100)
+    }
+  }, [location.hash])
+
+  useEffect(() => {
+    if (approverExpenseAi)
+      approverAiAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [approverExpenseAi])
+
+  useEffect(() => {
     let cancelled = false
     async function loadCat() {
       try {
@@ -121,8 +145,7 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
     e.preventDefault()
     setBusy(true)
     try {
-      const parsed = Number(amount)
-      if (!Number.isFinite(parsed) || parsed <= 0) throw new Error('Amount must be a positive number')
+      const parsed = parsePositiveMoneyInput(amount)
       if (invoiceFile && invoiceFile.size > 5 * 1024 * 1024) throw new Error('Invoice must be 5 MB or smaller')
       await createExpense(
         token,
@@ -168,8 +191,7 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
   const onAiReviewExpense = async () => {
     setExpenseAiBusy(true)
     try {
-      const parsed = Number(amount)
-      if (!Number.isFinite(parsed) || parsed <= 0) throw new Error('Amount must be a positive number')
+      const parsed = parsePositiveMoneyInput(amount)
       const r = await reviewExpenseDraftAi(token, {
         expenseDate,
         client: client.trim(),
@@ -450,8 +472,24 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
       ) : null}
 
       {canApprove ? (
-        <div className="card admin-card">
+        <div className="card admin-card" id="pending-expense-approvals">
           <h2 className="admin-h2">Pending Team Approvals</h2>
+          <p className="admin-hint" style={{ marginTop: 4 }}>
+            Approvals use project delivery manager / engagement partner routing (same rules as Approve). AI review opens
+            here after you click Review.
+          </p>
+          {approverExpenseAi ? (
+            <div ref={approverAiAnchorRef}>
+              <AiReviewPanel
+                title={`Approver review · expense ${approverExpenseAi.id.slice(0, 8)}…${approverExpenseAi.result.submitterEmail ? ` · ${approverExpenseAi.result.submitterEmail}` : ''}`}
+                usedLlm={approverExpenseAi.result.usedLlm}
+                llmNote={approverExpenseAi.result.llmNote}
+                insights={approverExpenseAi.result.insights}
+                questions={approverExpenseAi.result.questionsForSubmitter}
+                questionsHeading="Reviewer checklist / summary"
+              />
+            </div>
+          ) : null}
           {pending.length === 0 ? (
             <p className="admin-hint">No pending approvals.</p>
           ) : (
@@ -515,16 +553,6 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
               </table>
             </div>
           )}
-          {approverExpenseAi ? (
-            <AiReviewPanel
-              title={`Approver review · expense ${approverExpenseAi.id.slice(0, 8)}…${approverExpenseAi.result.submitterEmail ? ` · ${approverExpenseAi.result.submitterEmail}` : ''}`}
-              usedLlm={approverExpenseAi.result.usedLlm}
-              llmNote={approverExpenseAi.result.llmNote}
-              insights={approverExpenseAi.result.insights}
-              questions={approverExpenseAi.result.questionsForSubmitter}
-              questionsHeading="Reviewer checklist / summary"
-            />
-          ) : null}
         </div>
       ) : null}
 

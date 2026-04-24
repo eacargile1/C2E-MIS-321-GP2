@@ -1,3 +1,5 @@
+using DotNetEnv;
+using C2E.Api.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Configuration;
@@ -16,11 +18,16 @@ public sealed class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
     public AppDbContext CreateDbContext(string[] args)
     {
         var apiProjectDir = FindApiProjectDirectory();
+        var dotEnvPath = Path.Combine(apiProjectDir, ".env");
+        if (File.Exists(dotEnvPath))
+            Env.NoClobber().Load(dotEnvPath);
+
         var configuration = new ConfigurationBuilder()
             .SetBasePath(apiProjectDir)
             .AddJsonFile("appsettings.json", optional: true)
             .AddJsonFile("appsettings.Development.json", optional: true)
             .AddEnvironmentVariables()
+            .AddInMemoryCollection(DotEnvFilePriority.BuildConfigurationOverrides(apiProjectDir))
             .Build();
 
         var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();

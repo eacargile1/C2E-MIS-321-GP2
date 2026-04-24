@@ -25,6 +25,19 @@ dotnet run
 
 Default URL is typically `http://localhost:5028` (see launch settings / console output).
 
+**Secrets (local / demo machines — never commit)** — Copy `api/.env.example` to `api/.env` (or put `.env` at the repo root). When you run `dotnet run` from the API project with `ASPNETCORE_ENVIRONMENT=Development`, the API loads the first `.env` found walking up from the current directory. Values already set in the real environment are not overwritten (`NoClobber`). Integration tests (`dotnet test`) do **not** load `.env` (only the real API host process does).
+
+Put these in `.env` (double underscores = nested ASP.NET config):
+
+| What | Variable in `.env` |
+|------|---------------------|
+| MySQL (Heroku-style) | `DATABASE_URL=mysql://user:pass@host:3306/dbname` |
+| MySQL (full string) | `ConnectionStrings__DefaultConnection=Server=...;Port=...;Database=...;User ID=...;Password=...;SslMode=Preferred` |
+| OpenAI API key | `AIRecommendations__OpenAiApiKey=sk-...` |
+| JWT signing (min 32 chars) | `Jwt__SigningKey=...` |
+
+Optional instead of `.env`: `dotnet user-secrets set "AIRecommendations:OpenAiApiKey" "…"` and `dotnet user-secrets set "Jwt:SigningKey" "…"` (colon form; same keys).
+
 **Web** (from `web/`):
 
 ```bash

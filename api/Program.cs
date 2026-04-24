@@ -1,5 +1,8 @@
+using System.Reflection;
 using System.Security.Claims;
 using System.Text;
+using DotNetEnv;
+using C2E.Api.Configuration;
 using C2E.Api;
 using C2E.Api.Authorization;
 using C2E.Api.Data;
@@ -16,12 +19,85 @@ using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
-var builder = WebApplication.CreateBuilder(args);
+static string ResolveApiContentRoot()
+{
+    static string? FindDirectoryWithCsproj(string startPath)
+    {
+        for (var dir = new DirectoryInfo(startPath); dir is not null; dir = dir.Parent)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "C2E.Api.csproj")))
+                return dir.FullName;
+
+            // Repo-root `dotnet run --project api/...`: csproj is under `api/`, not an ancestor file.
+            var nestedApi = Path.Combine(dir.FullName, "api", "C2E.Api.csproj");
+            if (File.Exists(nestedApi))
+                return Path.GetFullPath(Path.Combine(dir.FullName, "api"));
+        }
+
+        return null;
+    }
+
+    return FindDirectoryWithCsproj(AppContext.BaseDirectory)
+        ?? FindDirectoryWithCsproj(Directory.GetCurrentDirectory())
+        ?? Directory.GetCurrentDirectory();
+}
+
+static void TryLoadDevelopmentDotEnv(string apiContentRoot)
+{
+    if (!DotEnvFilePriority.ShouldApplyLocalDotEnvFile())
+        return;
+
+    var envPath = Path.Combine(apiContentRoot, ".env");
+    if (!File.Exists(envPath))
+        return;
+
+    // Nested config: use double underscores (e.g. AIRecommendations__OpenAiApiKey).
+    // NoClobber: non-empty machine/CI env vars win; StripEmptyEnvironmentVariable clears "" so JSON/.env can supply values.
+    Env.NoClobber().Load(envPath);
+}
+
+/// <summary>
+/// Empty env vars still override JSON in Microsoft.Extensions.Configuration; strip them so appsettings.Development can supply values.
+/// </summary>
+static void StripBlankEnvironmentVariable(string name)
+{
+    var v = Environment.GetEnvironmentVariable(name);
+    if (v is not null && string.IsNullOrWhiteSpace(v))
+        Environment.SetEnvironmentVariable(name, null);
+}
+
+var apiContentRoot = ResolveApiContentRoot();
+StripBlankEnvironmentVariable("Jwt__SigningKey");
+StripBlankEnvironmentVariable("AIRecommendations__OpenAiApiKey");
+StripBlankEnvironmentVariable("ConnectionStrings__DefaultConnection");
+TryLoadDevelopmentDotEnv(apiContentRoot);
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = apiContentRoot,
+    ApplicationName = typeof(Program).Assembly.GetName().Name ?? "C2E.Api",
+});
+
+// User secrets (or empty env vars) can override Jwt with ""; re-add Development JSON last so tracked dev defaults win.
+if (builder.Environment.IsDevelopment())
+{
+    builder.Configuration.AddJsonFile(
+        Path.Combine(builder.Environment.ContentRootPath, "appsettings.Development.json"),
+        optional: true,
+        reloadOnChange: true);
+}
+
+var dotEnvPriority = DotEnvFilePriority.BuildConfigurationOverrides(apiContentRoot);
+if (dotEnvPriority.Count > 0)
+    builder.Configuration.AddInMemoryCollection(dotEnvPriority);
 
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 builder.Services.Configure<AiRecommendationOptions>(builder.Configuration.GetSection(AiRecommendationOptions.SectionName));
+builder.Services.PostConfigure<AiRecommendationOptions>(opts =>
+    DotEnvFilePriority.ApplyOpenAiOptionsFromDotEnvFile(apiContentRoot, opts));
 builder.Services.Configure<TimesheetWeekWindowOptions>(
     builder.Configuration.GetSection(TimesheetWeekWindowOptions.SectionName));
 builder.Services.AddSingleton<TimesheetWeekWindow>();

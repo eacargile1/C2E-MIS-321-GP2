@@ -502,7 +502,7 @@ function HomeDashboard({ session }: { session: Session }) {
                     <ul className="status-row-list">
                       {approvalSnap.teamPending.map((e) => (
                         <li key={e.id} className="home-status-row">
-                          <NavLink to="/expenses" className="home-status-label">
+                          <NavLink to="/expenses#pending-expense-approvals" className="home-status-label">
                             {e.userEmail} · {e.client} / {e.project}
                           </NavLink>
                           <StatusBadge variant="pending" />

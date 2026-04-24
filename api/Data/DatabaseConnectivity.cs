@@ -11,7 +11,7 @@ public enum AppDatabaseKind
 public sealed record DatabaseConnectivity(AppDatabaseKind Kind, string? InMemoryName, string? MySqlConnectionString)
 {
     /// <summary>
-    /// Resolution order: explicit in-memory (tests) → <c>DATABASE_URL</c> (Heroku) → <c>ConnectionStrings:DefaultConnection</c> → in-memory fallback.
+    /// Resolution order: explicit in-memory (tests) → <c>ConnectionStrings:DefaultConnection</c> (includes last-wins <c>api/.env</c> overlay) → <c>DATABASE_URL</c> → in-memory fallback.
     /// </summary>
     public static DatabaseConnectivity Resolve(IConfiguration config)
     {
@@ -19,13 +19,16 @@ public sealed record DatabaseConnectivity(AppDatabaseKind Kind, string? InMemory
         if (!string.IsNullOrWhiteSpace(inMemoryName))
             return new DatabaseConnectivity(AppDatabaseKind.InMemory, inMemoryName.Trim(), null);
 
-        var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
         var conn = config.GetConnectionString("DefaultConnection");
         string? mysqlConn = null;
-        if (!string.IsNullOrWhiteSpace(databaseUrl))
-            mysqlConn = HerokuDatabaseUrl.ToMySqlConnectionString(databaseUrl);
-        else if (!string.IsNullOrWhiteSpace(conn))
-            mysqlConn = conn;
+        if (!string.IsNullOrWhiteSpace(conn))
+            mysqlConn = conn.Trim();
+        else
+        {
+            var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
+            if (!string.IsNullOrWhiteSpace(databaseUrl))
+                mysqlConn = HerokuDatabaseUrl.ToMySqlConnectionString(databaseUrl);
+        }
 
         if (!string.IsNullOrWhiteSpace(mysqlConn))
             return new DatabaseConnectivity(AppDatabaseKind.MySql, null, ApplyMySqlPoolLimits(mysqlConn.Trim(), config));

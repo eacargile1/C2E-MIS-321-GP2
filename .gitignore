@@ -3,3 +3,6 @@
 *.user
 .vs/
 .idea/
+
+# Local secrets (copy api/.env.example → api/.env or repo-root .env)
+.env
