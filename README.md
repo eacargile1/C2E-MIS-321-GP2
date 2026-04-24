@@ -11,6 +11,7 @@ Internal ops platform (professional services): consolidated time, clients, proje
 - **Timesheets** — Weekly entry (own lines only), upsert validation (quarter-hour hours).
 - **Resource tracker** — Org-wide monthly grid derived from logged hours (all authenticated roles); weekly timesheet is a separate page.
 - **Expenses** — Submit expenses (pending); Admin + Manager approve or reject; list own expenses.
+- **AI pre-checks (expenses + timesheets)** — Optional **Review draft / Review week** actions call `POST /api/ai/operations/*`: deterministic rules always run; OpenAI (`AIRecommendations:Provider` = `openai` or `hybrid` + API key) adds grounded questions/flags. See `docs/AI-OPERATIONS.md` for design rationale (server-only LLM, human-in-the-loop).
 - **User admin** — Admin-only user CRUD and role assignment (`/admin/users`).
 - **Data** — EF Core migrations (Pomelo MySQL / in-memory for tests); Heroku-style `DATABASE_URL` (`mysql://…` from the MySQL add-on) or `ConnectionStrings:DefaultConnection`; API integration tests.
 

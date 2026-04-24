@@ -3,6 +3,7 @@ using C2E.Api.Authorization;
 using C2E.Api.Data;
 using C2E.Api.Dtos;
 using C2E.Api.Models;
+using C2E.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -59,6 +60,15 @@ public sealed class ClientsController(AppDbContext db) : ControllerBase
             .OrderBy(c => c.Name)
             .ToListAsync(ct);
 
+        HashSet<Guid>? icProjectFilter = null;
+        if (TryGetUserId(out var uid) && GetUserRole() == AppRole.IC &&
+            await db.Clients.AnyAsync(c => c.IsActive, ct))
+        {
+            var allowedClients = await IcCatalogAccess.GetAllowedClientIdsAsync(db, uid, ct);
+            icProjectFilter = await IcCatalogAccess.GetAllowedProjectIdsAsync(db, uid, ct);
+            rows = rows.Where(c => allowedClients.Contains(c.Id)).ToList();
+        }
+
         var billing = CanViewBillingRates();
         HashSet<Guid>? financePortfolio = null;
         if (User.IsInRole(nameof(AppRole.Finance)) &&
@@ -73,6 +83,7 @@ public sealed class ClientsController(AppDbContext db) : ControllerBase
             .Select(c => Map(
                 c,
                 billing,
+                icProjectFilter,
                 financePortfolio is null ? null : financePortfolio.Contains(c.Id)))
             .ToList());
     }
@@ -89,6 +100,16 @@ public sealed class ClientsController(AppDbContext db) : ControllerBase
         if (!c.IsActive && !User.IsInRole(nameof(AppRole.Admin)))
             return NotFound();
 
+        HashSet<Guid>? icProjectFilterGet = null;
+        if (TryGetUserId(out var viewerId) && GetUserRole() == AppRole.IC &&
+            await db.Clients.AnyAsync(x => x.IsActive, ct))
+        {
+            var allowedClients = await IcCatalogAccess.GetAllowedClientIdsAsync(db, viewerId, ct);
+            if (!allowedClients.Contains(c.Id))
+                return NotFound();
+            icProjectFilterGet = await IcCatalogAccess.GetAllowedProjectIdsAsync(db, viewerId, ct);
+        }
+
         HashSet<Guid>? financePortfolio = null;
         if (User.IsInRole(nameof(AppRole.Finance)) &&
             Guid.TryParse(
@@ -99,7 +120,7 @@ public sealed class ClientsController(AppDbContext db) : ControllerBase
         }
 
         var inPortfolio = financePortfolio is null ? (bool?)null : financePortfolio.Contains(c.Id);
-        return Ok(Map(c, CanViewBillingRates(), inPortfolio));
+        return Ok(Map(c, CanViewBillingRates(), icProjectFilterGet, inPortfolio));
     }
 
     [HttpPost]
@@ -164,7 +185,7 @@ public sealed class ClientsController(AppDbContext db) : ControllerBase
             }
         }
 
-        return CreatedAtAction(nameof(Get), new { id = entity.Id }, Map(entity, CanViewBillingRates(), null));
+        return CreatedAtAction(nameof(Get), new { id = entity.Id }, Map(entity, CanViewBillingRates(), null, null));
     }
 
     [HttpPatch("{id:guid}")]
@@ -205,7 +226,7 @@ public sealed class ClientsController(AppDbContext db) : ControllerBase
 
         entity.UpdatedAtUtc = now;
         await db.SaveChangesAsync(ct);
-        return Ok(Map(entity, includeBilling: true, financePortfolioMember: null));
+        return Ok(Map(entity, includeBilling: true, null, null));
     }
 
     private bool CanViewBillingRates() =>
@@ -213,7 +234,29 @@ public sealed class ClientsController(AppDbContext db) : ControllerBase
         User.IsInRole(nameof(AppRole.Finance)) ||
         User.IsInRole(nameof(AppRole.Manager));
 
-    private static ClientResponse Map(Models.Client c, bool includeBilling, bool? financePortfolioMember = null) =>
+    private AppRole GetUserRole()
+    {
+        var r = User.FindFirstValue(ClaimTypes.Role);
+        return Enum.TryParse<AppRole>(r, out var role) ? role : AppRole.IC;
+    }
+
+    private bool TryGetUserId(out Guid id)
+    {
+        var sub = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue(ClaimTypes.Name);
+        if (sub is null || !Guid.TryParse(sub, out id))
+        {
+            id = default;
+            return false;
+        }
+
+        return true;
+    }
+
+    private ClientResponse Map(
+        Models.Client c,
+        bool includeBilling,
+        HashSet<Guid>? icProjectFilter,
+        bool? financePortfolioMember = null) =>
         new()
         {
             Id = c.Id,
@@ -226,6 +269,7 @@ public sealed class ClientsController(AppDbContext db) : ControllerBase
             IsActive = c.IsActive,
             Projects = (c.Projects ?? Array.Empty<Project>())
                 .Where(p => p.IsActive)
+                .Where(p => icProjectFilter is null || icProjectFilter.Contains(p.Id))
                 .OrderBy(p => p.Name)
                 .Select(p => new ClientProjectStubDto { Id = p.Id, Name = p.Name ?? "" })
                 .ToList(),

@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using C2E.Api.Options;
 using Microsoft.Extensions.Options;
 
@@ -44,7 +45,9 @@ public sealed class OpenAiStaffingReranker(
                 new
                 {
                     role = "system",
-                    content = "You rerank staffing candidates. Return strict JSON only."
+                    content =
+                        "You rerank staffing candidates. Return a single JSON object only — no markdown fences. " +
+                        "Use camelCase property names."
                 },
                 new
                 {
@@ -73,13 +76,14 @@ public sealed class OpenAiStaffingReranker(
             if (string.IsNullOrWhiteSpace(content))
                 return null;
 
-            var parsed = JsonSerializer.Deserialize<OpenAiRankingEnvelope>(
-                content,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            if (parsed?.Rankings is null || parsed.Rankings.Count == 0)
+            var parsed = LlmStructuredJsonHelper.Deserialize<OpenAiRankingEnvelope>(content);
+            var rows = parsed?.Rankings is { Count: > 0 }
+                ? parsed.Rankings
+                : CoerceRankingRowsFromNode(content);
+            if (rows is null || rows.Count == 0)
                 return null;
 
-            return parsed.Rankings
+            return rows
                 .Where(r => r.UserId != Guid.Empty && !string.IsNullOrWhiteSpace(r.Rationale))
                 .Select(r => new StaffingRerankResult(r.UserId, r.Rationale!.Trim()))
                 .ToList();
@@ -108,6 +112,26 @@ public sealed class OpenAiStaffingReranker(
             "  ]\n" +
             "}\n" +
             "Do not include markdown or extra text.";
+    }
+
+    private static List<OpenAiRankingRow>? CoerceRankingRowsFromNode(string raw)
+    {
+        var o = LlmStructuredJsonHelper.TryParseObject(raw);
+        if (o is null) return null;
+        var arr = LlmStructuredJsonHelper.FirstArray(o, "rankings", "ranking", "results", "orderedCandidates");
+        if (arr is null) return null;
+        var list = new List<OpenAiRankingRow>();
+        foreach (var item in arr)
+        {
+            if (item is not JsonObject row) continue;
+            var idStr = LlmStructuredJsonHelper.FirstString(row, "userId", "user_id", "id");
+            var rationale = LlmStructuredJsonHelper.FirstString(row, "rationale", "reason", "summary", "explanation");
+            if (string.IsNullOrWhiteSpace(idStr) || string.IsNullOrWhiteSpace(rationale)) continue;
+            if (!Guid.TryParse(idStr.Trim(), out var uid) || uid == Guid.Empty) continue;
+            list.Add(new OpenAiRankingRow { UserId = uid, Rationale = rationale.Trim() });
+        }
+
+        return list.Count > 0 ? list : null;
     }
 
     private sealed class OpenAiResponse

@@ -468,6 +468,37 @@ public class UsersAdminTests
         Assert.Equal("Manager", me?.Role);
     }
 
+    [Fact]
+    public async Task Users_admin_can_delete_IC_user()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        var mgrId = await ApiTestUsers.SeededDevManagerIdAsync(client);
+        var create = await client.PostAsJsonAsync(
+            "/api/users",
+            new { email = "del.ic@local.test", password = "DelIcPas1!", managerUserId = mgrId });
+        create.EnsureSuccessStatusCode();
+        var ic = (await create.Content.ReadFromJsonAsync<UserDto>())!;
+        var del = await client.DeleteAsync($"/api/users/{ic.Id}");
+        Assert.Equal(HttpStatusCode.NoContent, del.StatusCode);
+        var get = await client.GetAsync($"/api/users/{ic.Id}");
+        Assert.Equal(HttpStatusCode.NotFound, get.StatusCode);
+    }
+
+    [Fact]
+    public async Task Users_delete_self_returns_conflict()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        var me = await client.GetFromJsonAsync<MeDto>("/api/auth/me");
+        var del = await client.DeleteAsync($"/api/users/{me!.Id}");
+        Assert.Equal(HttpStatusCode.Conflict, del.StatusCode);
+    }
+
     private sealed record LoginResponseDto(string AccessToken, string TokenType, int ExpiresInSeconds);
 
     private sealed record AuthErrorDto(string Message);

@@ -15,6 +15,7 @@ public class TimesheetWeekTests
             b.UseSetting("Jwt:SigningKey", "test-signing-key-must-be-32-chars-min!!");
             b.UseSetting("Seed:DevUserEmail", "admin@local.test");
             b.UseSetting("Seed:DevUserPassword", "AdminPass!9");
+            b.UseSetting("Timesheets:AnchorDateUtc", "2026-04-21");
         });
 
     private static async Task<string> LoginTokenAsync(HttpClient client, string email, string password)
@@ -97,6 +98,35 @@ public class TimesheetWeekTests
         Assert.Equal(2, lines!.Count);
         Assert.Contains(lines, l => l.WorkDate == "2026-04-06" && l.Client == "Acme" && l.Hours == 7.5m && l.IsBillable);
         Assert.Contains(lines, l => l.WorkDate == "2026-04-07" && l.Task == "Meetings" && l.Hours == 1.25m && !l.IsBillable);
+    }
+
+    [Fact]
+    public async Task Put_week_outside_entry_window_returns_bad_request()
+    {
+        using var factory = Factory();
+        var client = factory.CreateClient();
+        var token = await CreateIcUserAndGetTokenAsync(client, "ic.window@local.test", "IcWinPass1!");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        // Anchor 2026-04-21 → allowed Monday weeks ~2026-03-16..2026-05-18; January is outside.
+        const string weekStart = "2026-01-05";
+        var put = await client.PutAsJsonAsync(
+            $"/api/timesheets/week?weekStart={weekStart}",
+            new[]
+            {
+                new
+                {
+                    workDate = "2026-01-05",
+                    client = "Acme",
+                    project = "Website",
+                    task = "Build",
+                    hours = 1m,
+                    isBillable = true,
+                    notes = (string?)null,
+                },
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, put.StatusCode);
     }
 
     [Fact]
@@ -649,6 +679,7 @@ public class TimesheetWeekTests
             "/api/projects",
             new { name = "BudgetProj", clientId = createdClient!.Id, budgetAmount = 10_000m });
         projRes.EnsureSuccessStatusCode();
+        (await client.PutAsync($"/api/assignments/clients/{createdClient!.Id}/employees/{icId}", null)).EnsureSuccessStatusCode();
         client.DefaultRequestHeaders.Authorization = null;
 
         const string week1 = "2026-04-06";

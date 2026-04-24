@@ -221,6 +221,15 @@ export async function patchUser(
   return parseUserRow(r)
 }
 
+export async function deleteUser(token: string, id: string): Promise<void> {
+  const res = await fetch(`${base}/api/users/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  })
+  if (!res.ok && res.status !== 404)
+    throw new Error(await readApiErrorMessage(res, 'Could not delete user'))
+}
+
 export type PtoRequestRow = {
   id: string
   userId: string
@@ -1680,4 +1689,249 @@ export async function getResourceTrackerMonth(token: string, monthStart: string)
     })
     return { userId: r.userId, email: r.email, role: r.role, days }
   })
+}
+
+export type OperationsAiInsight = {
+  severity: string
+  code: string
+  message: string
+  source: string
+}
+
+export type OperationsExpenseAiReviewResult = {
+  reviewKind: string
+  submitterEmail: string | null
+  usedLlm: boolean
+  llmNote: string | null
+  insights: OperationsAiInsight[]
+  questionsForSubmitter: string[]
+}
+
+function assertOperationsAiInsight(x: unknown): OperationsAiInsight {
+  const r = x as Record<string, unknown>
+  if (
+    typeof r.severity !== 'string' ||
+    typeof r.code !== 'string' ||
+    typeof r.message !== 'string' ||
+    typeof r.source !== 'string'
+  )
+    throw new Error('Invalid AI review response')
+  return {
+    severity: r.severity,
+    code: r.code,
+    message: r.message,
+    source: r.source,
+  }
+}
+
+function assertExpenseAiReview(x: unknown): OperationsExpenseAiReviewResult {
+  const r = x as Record<string, unknown>
+  if (typeof r.usedLlm !== 'boolean' || !Array.isArray(r.insights) || !Array.isArray(r.questionsForSubmitter))
+    throw new Error('Invalid expense AI review response')
+  const llmNote = r.llmNote
+  const rk = r.reviewKind
+  const se = r.submitterEmail
+  return {
+    reviewKind: typeof rk === 'string' && rk.trim() ? rk : 'draft',
+    submitterEmail: typeof se === 'string' ? se : null,
+    usedLlm: r.usedLlm,
+    llmNote: typeof llmNote === 'string' ? llmNote : null,
+    insights: r.insights.map(assertOperationsAiInsight),
+    questionsForSubmitter: r.questionsForSubmitter.filter((q): q is string => typeof q === 'string'),
+  }
+}
+
+export async function reviewExpenseDraftAi(
+  token: string,
+  body: {
+    expenseDate: string
+    client: string
+    project: string
+    category: string
+    description: string
+    amount: number
+    hasInvoiceAttachment: boolean
+  },
+): Promise<OperationsExpenseAiReviewResult> {
+  const res = await fetch(`${base}/api/ai/operations/expense-review`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Expense AI review failed'))
+  return assertExpenseAiReview(await res.json())
+}
+
+export async function reviewExpenseApproverAi(token: string, expenseId: string): Promise<OperationsExpenseAiReviewResult> {
+  const res = await fetch(`${base}/api/ai/operations/expense-approver-review`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({ expenseId }),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Expense approver AI failed'))
+  return assertExpenseAiReview(await res.json())
+}
+
+export type OperationsTimesheetWeekAiReviewResult = {
+  reviewKind: string
+  subjectEmail: string | null
+  usedLlm: boolean
+  llmNote: string | null
+  weekTotalHours: number
+  insights: OperationsAiInsight[]
+  questionsForEmployee: string[]
+  noteSuggestions: string[]
+}
+
+function assertTimesheetWeekAiReview(x: unknown): OperationsTimesheetWeekAiReviewResult {
+  const r = x as Record<string, unknown>
+  if (
+    typeof r.usedLlm !== 'boolean' ||
+    typeof r.weekTotalHours !== 'number' ||
+    !Array.isArray(r.insights) ||
+    !Array.isArray(r.questionsForEmployee) ||
+    !Array.isArray(r.noteSuggestions)
+  )
+    throw new Error('Invalid timesheet AI review response')
+  const llmNote = r.llmNote
+  const rk = r.reviewKind
+  const sub = r.subjectEmail
+  return {
+    reviewKind: typeof rk === 'string' && rk.trim() ? rk : 'draft',
+    subjectEmail: typeof sub === 'string' ? sub : null,
+    usedLlm: r.usedLlm,
+    llmNote: typeof llmNote === 'string' ? llmNote : null,
+    weekTotalHours: r.weekTotalHours,
+    insights: r.insights.map(assertOperationsAiInsight),
+    questionsForEmployee: r.questionsForEmployee.filter((q): q is string => typeof q === 'string'),
+    noteSuggestions: r.noteSuggestions.filter((q): q is string => typeof q === 'string'),
+  }
+}
+
+export async function reviewTimesheetWeekAi(
+  token: string,
+  weekStartMonday: string,
+  lines: TimesheetLine[],
+): Promise<OperationsTimesheetWeekAiReviewResult> {
+  const res = await fetch(`${base}/api/ai/operations/timesheet-week-review`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({
+      weekStartMonday,
+      lines: lines.map((l) => ({
+        workDate: l.workDate,
+        client: l.client,
+        project: l.project,
+        task: l.task,
+        hours: l.hours,
+        isBillable: l.isBillable,
+        notes: l.notes,
+      })),
+    }),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Timesheet AI review failed'))
+  return assertTimesheetWeekAiReview(await res.json())
+}
+
+export async function reviewTimesheetApproverAi(
+  token: string,
+  userId: string,
+  weekStartMonday: string,
+): Promise<OperationsTimesheetWeekAiReviewResult> {
+  const res = await fetch(`${base}/api/ai/operations/timesheet-approver-review`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({ userId, weekStartMonday }),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Timesheet approver AI failed'))
+  return assertTimesheetWeekAiReview(await res.json())
+}
+
+export type FinanceLedgerAuditResult = {
+  usedLlm: boolean
+  llmNote: string | null
+  rowCount: number
+  totalPendingAmount: number
+  totalApprovedAmount: number
+  insights: OperationsAiInsight[]
+  summaryPoints: string[]
+}
+
+function assertFinanceLedgerAudit(x: unknown): FinanceLedgerAuditResult {
+  const r = x as Record<string, unknown>
+  if (
+    typeof r.usedLlm !== 'boolean' ||
+    typeof r.rowCount !== 'number' ||
+    typeof r.totalPendingAmount !== 'number' ||
+    typeof r.totalApprovedAmount !== 'number' ||
+    !Array.isArray(r.insights) ||
+    !Array.isArray(r.summaryPoints)
+  )
+    throw new Error('Invalid ledger audit response')
+  const ln = r.llmNote
+  return {
+    usedLlm: r.usedLlm,
+    llmNote: typeof ln === 'string' ? ln : null,
+    rowCount: r.rowCount,
+    totalPendingAmount: r.totalPendingAmount,
+    totalApprovedAmount: r.totalApprovedAmount,
+    insights: r.insights.map(assertOperationsAiInsight),
+    summaryPoints: r.summaryPoints.filter((q): q is string => typeof q === 'string'),
+  }
+}
+
+export async function auditFinanceLedgerAi(
+  token: string,
+  body: { employeeEmailContains?: string; clientNameContains?: string; maxRows?: number },
+): Promise<FinanceLedgerAuditResult> {
+  const res = await fetch(`${base}/api/ai/finance/ledger-audit`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Ledger audit failed'))
+  return assertFinanceLedgerAudit(await res.json())
+}
+
+export type FinanceQuoteDraftResult = {
+  usedLlm: boolean
+  llmNote: string | null
+  suggestedTitle: string | null
+  suggestedScopeSummary: string | null
+  suggestedHours: number | null
+  suggestedHourlyRate: number | null
+  suggestedValidThroughYmd: string | null
+  reviewerChecklist: string[]
+}
+
+function assertFinanceQuoteDraft(x: unknown): FinanceQuoteDraftResult {
+  const r = x as Record<string, unknown>
+  if (typeof r.usedLlm !== 'boolean' || !Array.isArray(r.reviewerChecklist))
+    throw new Error('Invalid quote draft response')
+  const ln = r.llmNote
+  const sh = r.suggestedHours
+  const sr = r.suggestedHourlyRate
+  return {
+    usedLlm: r.usedLlm,
+    llmNote: typeof ln === 'string' ? ln : null,
+    suggestedTitle: typeof r.suggestedTitle === 'string' ? r.suggestedTitle : null,
+    suggestedScopeSummary: typeof r.suggestedScopeSummary === 'string' ? r.suggestedScopeSummary : null,
+    suggestedHours: typeof sh === 'number' ? sh : null,
+    suggestedHourlyRate: typeof sr === 'number' ? sr : null,
+    suggestedValidThroughYmd: typeof r.suggestedValidThroughYmd === 'string' ? r.suggestedValidThroughYmd : null,
+    reviewerChecklist: r.reviewerChecklist.filter((q): q is string => typeof q === 'string'),
+  }
+}
+
+export async function draftFinanceQuoteAi(
+  token: string,
+  body: { clientId: string; contextEmployeeEmail?: string },
+): Promise<FinanceQuoteDraftResult> {
+  const res = await fetch(`${base}/api/ai/finance/quote-draft`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(await readApiErrorMessage(res, 'Quote draft AI failed'))
+  return assertFinanceQuoteDraft(await res.json())
 }

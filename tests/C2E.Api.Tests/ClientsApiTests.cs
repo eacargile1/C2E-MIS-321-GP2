@@ -105,12 +105,20 @@ public class ClientsApiTests
         using var factory = Factory();
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
-        await client.PostAsJsonAsync(
+        var betaCreate = await client.PostAsJsonAsync(
             "/api/clients",
             new { name = "Beta LLC", defaultBillingRate = 200m });
+        betaCreate.EnsureSuccessStatusCode();
+        var betaId = (await betaCreate.Content.ReadFromJsonAsync<ClientDto>())!.Id;
 
         var icToken = await CreateUserWithRoleAsync(client, "ic.cl@local.test", "IcClPass1!", "IC");
         var finToken = await CreateUserWithRoleAsync(client, "fin.cl2@local.test", "FinCl2Pass1!", "Finance");
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
+        var icUserId = (await client.GetFromJsonAsync<MeIdDto>("/api/auth/me"))!.Id;
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
+        (await client.PutAsync($"/api/assignments/clients/{betaId}/employees/{icUserId}", null)).EnsureSuccessStatusCode();
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
         var icList = await client.GetAsync("/api/clients");
@@ -131,10 +139,13 @@ public class ClientsApiTests
         using var factory = Factory();
         var client = factory.CreateClient();
         var icToken = await CreateUserWithRoleAsync(client, "ic.only@local.test", "IcOnlyPass1!", "IC");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
+        var icUserId = (await client.GetFromJsonAsync<MeIdDto>("/api/auth/me"))!.Id;
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await AdminTokenAsync(client));
         var create = await client.PostAsJsonAsync("/api/clients", new { name = "Gamma" });
         var id = (await create.Content.ReadFromJsonAsync<ClientDto>())!.Id;
+        (await client.PutAsync($"/api/assignments/clients/{id}/employees/{icUserId}", null)).EnsureSuccessStatusCode();
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", icToken);
         Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync("/api/clients", new { name = "Hack" })).StatusCode);
@@ -192,6 +203,8 @@ public class ClientsApiTests
     private sealed record LoginResponseDto(string AccessToken, string TokenType, int ExpiresInSeconds);
 
     private sealed record UserDto(Guid Id, string Email, string Role, bool IsActive);
+
+    private sealed record MeIdDto(Guid Id, string Email, string DisplayName, string Role, bool IsActive);
 
     private sealed record ClientDto(Guid Id, string Name, decimal? DefaultBillingRate, bool IsActive);
 }

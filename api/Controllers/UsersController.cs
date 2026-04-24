@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using C2E.Api;
 using C2E.Api.Data;
 using C2E.Api.Dtos;
@@ -321,6 +322,59 @@ public class UsersController(AppDbContext db, PasswordHasher<AppUser> passwordHa
             .Select(s => s.SkillName)
             .ToListAsync(ct);
         return Ok(ToResponse(user, savedSkills));
+    }
+
+    /// <summary>
+    /// Permanently removes the user and their timesheets, expenses, PTO (as requester or approver), assignments,
+    /// skills, project tasks they created (other users’ tasks keep history with assignee cleared), and clears
+    /// them from project staffing fields.
+    /// </summary>
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
+    {
+        if (!TryGetCallerUserId(out var callerId))
+            return Unauthorized();
+
+        if (callerId == id)
+        {
+            return Conflict(new AuthErrorResponse
+            {
+                Message = "You cannot delete your own account while signed in. Have another admin remove it, or use a database reset in non-production.",
+            });
+        }
+
+        var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == id, ct);
+        if (user is null)
+            return NoContent();
+
+        if (user.Role == AppRole.Admin && user.IsActive)
+        {
+            var otherActiveAdmin = await db.Users.AnyAsync(
+                u => u.Id != id && u.Role == AppRole.Admin && u.IsActive,
+                ct);
+            if (!otherActiveAdmin)
+            {
+                return Conflict(new AuthErrorResponse
+                {
+                    Message = "Cannot delete the last active administrator.",
+                });
+            }
+        }
+
+        await UserHardDelete.DeleteAsync(db, id, ct);
+        return NoContent();
+    }
+
+    private bool TryGetCallerUserId(out Guid id)
+    {
+        var sub = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue(ClaimTypes.Name);
+        if (sub is null || !Guid.TryParse(sub, out id))
+        {
+            id = default;
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>First active Partner by email (deterministic default for new Finance users).</summary>

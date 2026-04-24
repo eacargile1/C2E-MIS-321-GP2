@@ -10,11 +10,15 @@ import {
   listProjects,
   listTeamExpenses,
   rejectExpense,
+  reviewExpenseApproverAi,
+  reviewExpenseDraftAi,
   type ClientRow,
   type ExpenseRow,
   type MeProfile,
+  type OperationsExpenseAiReviewResult,
   type ProjectRow,
 } from '../api'
+import AiReviewPanel from '../components/AiReviewPanel'
 import '../App.css'
 
 type Toast = { id: number; message: string; variant: 'ok' | 'err' }
@@ -50,6 +54,13 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
   const [invoiceFieldKey, setInvoiceFieldKey] = useState(0)
   const [catalogClients, setCatalogClients] = useState<ClientRow[]>([])
   const [catalogProjects, setCatalogProjects] = useState<ProjectRow[]>([])
+  const [expenseAi, setExpenseAi] = useState<OperationsExpenseAiReviewResult | null>(null)
+  const [expenseAiBusy, setExpenseAiBusy] = useState(false)
+  const [approverExpenseAi, setApproverExpenseAi] = useState<{
+    id: string
+    result: OperationsExpenseAiReviewResult
+  } | null>(null)
+  const [approverExpenseAiBusyId, setApproverExpenseAiBusyId] = useState<string | null>(null)
 
   const pushToast = useCallback((message: string, variant: 'ok' | 'err') => {
     const id = Date.now()
@@ -132,12 +143,47 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
       setAmount('')
       setInvoiceFile(null)
       setInvoiceFieldKey((k) => k + 1)
+      setExpenseAi(null)
       pushToast('Expense submitted for approval', 'ok')
       await refresh()
     } catch (e2) {
       pushToast(e2 instanceof Error ? e2.message : 'Create failed', 'err')
     } finally {
       setBusy(false)
+    }
+  }
+
+  const onAiReviewPendingExpense = async (expenseId: string) => {
+    setApproverExpenseAiBusyId(expenseId)
+    try {
+      const r = await reviewExpenseApproverAi(token, expenseId)
+      setApproverExpenseAi({ id: expenseId, result: r })
+    } catch (e2) {
+      pushToast(e2 instanceof Error ? e2.message : 'Approver AI failed', 'err')
+    } finally {
+      setApproverExpenseAiBusyId(null)
+    }
+  }
+
+  const onAiReviewExpense = async () => {
+    setExpenseAiBusy(true)
+    try {
+      const parsed = Number(amount)
+      if (!Number.isFinite(parsed) || parsed <= 0) throw new Error('Amount must be a positive number')
+      const r = await reviewExpenseDraftAi(token, {
+        expenseDate,
+        client: client.trim(),
+        project: project.trim(),
+        category: category.trim(),
+        description: description.trim(),
+        amount: parsed,
+        hasInvoiceAttachment: Boolean(invoiceFile),
+      })
+      setExpenseAi(r)
+    } catch (e2) {
+      pushToast(e2 instanceof Error ? e2.message : 'AI review failed', 'err')
+    } finally {
+      setExpenseAiBusy(false)
     }
   }
 
@@ -157,6 +203,7 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
     try {
       if (action === 'approve') await approveExpense(token, id)
       else await rejectExpense(token, id)
+      setApproverExpenseAi(null)
       pushToast(action === 'approve' ? 'Expense approved' : 'Expense rejected', 'ok')
       await refresh()
     } catch (e) {
@@ -264,10 +311,29 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
               PDF Or Image · Max 5 MB
             </span>
           </label>
-          <button type="submit" className="btn primary" disabled={busy}>
-            Submit For Approval
-          </button>
+          <div className="admin-header-actions" style={{ gridColumn: '1 / -1' }}>
+            <button
+              type="button"
+              className="btn secondary"
+              disabled={busy || expenseAiBusy}
+              onClick={() => void onAiReviewExpense()}
+            >
+              {expenseAiBusy ? 'Reviewing…' : 'Review Draft (AI + Rules)'}
+            </button>
+            <button type="submit" className="btn primary" disabled={busy || expenseAiBusy}>
+              Submit For Approval
+            </button>
+          </div>
         </form>
+        {expenseAi ? (
+          <AiReviewPanel
+            title="Pre-submit review"
+            usedLlm={expenseAi.usedLlm}
+            llmNote={expenseAi.llmNote}
+            insights={expenseAi.insights}
+            questions={expenseAi.questionsForSubmitter}
+          />
+        ) : null}
       </div>
 
       <div className="card admin-card">
@@ -399,6 +465,7 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
                     <th>Description</th>
                     <th>Amount</th>
                     <th>Invoice</th>
+                    <th>AI</th>
                     <th />
                   </tr>
                 </thead>
@@ -424,6 +491,16 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
                           <span className="admin-hint">—</span>
                         )}
                       </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn secondary btn-sm"
+                          disabled={busy || approverExpenseAiBusyId === r.id}
+                          onClick={() => void onAiReviewPendingExpense(r.id)}
+                        >
+                          {approverExpenseAiBusyId === r.id ? '…' : 'Review'}
+                        </button>
+                      </td>
                       <td className="admin-actions">
                         <button type="button" className="btn primary btn-sm" onClick={() => void onReview(r.id, 'approve')} disabled={busy}>
                           Approve
@@ -438,6 +515,16 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
               </table>
             </div>
           )}
+          {approverExpenseAi ? (
+            <AiReviewPanel
+              title={`Approver review · expense ${approverExpenseAi.id.slice(0, 8)}…${approverExpenseAi.result.submitterEmail ? ` · ${approverExpenseAi.result.submitterEmail}` : ''}`}
+              usedLlm={approverExpenseAi.result.usedLlm}
+              llmNote={approverExpenseAi.result.llmNote}
+              insights={approverExpenseAi.result.insights}
+              questions={approverExpenseAi.result.questionsForSubmitter}
+              questionsHeading="Reviewer checklist / summary"
+            />
+          ) : null}
         </div>
       ) : null}
 
