@@ -10,9 +10,8 @@ import {
   useNavigate,
 } from 'react-router-dom'
 import {
-  approveTimesheetWeek,
-  getTimesheetWeek,
   getTimesheetWeekStatus,
+  getTimesheetWeek,
   listClients,
   listMyExpenses,
   listMyPtoRequests,
@@ -22,7 +21,6 @@ import {
   listQuotes,
   login,
   me,
-  rejectTimesheetWeek,
   type ExpenseRow,
   type MeProfile,
   type PendingTimesheetWeek,
@@ -60,87 +58,8 @@ function weekStartMonday(d: Date) {
   return x
 }
 
-function expenseUiStatus(s: ExpenseRow['status']): 'approved' | 'pending' | 'denied' {
-  if (s === 'Approved') return 'approved'
-  if (s === 'Pending') return 'pending'
-  return 'denied'
-}
-
-function quoteUiStatus(s: string): 'approved' | 'pending' | 'denied' {
-  if (s === 'Accepted') return 'approved'
-  if (s === 'Declined' || s === 'Expired') return 'denied'
-  return 'pending'
-}
-
-function StatusBadge({ variant }: { variant: 'approved' | 'pending' | 'denied' | 'draft' }) {
-  const label =
-    variant === 'approved'
-      ? 'Approved'
-      : variant === 'pending'
-        ? 'Pending'
-        : variant === 'draft'
-          ? 'Draft'
-          : 'Denied'
-  return <span className={`status-badge status-${variant}`}>{label}</span>
-}
-
-function timesheetWeekStatusVariant(s: TimesheetWeekStatusPayload['status']): 'approved' | 'pending' | 'denied' | 'draft' {
-  if (s === 'Approved') return 'approved'
-  if (s === 'Pending') return 'pending'
-  if (s === 'Rejected') return 'denied'
-  return 'draft'
-}
-
-/** Hover copy for “Hours This Week” — weekly sign-off varies by role. */
-function hoursThisWeekHelpTooltip(
-  role: string,
-  weekHours: number,
-  snap: {
-    loading: boolean
-    error: string | null
-    myTimesheetWeek: TimesheetWeekStatusPayload | null
-  },
-): string {
-  if (snap.loading) return 'Loading timesheet status…'
-  if (snap.error) return snap.error
-  const tw = snap.myTimesheetWeek
-  if (!tw) return 'Time tracking status not available.'
-  const grid = tw.totalHours.toFixed(2)
-  const gridBill = tw.billableHours.toFixed(2)
-  const sub = (tw.pendingSubmissionTotalHours ?? tw.totalHours).toFixed(2)
-  const subBill = (tw.pendingSubmissionBillableHours ?? tw.billableHours).toFixed(2)
-  const kpi = weekHours.toFixed(2)
-
-  const usesWeekSignoff =
-    role === 'IC' ||
-    role === 'Finance' ||
-    role === 'Manager' ||
-    role === 'Partner' ||
-    role === 'Admin'
-
-  if (!usesWeekSignoff) {
-    return `You have ${kpi}h logged this week (${gridBill}h billable on lines).`
-  }
-
-  if (role === 'Admin') {
-    if (tw.status === 'Approved')
-      return `Admin weeks self-sign on submit (${gridBill}h billable in the signed week). You have ${kpi}h logged this calendar week on the grid.`
-    return `You have ${kpi}h logged this week (${gridBill}h billable). Submit from Time Tracking when you want this week recorded as signed-off.`
-  }
-
-  if (tw.status === 'Pending') {
-    return `This week is in the approval queue. Reviewers evaluate the submission snapshot: ${sub}h total (${subBill}h billable) — captured when you clicked Submit. Your timesheet grid currently shows ${grid}h total (${gridBill}h billable). If you had an earlier approval and then edited the week, the prior sign-off was cleared and the full week was re-submitted.`
-  }
-  if (tw.status === 'Approved')
-    return `This week is signed off. Latest grid totals: ${grid}h (${gridBill}h billable). KPI uses ${kpi}h from the same week view.`
-  if (tw.status === 'Rejected')
-    return `Week was rejected — nothing is in the approval queue until you resubmit. Grid: ${grid}h (${gridBill}h billable). KPI: ${kpi}h.`
-  return `Not submitted yet. Grid: ${grid}h (${gridBill}h billable). KPI: ${kpi}h. Submit from Time Tracking when totals are final.`
-}
-
 function HomeDashboard({ session }: { session: Session }) {
   const role = session.profile.role
-  const isIcOnly = role === 'IC'
   const isAdmin = role === 'Admin'
   const isFinanceHub = role === 'Admin' || role === 'Finance'
   const isReviewer = role === 'Admin' || role === 'Manager' || role === 'Partner'
@@ -151,9 +70,11 @@ function HomeDashboard({ session }: { session: Session }) {
     activeClients: 0,
     activeProjects: 0,
     weekHours: 0,
+    pendingExpenses: 0,
     loading: true,
+    error: null as string | null,
   })
-  const [approvalSnap, setApprovalSnap] = useState<{
+  const [homeSnap, setHomeSnap] = useState<{
     loading: boolean
     error: string | null
     myExpenses: ExpenseRow[]
@@ -172,27 +93,15 @@ function HomeDashboard({ session }: { session: Session }) {
     myTimesheetWeek: null,
     pendingTimesheetWeeks: [],
   })
-  const [timesheetActionBusy, setTimesheetActionBusy] = useState<string | null>(null)
-  const [timesheetActionError, setTimesheetActionError] = useState<string | null>(null)
 
   const weekStart = useMemo(() => toYmd(weekStartMonday(new Date())), [])
 
   const loadDashboard = useCallback(async () => {
-    setKpis((p) => ({ ...p, loading: true }))
-    setApprovalSnap((p) => ({ ...p, loading: true, error: null }))
-    setTimesheetActionError(null)
+    setKpis((p) => ({ ...p, loading: true, error: null }))
+    setHomeSnap((p) => ({ ...p, loading: true, error: null }))
     try {
-      const [
-        clients,
-        projects,
-        lines,
-        myExpenses,
-        myPtoRequests,
-        teamPending,
-        quotes,
-        myTimesheetWeek,
-        pendingTimesheetWeeks,
-      ] = await Promise.all([
+      const [clients, projects, lines, myExpenses, myPtoRequests, teamPending, quotes, myTimesheetWeek, pendingTimesheetWeeks] =
+        await Promise.all([
         listClients(session.token, undefined, isAdmin),
         listProjects(session.token, { includeInactive: isAdmin }),
         getTimesheetWeek(session.token, weekStart),
@@ -201,16 +110,15 @@ function HomeDashboard({ session }: { session: Session }) {
         isReviewer ? listPendingExpenseApprovals(session.token) : Promise.resolve([] as ExpenseRow[]),
         isFinanceHub ? listQuotes(session.token) : Promise.resolve([] as QuoteRow[]),
         getTimesheetWeekStatus(session.token, weekStart),
-        isReviewer
-          ? listPendingTimesheetWeekApprovals(session.token)
-          : Promise.resolve([] as PendingTimesheetWeek[]),
-      ])
+        isReviewer ? listPendingTimesheetWeekApprovals(session.token) : Promise.resolve([] as PendingTimesheetWeek[]),
+        ])
       const activeClients = clients.filter((c) => c.isActive).length
       const activeProjects = projects.filter((p) => p.isActive).length
       const weekHours = lines.reduce((sum, line) => sum + line.hours, 0)
-      setKpis({ activeClients, activeProjects, weekHours, loading: false })
+      const pendingExpenses = myExpenses.filter((e) => e.status === 'Pending').length
+      setKpis({ activeClients, activeProjects, weekHours, pendingExpenses, loading: false, error: null })
       const mineSorted = [...myExpenses].sort((a, b) => b.expenseDate.localeCompare(a.expenseDate))
-      setApprovalSnap({
+      setHomeSnap({
         loading: false,
         error: null,
         myExpenses: mineSorted.slice(0, 10),
@@ -221,10 +129,10 @@ function HomeDashboard({ session }: { session: Session }) {
         pendingTimesheetWeeks: pendingTimesheetWeeks.slice(0, 10),
       })
     } catch {
-      setKpis((prev) => ({ ...prev, loading: false }))
-      setApprovalSnap({
+      setKpis((prev) => ({ ...prev, loading: false, error: 'Could not load dashboard data.' }))
+      setHomeSnap({
         loading: false,
-        error: 'Could not load approval status.',
+        error: 'Could not load approval and activity data.',
         myExpenses: [],
         myPtoRequests: [],
         teamPending: [],
@@ -233,395 +141,197 @@ function HomeDashboard({ session }: { session: Session }) {
         pendingTimesheetWeeks: [],
       })
     }
-  }, [isAdmin, isFinanceHub, isReviewer, role, session.token, weekStart])
+  }, [isAdmin, isFinanceHub, isReviewer, session.token, weekStart])
 
   useEffect(() => {
     void loadDashboard()
   }, [loadDashboard])
 
-  const myPendingExpenses = useMemo(
-    () => approvalSnap.myExpenses.filter((e) => e.status === 'Pending'),
-    [approvalSnap.myExpenses],
-  )
-  const myPendingPto = useMemo(
-    () => approvalSnap.myPtoRequests.filter((p) => p.status === 'Pending'),
-    [approvalSnap.myPtoRequests],
-  )
-  const timeWeekPending =
-    approvalSnap.myTimesheetWeek?.status === 'Pending' &&
-    (role === 'IC' || role === 'Finance' || role === 'Manager' || role === 'Partner' || role === 'Admin')
-
-  const pendingYourCount =
-    (timeWeekPending ? 1 : 0) + myPendingExpenses.length + myPendingPto.length
+  const firstName = (session.profile.displayName || session.profile.email).split(' ')[0] || 'there'
+  const greeting = (() => {
+    const h = new Date().getHours()
+    if (h < 12) return 'Good morning'
+    if (h < 18) return 'Good afternoon'
+    return 'Good evening'
+  })()
+  const myPendingExpenses = useMemo(() => homeSnap.myExpenses.filter((e) => e.status === 'Pending'), [homeSnap.myExpenses])
+  const myPendingPto = useMemo(() => homeSnap.myPtoRequests.filter((p) => p.status === 'Pending'), [homeSnap.myPtoRequests])
+  const timeWeekPending = homeSnap.myTimesheetWeek?.status === 'Pending'
+  const pendingYourCount = (timeWeekPending ? 1 : 0) + myPendingExpenses.length + myPendingPto.length
+  const pendingForYouCount = homeSnap.teamPending.length + homeSnap.pendingTimesheetWeeks.length
+  const recentActivity = useMemo(() => {
+    const expenseRows = homeSnap.myExpenses.slice(0, 3).map((e) => ({
+      id: `exp-${e.id}`,
+      title: `${e.client} - ${e.project}`,
+      meta: `${usd.format(e.amount)} · ${e.status.toLowerCase()}`,
+      tag: 'Expense',
+      tone: 'orange',
+    }))
+    const quoteRows = homeSnap.quotes.slice(0, 2).map((q) => ({
+      id: `quote-${q.id}`,
+      title: `${q.clientName} - ${q.title}`,
+      meta: `Quote · ${q.status}`,
+      tag: 'Project',
+      tone: 'purple',
+    }))
+    const weekRow = homeSnap.myTimesheetWeek
+      ? [
+          {
+            id: `week-${homeSnap.myTimesheetWeek.weekStart}`,
+            title: 'Weekly timesheet',
+            meta: `${homeSnap.myTimesheetWeek.status} · week of ${homeSnap.myTimesheetWeek.weekStart}`,
+            tag: 'Time',
+            tone: 'teal',
+          },
+        ]
+      : []
+    return [...weekRow, ...expenseRows, ...quoteRows].slice(0, 5)
+  }, [homeSnap.myExpenses, homeSnap.myTimesheetWeek, homeSnap.quotes, usd])
 
   return (
-    <div className="dashboard">
-      <section className="card admin-card">
-        <h1 className="title admin-title">Home Dashboard</h1>
-        <p className="subtitle admin-sub">
-          Welcome back, {session.profile.displayName} ({session.profile.role})
-        </p>
-        <p className="admin-hint" style={{ marginBottom: 0 }}>
-          {isIcOnly
-            ? 'Browse clients, projects, Resource Tracker, and reports from the header (read-only). Use Time Tracking and Expenses to log hours and submit your expenses.'
-            : 'Use top navigation for full modules; quick actions and the status panel summarize common follow-ups.'}
-        </p>
+    <div className="home-page">
+      <section className="home-hero">
+        <p className="home-eyebrow">Home</p>
+        <h1 className="home-greeting">
+          {greeting}, {firstName}.
+        </h1>
+        <p className="home-subtitle">Here&apos;s where things stand this week.</p>
       </section>
 
-      <section className="dashboard-kpis">
-        <article className="card admin-card kpi-card">
-          <p className="kpi-label">Active Clients</p>
-          <p className="kpi-value">{kpis.loading ? '--' : kpis.activeClients}</p>
-        </article>
-        <article className="card admin-card kpi-card">
-          <p className="kpi-label">Active Projects</p>
-          <p className="kpi-value">{kpis.loading ? '--' : kpis.activeProjects}</p>
-        </article>
-        <article className="card admin-card kpi-card">
-          <p className="kpi-label kpi-label-with-help">
-            <span>Hours This Week</span>
-            <span
-              className="kpi-help-trigger"
-              tabIndex={0}
-              title={hoursThisWeekHelpTooltip(role, kpis.weekHours, approvalSnap)}
-              aria-label={hoursThisWeekHelpTooltip(role, kpis.weekHours, approvalSnap)}
-            >
-              ⓘ
-            </span>
+      <section className="home-kpi-grid">
+        <article className="card admin-card home-kpi-card home-kpi-clients">
+          <p className="home-kpi-label">Active Clients</p>
+          <p className="home-kpi-value">{kpis.loading ? '--' : kpis.activeClients}</p>
+          <p className="home-kpi-sub">
+            {kpis.loading ? 'Loading…' : `Across ${kpis.activeProjects} active project${kpis.activeProjects === 1 ? '' : 's'}`}
           </p>
-          <p className="kpi-value">{kpis.loading ? '--' : kpis.weekHours.toFixed(2)}</p>
-          {!kpis.loading &&
-          approvalSnap.myTimesheetWeek?.status === 'Pending' &&
-          approvalSnap.myTimesheetWeek.pendingSubmissionTotalHours != null ? (
-            <p className="kpi-sub muted">
-              In approval queue (snapshot at submit):{' '}
-              {approvalSnap.myTimesheetWeek.pendingSubmissionTotalHours.toFixed(2)}h total ·{' '}
-              {(approvalSnap.myTimesheetWeek.pendingSubmissionBillableHours ?? 0).toFixed(2)}h billable
-            </p>
-          ) : null}
+        </article>
+        <article className="card admin-card home-kpi-card home-kpi-hours">
+          <p className="home-kpi-label">Hours This Week</p>
+          <p className="home-kpi-value">{kpis.loading ? '--' : kpis.weekHours.toFixed(2)}</p>
+          <p className="home-kpi-sub">{kpis.loading ? 'Loading…' : 'No entries yet · due Friday'}</p>
+        </article>
+        <article className="card admin-card home-kpi-card home-kpi-expenses">
+          <p className="home-kpi-label">Pending Expenses</p>
+          <p className="home-kpi-value">{kpis.loading ? '--' : kpis.pendingExpenses}</p>
+          <p className="home-kpi-sub">
+            {kpis.loading ? 'Loading…' : kpis.pendingExpenses > 0 ? 'Awaiting your submission' : 'No pending submissions'}
+          </p>
         </article>
       </section>
 
-      <section className="dashboard-two-col">
-        <article className="card admin-card quick-actions">
-          <h2 className="admin-h2">Quick Actions</h2>
-          <div className="quick-action-grid">
-            <NavLink to="/timesheet" className="quick-action-tile qa-timesheet">
-              <span className="quick-action-title">Time Tracking</span>
-              <span className="quick-action-sub">Log hours by client, project, and task</span>
+      {kpis.error ? <p className="home-load-error">{kpis.error}</p> : null}
+
+      <section className="home-main-grid">
+        <article className="card admin-card home-quick-card">
+          <div className="home-section-head">
+            <h2 className="home-section-title">Quick Actions</h2>
+          </div>
+          <div className="home-actions-grid">
+            <NavLink to="/timesheet" className="home-action-cell action-a">
+              <span className="home-action-arrow" aria-hidden />
+              <span className="home-action-name">Time Tracking</span>
+              <span className="home-action-desc">Log hours by client, project, and task</span>
             </NavLink>
-            <NavLink to="/resource-tracker" className="quick-action-tile qa-projects">
-              <span className="quick-action-title">Resource Tracker</span>
-              <span className="quick-action-sub">Org month view from logged hours</span>
+            <NavLink to="/resource-tracker" className="home-action-cell action-b">
+              <span className="home-action-arrow" aria-hidden />
+              <span className="home-action-name">Resource Tracker</span>
+              <span className="home-action-desc">Org month view from logged hours</span>
             </NavLink>
-            <NavLink to="/expenses" className="quick-action-tile qa-projects">
-              <span className="quick-action-title">Track Expenses</span>
-              <span className="quick-action-sub">Submit expenses for approval</span>
+            <NavLink to="/expenses" className="home-action-cell action-c">
+              <span className="home-action-arrow" aria-hidden />
+              <span className="home-action-name">Track Expenses</span>
+              <span className="home-action-desc">Submit expenses for approval</span>
             </NavLink>
-            {quickCreateClient ? (
-              <NavLink to="/clients" className="quick-action-tile qa-clients">
-                <span className="quick-action-title">Create Client</span>
-                <span className="quick-action-sub">Add A Customer (Partner, Finance, Or Admin)</span>
-              </NavLink>
-            ) : (
-              <NavLink to="/clients" className="quick-action-tile qa-clients">
-                <span className="quick-action-title">Clients</span>
-                <span className="quick-action-sub">
-                  {isIcOnly
-                    ? 'Browse the directory (read-only for IC)'
-                    : 'Browse Directory; New Clients Are Created By Partner Or Finance'}
-                </span>
-              </NavLink>
-            )}
-            {quickCreateProject ? (
-              <NavLink to="/projects" className="quick-action-tile qa-projects">
-                <span className="quick-action-title">Create project</span>
-                <span className="quick-action-sub">Start an engagement (Admin or Partner)</span>
-              </NavLink>
-            ) : (
-              <NavLink to="/projects" className="quick-action-tile qa-projects">
-                <span className="quick-action-title">Projects</span>
-                <span className="quick-action-sub">
-                  {isIcOnly
-                    ? 'Browse engagements and budgets (read-only for IC)'
-                    : 'Browse Engagements And Budget In The Directory'}
-                </span>
-              </NavLink>
-            )}
-            {isFinanceHub ? (
-              <NavLink to="/finance" className="quick-action-tile qa-clients">
-                <span className="quick-action-title">Finance Hub</span>
-                <span className="quick-action-sub">Register, Quotes, Pipeline</span>
-              </NavLink>
-            ) : null}
-            {isAdmin ? (
-              <NavLink to="/admin/users" className="quick-action-tile qa-users">
-                <span className="quick-action-title">Add User</span>
-                <span className="quick-action-sub">Invite Teammate + Assign Role</span>
-              </NavLink>
-            ) : null}
+            <NavLink to="/clients" className="home-action-cell action-d">
+              <span className="home-action-arrow" aria-hidden />
+              <span className="home-action-name">{quickCreateClient ? 'Create Client' : 'Clients'}</span>
+              <span className="home-action-desc">
+                {quickCreateClient ? 'Add a customer, partner, or finance contact' : 'Browse client directory'}
+              </span>
+            </NavLink>
+            <NavLink to="/projects" className="home-action-cell action-e">
+              <span className="home-action-arrow" aria-hidden />
+              <span className="home-action-name">{quickCreateProject ? 'Create Project' : 'Projects'}</span>
+              <span className="home-action-desc">
+                {quickCreateProject ? 'Set up a new billable project' : 'Browse engagements and budgets'}
+              </span>
+            </NavLink>
+            <NavLink to={isFinanceHub ? '/finance' : isAdmin ? '/admin/users' : '/reports'} className="home-action-cell action-f">
+              <span className="home-action-arrow" aria-hidden />
+              <span className="home-action-name">{isFinanceHub ? 'Finance Hub' : isAdmin ? 'User Management' : 'Reports'}</span>
+              <span className="home-action-desc">
+                {isFinanceHub
+                  ? 'Invoices, billing, and revenue reports'
+                  : isAdmin
+                    ? 'Invite teammates and assign roles'
+                    : 'View your time and expense trends'}
+              </span>
+            </NavLink>
           </div>
         </article>
 
-        <article className="card admin-card status-snapshot-card">
-          <h2 className="admin-h2">Approvals &amp; Status</h2>
-          <p className="status-snapshot-hint">
-            <strong>Waiting on reviewers</strong> lists only items still pending (weekly time submission, expenses, PTO).
-            Time uses a snapshot at submit so the queue does not mix old totals with new grid edits. Routing: IC → project
-            DM or EP, else org manager; Finance → reporting partner; Manager &amp; Partner → engagement partner; Admin
-            self-signs.
-          </p>
-          {timesheetActionError ? (
-            <p className="admin-hint" style={{ marginBottom: 8, color: 'var(--danger, #b42318)' }}>
-              {timesheetActionError}
-            </p>
-          ) : null}
-          {approvalSnap.loading ? (
-            <p className="admin-hint" style={{ marginBottom: 0 }}>
-              Loading…
-            </p>
-          ) : approvalSnap.error ? (
-            <p className="admin-hint" style={{ marginBottom: 0 }}>
-              {approvalSnap.error}
-            </p>
-          ) : (
-            <div className="status-snapshot-body">
-              <div className="status-block home-pending-block">
-                <h3 className="status-block-title">Waiting on reviewers (your submissions)</h3>
-                {pendingYourCount === 0 ? (
-                  <p className="status-empty">Nothing pending — you are not waiting on anyone for time, expenses, or PTO.</p>
-                ) : (
-                  <ul className="status-row-list home-pending-by-type">
-                    <li className="home-pending-type">
-                      <span className="home-pending-type-label">Time (week)</span>
-                      {timeWeekPending && approvalSnap.myTimesheetWeek ? (
-                        <ul className="status-row-list">
-                          <li className="home-status-row">
-                            <NavLink
-                              to={`/timesheet?week=${encodeURIComponent(approvalSnap.myTimesheetWeek.weekStart)}`}
-                              className="home-status-label"
-                            >
-                              Week of {approvalSnap.myTimesheetWeek.weekStart} · submission{' '}
-                              {(approvalSnap.myTimesheetWeek.pendingSubmissionTotalHours ?? approvalSnap.myTimesheetWeek.totalHours).toFixed(2)}h
-                              total (
-                              {(approvalSnap.myTimesheetWeek.pendingSubmissionBillableHours ?? approvalSnap.myTimesheetWeek.billableHours).toFixed(2)}
-                              h billable) · grid now {approvalSnap.myTimesheetWeek.totalHours.toFixed(2)}h
-                            </NavLink>
-                            <StatusBadge variant="pending" />
-                          </li>
-                        </ul>
-                      ) : (
-                        <p className="status-empty home-pending-none">None</p>
-                      )}
-                    </li>
-                    <li className="home-pending-type">
-                      <span className="home-pending-type-label">Expenses</span>
-                      {myPendingExpenses.length === 0 ? (
-                        <p className="status-empty home-pending-none">None</p>
-                      ) : (
-                        <ul className="status-row-list">
-                          {myPendingExpenses.map((e) => (
-                            <li key={e.id} className="home-status-row">
-                              <NavLink to="/expenses" className="home-status-label">
-                                {e.expenseDate} · {e.client} / {e.project} · {usd.format(e.amount)}
-                              </NavLink>
-                              <StatusBadge variant="pending" />
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </li>
-                    <li className="home-pending-type">
-                      <span className="home-pending-type-label">PTO</span>
-                      {myPendingPto.length === 0 ? (
-                        <p className="status-empty home-pending-none">None</p>
-                      ) : (
-                        <ul className="status-row-list">
-                          {myPendingPto.map((p) => (
-                            <li key={p.id} className="home-status-row">
-                              <NavLink to="/timesheet#pto-requests" className="home-status-label">
-                                {p.startDate} → {p.endDate}
-                                {p.reason.trim() ? ` · ${p.reason.trim()}` : ''}
-                              </NavLink>
-                              <StatusBadge variant="pending" />
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </li>
-                  </ul>
-                )}
-              </div>
-
-              {approvalSnap.myTimesheetWeek &&
-              (role === 'IC' ||
-                role === 'Finance' ||
-                role === 'Manager' ||
-                role === 'Partner' ||
-                role === 'Admin') ? (
-                <div className="status-block">
-                  <h3 className="status-block-title">Your week (status)</h3>
-                  <ul className="status-row-list">
-                    <li className="home-status-row">
-                      <NavLink
-                        to={`/timesheet?week=${encodeURIComponent(approvalSnap.myTimesheetWeek.weekStart)}`}
-                        className="home-status-label"
-                      >
-                        Week of {approvalSnap.myTimesheetWeek.weekStart} ·{' '}
-                        {approvalSnap.myTimesheetWeek.totalHours.toFixed(2)}h on grid ·{' '}
-                        {approvalSnap.myTimesheetWeek.billableHours.toFixed(2)}h billable
-                      </NavLink>
-                      <StatusBadge variant={timesheetWeekStatusVariant(approvalSnap.myTimesheetWeek.status)} />
-                    </li>
-                  </ul>
-                </div>
-              ) : null}
-              <div className="status-block">
-                <h3 className="status-block-title">Your expenses (recent)</h3>
-                {approvalSnap.myExpenses.length === 0 ? (
-                  <p className="status-empty">No expenses yet.</p>
-                ) : (
-                  <ul className="status-row-list">
-                    {approvalSnap.myExpenses.map((e) => (
-                      <li key={e.id} className="home-status-row">
-                        <NavLink to="/expenses" className="home-status-label">
-                          {e.expenseDate} · {e.client} / {e.project} · {usd.format(e.amount)}
-                        </NavLink>
-                        <StatusBadge variant={expenseUiStatus(e.status)} />
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              {isReviewer ? (
-                <div className="status-block">
-                  <h3 className="status-block-title">Team Queue (Your Review)</h3>
-                  {approvalSnap.teamPending.length === 0 ? (
-                    <p className="status-empty">Nothing waiting for you.</p>
-                  ) : (
-                    <ul className="status-row-list">
-                      {approvalSnap.teamPending.map((e) => (
-                        <li key={e.id} className="home-status-row">
-                          <NavLink to="/expenses#pending-expense-approvals" className="home-status-label">
-                            {e.userEmail} · {e.client} / {e.project}
-                          </NavLink>
-                          <StatusBadge variant="pending" />
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <h3 className="status-block-title" style={{ marginTop: '1rem' }}>
-                    Time Tracking Weeks (Pending)
-                  </h3>
-                  {approvalSnap.pendingTimesheetWeeks.length === 0 ? (
-                    <p className="status-empty">No timesheet weeks awaiting your approval.</p>
-                  ) : (
-                    <ul className="status-row-list">
-                      {approvalSnap.pendingTimesheetWeeks.map((t) => {
-                        const key = `${t.userId}:${t.weekStart}`
-                        const busy = timesheetActionBusy === key
-                        return (
-                          <li key={key} className="home-status-row home-status-row-wrap">
-                            <span className="home-status-label">
-                              {t.userEmail} · Week Of {t.weekStart} · {t.billableHours.toFixed(2)}h billable
-                            </span>
-                            <span className="home-status-ts-actions">
-                              <NavLink
-                                className="btn secondary btn-sm"
-                                style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
-                                to={`/timesheet/review?userId=${encodeURIComponent(t.userId)}&week=${encodeURIComponent(t.weekStart)}`}
-                              >
-                                Review
-                              </NavLink>
-                              <button
-                                type="button"
-                                className="btn secondary btn-sm"
-                                disabled={busy}
-                                onClick={async () => {
-                                  setTimesheetActionError(null)
-                                  setTimesheetActionBusy(key)
-                                  try {
-                                    await approveTimesheetWeek(session.token, t.userId, t.weekStart)
-                                    await loadDashboard()
-                                  } catch (err) {
-                                    setTimesheetActionError(err instanceof Error ? err.message : 'Approve failed')
-                                  } finally {
-                                    setTimesheetActionBusy(null)
-                                  }
-                                }}
-                              >
-                                Approve
-                              </button>
-                              <button
-                                type="button"
-                                className="btn secondary btn-sm"
-                                disabled={busy}
-                                onClick={async () => {
-                                  if (!window.confirm(`Reject timesheet for ${t.userEmail} (${t.weekStart})?`)) return
-                                  setTimesheetActionError(null)
-                                  setTimesheetActionBusy(key)
-                                  try {
-                                    await rejectTimesheetWeek(session.token, t.userId, t.weekStart)
-                                    await loadDashboard()
-                                  } catch (err) {
-                                    setTimesheetActionError(err instanceof Error ? err.message : 'Reject failed')
-                                  } finally {
-                                    setTimesheetActionBusy(null)
-                                  }
-                                }}
-                              >
-                                Reject
-                              </button>
-                            </span>
-                          </li>
-                        )
-                      })}
-                    </ul>
-                  )}
-                </div>
-              ) : null}
-              {isFinanceHub ? (
-                <div className="status-block">
-                  <h3 className="status-block-title">Quotes</h3>
-                  {approvalSnap.quotes.length === 0 ? (
-                    <p className="status-empty">No quotes yet.</p>
-                  ) : (
-                    <ul className="status-row-list">
-                      {approvalSnap.quotes.map((q) => (
-                        <li key={q.id} className="home-status-row">
-                          <NavLink to="/finance" className="home-status-label">
-                            Quote · {q.clientName} · {q.title}
-                          </NavLink>
-                          <StatusBadge variant={quoteUiStatus(q.status)} />
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              ) : null}
+        <div className="home-right-stack">
+          <article className="card admin-card home-right-card">
+            <div className="home-section-head">
+              <h2 className="home-section-title">Pending &amp; Approvals</h2>
             </div>
-          )}
-        </article>
-      </section>
+            {homeSnap.loading ? (
+              <p className="home-panel-empty">Loading…</p>
+            ) : homeSnap.error ? (
+              <p className="home-panel-empty">{homeSnap.error}</p>
+            ) : (
+              <div className="home-pending-body">
+                <p className="home-pending-line">Your submissions pending: {pendingYourCount}</p>
+                <p className="home-pending-line">Waiting for your review: {pendingForYouCount}</p>
+                {timeWeekPending && homeSnap.myTimesheetWeek ? (
+                  <NavLink className="home-mini-link" to={`/timesheet?week=${encodeURIComponent(homeSnap.myTimesheetWeek.weekStart)}`}>
+                    Timesheet week {homeSnap.myTimesheetWeek.weekStart} is pending
+                  </NavLink>
+                ) : null}
+                {myPendingExpenses.slice(0, 2).map((e) => (
+                  <NavLink key={e.id} className="home-mini-link" to="/expenses">
+                    {e.client} / {e.project} · {usd.format(e.amount)} pending
+                  </NavLink>
+                ))}
+                {isReviewer &&
+                  homeSnap.pendingTimesheetWeeks.slice(0, 2).map((w) => (
+                    <NavLink
+                      key={`${w.userId}:${w.weekStart}`}
+                      className="home-mini-link"
+                      to={`/timesheet/review?userId=${encodeURIComponent(w.userId)}&week=${encodeURIComponent(w.weekStart)}`}
+                    >
+                      Review {w.userEmail} · {w.weekStart}
+                    </NavLink>
+                  ))}
+              </div>
+            )}
+          </article>
 
-      <section className="card admin-card">
-        <h2 className="admin-h2">Current Delivery Scope</h2>
-        <ul className="dashboard-list">
-          <li>Authentication and role-based access controls</li>
-          <li>
-            Time Tracking weekly entry and org Resource Tracker; IC browses clients, projects, Resource Tracker, and personal
-            reports (read-only); Partner and Finance create clients; Admin and Partner create projects and staffing;
-            Finance updates budget on assigned projects; managers see full per-line expense detail on projects where IC
-            sees rollups only
-          </li>
-          <li>Client directory{isIcOnly ? ' — IC browse only' : ''}</li>
-          <li>
-            Project directory (filters; catalog edits Admin or Partner; per-project detail for rollups and finance budget)
-          </li>
-          <li>Personal reports (time + expense totals by month)</li>
-          {isAdmin ? <li>User administration and role assignment</li> : null}
-          {isFinanceHub ? <li>Finance register and client quoting</li> : null}
-        </ul>
+          <article className="card admin-card home-right-card">
+            <div className="home-section-head">
+              <h2 className="home-section-title">Recent Activity</h2>
+            </div>
+            {homeSnap.loading ? (
+              <p className="home-panel-empty">Loading…</p>
+            ) : recentActivity.length === 0 ? (
+              <p className="home-panel-empty">No recent activity yet.</p>
+            ) : (
+              <ul className="home-activity-list">
+                {recentActivity.map((item) => (
+                  <li key={item.id} className="home-activity-row">
+                    <span className={`home-status-dot ${item.tone}`} />
+                    <div className="home-activity-copy">
+                      <p className="home-activity-title">{item.title}</p>
+                      <p className="home-activity-meta">{item.meta}</p>
+                    </div>
+                    <span className={`home-status-tag ${item.tone}`}>{item.tag}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </article>
+        </div>
       </section>
     </div>
   )
@@ -631,6 +341,7 @@ function LoginPage({ onSignedIn }: { onSignedIn: (s: Session) => void }) {
   const nav = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [rememberMe, setRememberMe] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -655,44 +366,65 @@ function LoginPage({ onSignedIn }: { onSignedIn: (s: Session) => void }) {
 
   return (
     <main className="shell">
-      <div className="card login-card">
-        <img className="login-logo" src="/g2e-logo.png" alt="G2E logo" />
-        <h1 className="title">Log in to your account</h1>
-        <p className="subtitle">Sign in with your work email</p>
-        <form
-          className="form"
-          onSubmit={onSubmit}
-          onKeyDown={(e) => {
-            if (e.key !== 'Enter' || busy) return
-            if ((e.target as HTMLElement).tagName !== 'INPUT') return
-            e.preventDefault()
-            ;(e.currentTarget as HTMLFormElement).requestSubmit()
-          }}
-        >
-          <label className="field">
-            <span>Email</span>
-            <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          </label>
-          <label className="field">
-            <span>Password</span>
-            <input
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </label>
-          {error ? (
-            <p className="err" role="alert">
-              {error}
-            </p>
-          ) : null}
-          <button type="submit" className="btn primary" disabled={busy}>
-            {busy ? 'Signing In...' : 'Sign In'}
-          </button>
-        </form>
-      </div>
+      <section className="login-layout" aria-label="Employee portal sign in">
+        <aside className="login-brand-panel">
+          <img className="login-logo" src="/g2e-logo.png" alt="G2E logo" />
+          <p className="login-brand-copy">Track your time.</p>
+          <p className="login-brand-copy">Submit expenses.</p>
+          <p className="login-brand-copy">Stay on budget.</p>
+          <p className="login-brand-sub">The G2E employee portal for client time logging and expense reporting.</p>
+        </aside>
+        <div className="login-form-panel">
+          <div className="login-form-inner">
+            <p className="login-kicker">Employee Portal</p>
+            <h1 className="title login-title">Sign in</h1>
+            <form
+              className="form login-form"
+              onSubmit={onSubmit}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter' || busy) return
+                if ((e.target as HTMLElement).tagName !== 'INPUT') return
+                e.preventDefault()
+                ;(e.currentTarget as HTMLFormElement).requestSubmit()
+              }}
+            >
+              <label className="field login-field">
+                <span>Work Email</span>
+                <input
+                  type="email"
+                  placeholder="j.smith@g2e.com"
+                  autoComplete="username"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </label>
+              <label className="field login-field">
+                <span>Password</span>
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </label>
+              <label className="login-remember">
+                <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} />
+                <span>Keep me signed in</span>
+              </label>
+              {error ? (
+                <p className="err" role="alert">
+                  {error}
+                </p>
+              ) : null}
+              <button type="submit" className="btn primary login-submit" disabled={busy}>
+                {busy ? 'Signing In...' : 'Sign In'}
+              </button>
+            </form>
+          </div>
+        </div>
+      </section>
     </main>
   )
 }

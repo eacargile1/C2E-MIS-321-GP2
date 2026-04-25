@@ -32,6 +32,19 @@ function parseSkillsInput(raw: string) {
     .filter((s) => s.length > 0)
 }
 
+function statusPillClass(status: string) {
+  switch (status) {
+    case 'InProgress':
+      return 'is-inprogress'
+    case 'Done':
+      return 'is-done'
+    case 'Cancelled':
+      return 'is-cancelled'
+    default:
+      return 'is-open'
+  }
+}
+
 export default function ResourceTrackerProjectTasks() {
   const session = useOutletContext<ResourceTrackerLayoutSession | null>()
   const [tasks, setTasks] = useState<ProjectTaskRow[]>([])
@@ -201,7 +214,8 @@ export default function ResourceTrackerProjectTasks() {
 
   return (
     <div className="admin-wrap">
-      <div className="card admin-card">
+      <div className="card admin-card resource-page-header-card">
+        <p className="resource-page-eyebrow">Resource Tracker</p>
         <h1 className="title admin-title">Project task board</h1>
         <p className="subtitle admin-sub">
           Signed in as {profile.displayName} · {profile.role}
@@ -214,9 +228,11 @@ export default function ResourceTrackerProjectTasks() {
         </p>
       </div>
 
-      <div className="card admin-card">
-        <h2 className="admin-h2">Add task</h2>
-        <div className="form admin-form-grid" style={{ maxWidth: 900, marginTop: 12 }}>
+      <div className="card admin-card resource-section-card">
+        <div className="admin-table-head resource-section-head">
+          <h2 className="admin-h2 resource-section-title">Add Task</h2>
+        </div>
+        <div className="form admin-form-grid resource-task-add-grid" style={{ maxWidth: 'none', marginTop: 0 }}>
           <label className="field">
             <span>Project</span>
             <select value={newProjectId} onChange={(e) => setNewProjectId(e.target.value)}>
@@ -251,9 +267,9 @@ export default function ResourceTrackerProjectTasks() {
         </div>
       </div>
 
-      <div className="card admin-card">
-        <div className="admin-table-head">
-          <h2 className="admin-h2">Tasks</h2>
+      <div className="card admin-card resource-section-card">
+        <div className="admin-table-head resource-section-head">
+          <h2 className="admin-h2 resource-section-title">Tasks</h2>
           <button type="button" className="btn secondary btn-sm" onClick={() => void loadAll()} disabled={loading}>
             Refresh
           </button>
@@ -323,6 +339,7 @@ export default function ResourceTrackerProjectTasks() {
                       </td>
                       <td>
                         <select
+                          className={`resource-task-status-select ${statusPillClass(row.status)}`}
                           value={row.status}
                           onChange={(e) => patchLocal(row.id, { status: e.target.value })}
                         >
@@ -335,6 +352,7 @@ export default function ResourceTrackerProjectTasks() {
                       </td>
                       <td>
                         <select
+                          className="resource-task-assignee-select"
                           value={row.assignedUserId ?? ''}
                           onChange={(e) =>
                             patchLocal(row.id, {
@@ -353,7 +371,7 @@ export default function ResourceTrackerProjectTasks() {
                         </select>
                       </td>
                       <td>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        <div className="resource-task-actions">
                           <button
                             type="button"
                             className="btn primary btn-sm"

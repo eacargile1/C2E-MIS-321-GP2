@@ -163,7 +163,8 @@ export default function ResourceTracker() {
 
   return (
     <div className="admin-wrap">
-      <div className="card admin-card">
+      <div className="card admin-card resource-page-header-card">
+        <p className="resource-page-eyebrow">Resource Tracker</p>
         <h1 className="title admin-title">Resource Tracker</h1>
         <p className="subtitle admin-sub">
           Signed in as {profile.displayName} · {profile.role}
@@ -197,13 +198,13 @@ export default function ResourceTracker() {
         ) : null}
       </div>
 
-      <div className="card admin-card">
-        <div className="admin-table-head">
+      <div className="card admin-card resource-section-card">
+        <div className="admin-table-head resource-section-head">
           <div>
-            <h2 className="admin-h2">Monthly Availability Grid</h2>
-            <p className="admin-hint">{monthLabel}</p>
+            <h2 className="admin-h2 resource-section-title">Monthly Availability Grid</h2>
+            <p className="admin-hint resource-section-subtitle">{monthLabel}</p>
           </div>
-          <div className="admin-header-actions">
+          <div className="admin-header-actions resource-month-nav">
             <button type="button" className="btn secondary btn-sm" onClick={setPrevMonth} disabled={monthLoading}>
               ← Month
             </button>
@@ -218,7 +219,7 @@ export default function ResourceTracker() {
             </button>
           </div>
         </div>
-        <div className="timesheet-legend">
+        <div className="timesheet-legend resource-legend">
           <span>
             <i className="lg fully" /> Fully Booked
           </span>
