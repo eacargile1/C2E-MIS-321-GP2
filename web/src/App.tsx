@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BrowserRouter,
   NavLink,
@@ -437,29 +437,47 @@ function AuthenticatedLayout({
   onSignOut: () => void
 }) {
   const location = useLocation()
-  const [density, setDensity] = useState<'comfortable' | 'compact'>(() => {
-    return localStorage.getItem('c2e-density') === 'compact' ? 'compact' : 'comfortable'
-  })
-
-  const toggleDensity = useCallback(() => {
-    setDensity((prev) => {
-      const next = prev === 'comfortable' ? 'compact' : 'comfortable'
-      localStorage.setItem('c2e-density', next)
-      return next
-    })
-  }, [])
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false)
+  const profileMenuRef = useRef<HTMLDivElement | null>(null)
 
   if (!session) return <Navigate to="/login" replace />
 
   const isAdmin = session.profile.role === 'Admin'
   const isFinanceHub = session.profile.role === 'Admin' || session.profile.role === 'Finance'
+  const userInitials = (() => {
+    const source = (session.profile.displayName || session.profile.email || '').trim()
+    if (!source) return '??'
+    const parts = source
+      .split(/[\s._-]+/)
+      .map((p) => p.trim())
+      .filter(Boolean)
+    if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
+    return source.slice(0, 2).toUpperCase()
+  })()
+
+  useEffect(() => {
+    if (!profileMenuOpen) return
+    const onPointerDown = (e: MouseEvent) => {
+      if (!profileMenuRef.current) return
+      if (!profileMenuRef.current.contains(e.target as Node)) setProfileMenuOpen(false)
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setProfileMenuOpen(false)
+    }
+    window.addEventListener('mousedown', onPointerDown)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('mousedown', onPointerDown)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [profileMenuOpen])
 
   return (
-    <div className={`app-shell density-${density}`}>
+    <div className="app-shell">
       <header className="topbar">
-        <div className="topbar-brand">
+        <NavLink to="/" className="topbar-brand" aria-label="Go to home">
           <img className="topbar-brand-img" src="/g2e-wordmark.png" alt="G2E" />
-        </div>
+        </NavLink>
         <nav className="topbar-tabs" aria-label="Primary navigation">
           <NavLink to="/" end className={({ isActive }) => `topbar-tab${isActive ? ' active' : ''}`}>
             Home
@@ -498,14 +516,28 @@ function AuthenticatedLayout({
             </NavLink>
           ) : null}
         </nav>
-        <div className="topbar-user">
-          <button type="button" className="btn secondary btn-sm" onClick={toggleDensity}>
-            {density === 'comfortable' ? 'Compact View' : 'Comfortable View'}
+        <div className="topbar-user" ref={profileMenuRef}>
+          <button
+            type="button"
+            className="topbar-profile-trigger"
+            aria-haspopup="menu"
+            aria-expanded={profileMenuOpen}
+            onClick={() => setProfileMenuOpen((v) => !v)}
+          >
+            <span className="topbar-avatar" aria-label={`User initials ${userInitials}`}>
+              {userInitials}
+            </span>
+            <span>{session.profile.displayName}</span>
           </button>
-          <span>{session.profile.displayName}</span>
-          <button type="button" className="btn secondary btn-sm" onClick={onSignOut}>
-            Sign Out
-          </button>
+          {profileMenuOpen ? (
+            <div className="topbar-profile-menu" role="menu" aria-label="Profile menu">
+              <p className="topbar-profile-name">{session.profile.displayName}</p>
+              <p className="topbar-profile-role">{session.profile.role}</p>
+              <button type="button" className="btn secondary btn-sm topbar-profile-signout" onClick={onSignOut}>
+                Sign Out
+              </button>
+            </div>
+          ) : null}
         </div>
       </header>
       <main className="page-content">
@@ -571,8 +603,12 @@ function FinanceRoute({ session }: { session: Session | null }) {
 }
 
 function AppRoutes() {
+  const nav = useNavigate()
   const [session, setSession] = useState<Session | null>(null)
-  const signOut = useCallback(() => setSession(null), [])
+  const signOut = useCallback(() => {
+    setSession(null)
+    nav('/login', { replace: true })
+  }, [nav])
   return (
     <Routes>
       <Route path="/login" element={<LoginPage onSignedIn={setSession} />} />
