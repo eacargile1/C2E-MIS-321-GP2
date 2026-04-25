@@ -41,6 +41,16 @@ public static class DemoEmployeeSeed
         var icMarcus = await EnsureUserAsync(
             db, hasher, $"marcus.james{DemoScenarioMarkers.DemoEmployeeEmailDomain}", "Marcus James", AppRole.IC, pwd, mgrOmar.Id, partner.Id, ct);
 
+        // Ensure core .dev accounts also exist and are active for demo walkthroughs.
+        var devPartner = await EnsureUserAsync(
+            db, hasher, DevRoleAccountsSeed.DevPartnerEmail, "Dev Partner", AppRole.Partner, pwd, null, null, ct);
+        var devFinance = await EnsureUserAsync(
+            db, hasher, DevRoleAccountsSeed.DevFinanceEmail, "Dev Finance", AppRole.Finance, pwd, null, devPartner.Id, ct);
+        var devManager = await EnsureUserAsync(
+            db, hasher, DevRoleAccountsSeed.DevManagerEmail, "Dev Manager", AppRole.Manager, pwd, null, devPartner.Id, ct);
+        var devIc = await EnsureUserAsync(
+            db, hasher, DevRoleAccountsSeed.DevIcEmail, "Dev IC", AppRole.IC, pwd, devManager.Id, devPartner.Id, ct);
+
         await EnsureSkillsAsync(db, icElena.Id, ["dotnet", "sql", "react", "azure"], now, ct);
         await EnsureSkillsAsync(db, icMarcus.Id, ["python", "powerbi", "integration", "data modeling"], now, ct);
         await EnsureSkillsAsync(db, mgrRuby.Id, ["delivery", "stakeholder mgmt", "agile"], now, ct);
@@ -49,13 +59,13 @@ public static class DemoEmployeeSeed
         await EnsureSkillsAsync(db, finance.Id, ["revenue recognition", "billing ops", "forecasting"], now, ct);
 
         var demoClients = await db.Clients
-            .Where(c => c.Name.StartsWith(DemoScenarioMarkers.ClientNamePrefix))
+            .Where(c => c.IsActive)
             .Select(c => new { c.Id, c.Name })
             .ToListAsync(ct);
 
         foreach (var c in demoClients)
         {
-            foreach (var uid in new[] { icElena.Id, icMarcus.Id, mgrRuby.Id, mgrOmar.Id, finance.Id })
+            foreach (var uid in new[] { icElena.Id, icMarcus.Id, mgrRuby.Id, mgrOmar.Id, finance.Id, devIc.Id, devManager.Id, devPartner.Id, devFinance.Id })
             {
                 if (!await db.ClientEmployeeAssignments.AnyAsync(a => a.ClientId == c.Id && a.UserId == uid, ct))
                     db.ClientEmployeeAssignments.Add(new ClientEmployeeAssignment { ClientId = c.Id, UserId = uid });
@@ -64,11 +74,9 @@ public static class DemoEmployeeSeed
 
         var demoProjects = await db.Projects
             .AsNoTracking()
-            .Where(p => db.Clients.Any(c =>
-                c.Id == p.ClientId && c.Name.StartsWith(DemoScenarioMarkers.ClientNamePrefix)))
+            .Where(p => p.IsActive)
             .OrderBy(p => p.Name)
             .Select(p => new { p.Id })
-            .Take(8)
             .ToListAsync(ct);
 
         foreach (var p in demoProjects)
@@ -79,6 +87,10 @@ public static class DemoEmployeeSeed
                          (icMarcus.Id, now.AddDays(-18)),
                          (mgrRuby.Id, now.AddDays(-30)),
                          (mgrOmar.Id, now.AddDays(-28)),
+                         (devIc.Id, now.AddDays(-20)),
+                         (devManager.Id, now.AddDays(-26)),
+                         (devPartner.Id, now.AddDays(-33)),
+                         (devFinance.Id, now.AddDays(-24)),
                      })
             {
                 if (!await db.ProjectEmployeeAssignments.AnyAsync(a => a.ProjectId == p.Id && a.UserId == uid, ct))
@@ -90,7 +102,7 @@ public static class DemoEmployeeSeed
                     });
             }
 
-            foreach (var uid in new[] { icElena.Id, icMarcus.Id, mgrRuby.Id, mgrOmar.Id })
+            foreach (var uid in new[] { icElena.Id, icMarcus.Id, mgrRuby.Id, mgrOmar.Id, devIc.Id, devManager.Id, devPartner.Id, devFinance.Id })
             {
                 if (!await db.ProjectTeamMembers.AnyAsync(t => t.ProjectId == p.Id && t.UserId == uid, ct))
                     db.ProjectTeamMembers.Add(new ProjectTeamMember { ProjectId = p.Id, UserId = uid });
@@ -116,6 +128,25 @@ public static class DemoEmployeeSeed
         if (existing is not null)
         {
             var changed = false;
+            if (existing.Role != role)
+            {
+                existing.Role = role;
+                changed = true;
+            }
+
+            if (!existing.IsActive)
+            {
+                existing.IsActive = true;
+                changed = true;
+            }
+
+            var bounded = displayName.Length > 80 ? displayName[..80] : displayName;
+            if (!string.Equals(existing.DisplayName, bounded, StringComparison.Ordinal))
+            {
+                existing.DisplayName = bounded;
+                changed = true;
+            }
+
             if (managerUserId is not null && existing.ManagerUserId != managerUserId)
             {
                 existing.ManagerUserId = managerUserId;

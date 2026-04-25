@@ -31,6 +31,7 @@ public sealed class OperationsAiAdvisor(
     ILogger<OperationsAiAdvisor> log) : IOperationsAiAdvisor
 {
     public const string HttpClientName = nameof(OperationsAiAdvisor);
+    private string? lastLlmDebug;
 
     public async Task<OperationsExpenseAiReviewResponse> ReviewExpenseDraftAsync(
         OperationsExpenseAiReviewRequest req,
@@ -41,8 +42,9 @@ public sealed class OperationsAiAdvisor(
         var cfg = DotEnvFilePriority.WithDotEnvOpenAiOverlay(env, opts.Value);
         var heuristics = BuildExpenseHeuristics(req, approverContext);
         var llmEnabled = LlmEnabled(cfg);
+        lastLlmDebug = llmEnabled ? "start" : "disabled:no_key";
         var llm = llmEnabled ? await TryExpenseLlmLayerAsync(req, heuristics, cfg, ct, approverContext, submitterEmail) : null;
-        return MergeExpense(heuristics, llm, llmEnabled, approverContext, submitterEmail);
+        return MergeExpense(heuristics, llm, llmEnabled, approverContext, submitterEmail, env.IsDevelopment() ? lastLlmDebug : null);
     }
 
     public async Task<OperationsTimesheetWeekAiReviewResponse> ReviewTimesheetWeekAsync(
@@ -54,10 +56,11 @@ public sealed class OperationsAiAdvisor(
         var cfg = DotEnvFilePriority.WithDotEnvOpenAiOverlay(env, opts.Value);
         var (total, heuristics) = BuildTimesheetHeuristics(req);
         var llmEnabled = LlmEnabled(cfg);
+        lastLlmDebug = llmEnabled ? "start" : "disabled:no_key";
         var llm = llmEnabled
             ? await TryTimesheetLlmLayerAsync(req, total, heuristics, cfg, ct, approverContext, subjectEmail)
             : null;
-        return MergeTimesheet(total, heuristics, llm, llmEnabled, approverContext, subjectEmail);
+        return MergeTimesheet(total, heuristics, llm, llmEnabled, approverContext, subjectEmail, env.IsDevelopment() ? lastLlmDebug : null);
     }
 
     private static bool LlmEnabled(AiRecommendationOptions cfg) =>
@@ -277,14 +280,34 @@ public sealed class OperationsAiAdvisor(
                 TimeSpan.FromSeconds(timeoutSec));
             var content = await OpenAiChatCompletionHelper.PostV1ForAssistantStringWithJsonObjectFallback(
                 http, withJson, plain, log, "Operations AI", ct);
-            if (string.IsNullOrWhiteSpace(content)) return null;
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                lastLlmDebug = "extract:none";
+                return null;
+            }
+            lastLlmDebug = "extract:ok";
 
             var parsed = LlmStructuredJsonHelper.Deserialize<T>(content);
-            if (parsed is not null) return parsed;
+            if (parsed is not null)
+            {
+                lastLlmDebug = "parse:deserialize";
+                return parsed;
+            }
             if (typeof(T) == typeof(ExpenseLlmEnvelope))
             {
                 var ex = CoerceExpenseFromNode(content);
-                if (ex is not null) return (T?)(object?)ex;
+                if (ex is not null)
+                {
+                    lastLlmDebug = "parse:coerce_expense";
+                    return (T?)(object?)ex;
+                }
+                var exFallback = FallbackExpenseFromRawText(content);
+                if (exFallback is not null)
+                {
+                    lastLlmDebug = "parse:fallback_text_expense";
+                    return (T?)(object?)exFallback;
+                }
+                lastLlmDebug = "parse:failed_expense";
                 log.LogWarning(
                     "Operations AI: expense LLM JSON not usable (len {Len}, head: {Head})",
                     content.Length,
@@ -295,7 +318,18 @@ public sealed class OperationsAiAdvisor(
             if (typeof(T) == typeof(TimesheetLlmEnvelope))
             {
                 var ts = CoerceTimesheetFromNode(content);
-                if (ts is not null) return (T?)(object?)ts;
+                if (ts is not null)
+                {
+                    lastLlmDebug = "parse:coerce_timesheet";
+                    return (T?)(object?)ts;
+                }
+                var tsFallback = FallbackTimesheetFromRawText(content);
+                if (tsFallback is not null)
+                {
+                    lastLlmDebug = "parse:fallback_text_timesheet";
+                    return (T?)(object?)tsFallback;
+                }
+                lastLlmDebug = "parse:failed_timesheet";
                 log.LogWarning(
                     "Operations AI: timesheet LLM JSON not usable (len {Len}, head: {Head})",
                     content.Length,
@@ -307,6 +341,7 @@ public sealed class OperationsAiAdvisor(
         }
         catch (Exception ex)
         {
+            lastLlmDebug = ex is TaskCanceledException ? "http:timeout_or_cancel" : "http:exception";
             log.LogWarning(ex, "Operations AI OpenAI call failed.");
             return null;
         }
@@ -323,6 +358,53 @@ public sealed class OperationsAiAdvisor(
             if (lines.Exists(x => string.Equals(x, t, StringComparison.Ordinal))) continue;
             lines.Add(t);
         }
+    }
+
+    private static List<string> ExtractTextBullets(string raw, int maxItems)
+    {
+        var list = new List<string>();
+        if (string.IsNullOrWhiteSpace(raw)) return list;
+        foreach (var part in raw.Split(["\r\n", "\n", "\r"], StringSplitOptions.None))
+        {
+            var t = part.Trim().TrimStart('•', '-', '*', ' ', '\t').Trim();
+            if (t.Length < 4) continue;
+            if (list.Exists(x => string.Equals(x, t, StringComparison.Ordinal))) continue;
+            list.Add(t);
+            if (list.Count >= maxItems) break;
+        }
+
+        if (list.Count == 0)
+        {
+            var s = raw.Trim();
+            if (s.Length > 0) list.Add(s.Length <= 320 ? s : s[..320] + "...");
+        }
+
+        return list;
+    }
+
+    private static ExpenseLlmEnvelope? FallbackExpenseFromRawText(string raw)
+    {
+        var lines = ExtractTextBullets(raw, 6);
+        if (lines.Count == 0) return null;
+        return new ExpenseLlmEnvelope
+        {
+            BriefSummary = lines[0],
+            QuestionsForSubmitter = lines.Skip(1).Take(5).ToList(),
+            AdditionalFlags = null,
+        };
+    }
+
+    private static TimesheetLlmEnvelope? FallbackTimesheetFromRawText(string raw)
+    {
+        var lines = ExtractTextBullets(raw, 8);
+        if (lines.Count == 0) return null;
+        return new TimesheetLlmEnvelope
+        {
+            BriefSummary = lines[0],
+            QuestionsForEmployee = lines.Skip(1).Take(4).ToList(),
+            NoteSuggestions = lines.Skip(1).Take(4).ToList(),
+            AdditionalFlags = null,
+        };
     }
 
     private static ExpenseLlmEnvelope? CoerceExpenseFromNode(string raw)
@@ -517,7 +599,8 @@ public sealed class OperationsAiAdvisor(
         ExpenseLlmEnvelope? llm,
         bool llmEnabled,
         bool approverContext,
-        string? submitterEmail)
+        string? submitterEmail,
+        string? llmDebug)
     {
         var questions = new List<string>();
         var insights = new List<OperationsAiInsightDto>(heuristics);
@@ -558,6 +641,7 @@ public sealed class OperationsAiAdvisor(
                 : llmEnabled
                     ? "LLM was enabled but did not return usable output (timeout, HTTP error, or parse failure)."
                     : "LLM disabled — no OpenAiApiKey (set OPENAI_API_KEY or AIRecommendations__OpenAiApiKey in api/.env or environment).",
+            LlmDebug = llmDebug,
             Insights = insights,
             QuestionsForSubmitter = questions.Distinct().Take(8).ToList(),
         };
@@ -569,7 +653,8 @@ public sealed class OperationsAiAdvisor(
         TimesheetLlmEnvelope? llm,
         bool llmEnabled,
         bool approverContext,
-        string? subjectEmail)
+        string? subjectEmail,
+        string? llmDebug)
     {
         var questions = new List<string>();
         var noteSuggestions = new List<string>();
@@ -611,6 +696,7 @@ public sealed class OperationsAiAdvisor(
                 : llmEnabled
                     ? "LLM was enabled but did not return usable output (timeout, HTTP error, or parse failure)."
                     : "LLM disabled — no OpenAiApiKey (set OPENAI_API_KEY or AIRecommendations__OpenAiApiKey in api/.env or environment).",
+            LlmDebug = llmDebug,
             WeekTotalHours = weekTotal,
             Insights = insights,
             QuestionsForEmployee = questions.Distinct().Take(8).ToList(),

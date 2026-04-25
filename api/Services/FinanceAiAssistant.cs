@@ -25,6 +25,7 @@ public sealed class FinanceAiAssistant(
     ILogger<FinanceAiAssistant> log) : IFinanceAiAssistant
 {
     public const string HttpClientName = nameof(FinanceAiAssistant);
+    private string? lastLlmDebug;
 
     public async Task<FinanceLedgerAuditResponse> AuditLedgerAsync(
         AppDbContext db,
@@ -94,6 +95,7 @@ public sealed class FinanceAiAssistant(
         }
 
         var llmEnabled = LlmEnabled();
+        lastLlmDebug = llmEnabled ? "start" : "disabled:no_key";
         LedgerLlmEnvelope? llm = null;
         if (llmEnabled)
         {
@@ -163,6 +165,7 @@ public sealed class FinanceAiAssistant(
                 : llmEnabled
                     ? "LLM enabled but response unusable."
                     : "LLM off — no OpenAiApiKey (set OPENAI_API_KEY or AIRecommendations__OpenAiApiKey in api/.env or environment).",
+            LlmDebug = hostEnv.IsDevelopment() ? lastLlmDebug : null,
             RowCount = rows.Count,
             TotalPendingAmount = pendingAmt,
             TotalApprovedAmount = approvedAmt,
@@ -183,6 +186,7 @@ public sealed class FinanceAiAssistant(
             {
                 UsedLlm = false,
                 LlmNote = "Client not found.",
+                LlmDebug = hostEnv.IsDevelopment() ? "input:client_not_found" : null,
                 ReviewerChecklist = ["Fix client selection and try again."],
             };
         }
@@ -225,6 +229,7 @@ public sealed class FinanceAiAssistant(
         };
 
         var llmEnabled = LlmEnabled();
+        lastLlmDebug = llmEnabled ? "start" : "disabled:no_key";
         QuoteLlmEnvelope? llm = null;
         if (llmEnabled)
         {
@@ -272,6 +277,7 @@ public sealed class FinanceAiAssistant(
                 : llmEnabled
                     ? "LLM enabled but response unusable."
                     : "LLM off — heuristics/checklist only.",
+            LlmDebug = hostEnv.IsDevelopment() ? lastLlmDebug : null,
             SuggestedTitle = llm?.SuggestedTitle?.Trim(),
             SuggestedScopeSummary = llm?.SuggestedScopeSummary?.Trim(),
             SuggestedHours = llm?.SuggestedHours is > 0 ? llm.SuggestedHours : null,
@@ -329,15 +335,34 @@ public sealed class FinanceAiAssistant(
                 TimeSpan.FromSeconds(timeoutSec));
             var content = await OpenAiChatCompletionHelper.PostV1ForAssistantStringWithJsonObjectFallback(
                 http, withJson, plain, log, "Finance AI", ct);
-            if (string.IsNullOrWhiteSpace(content)) return null;
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                lastLlmDebug = "extract:none";
+                return null;
+            }
             var parsed = LlmStructuredJsonHelper.Deserialize<T>(content);
-            if (parsed is not null) return parsed;
-            if (typeof(T) == typeof(LedgerLlmEnvelope)) return (T?)(object?)CoerceLedgerFromNode(content);
-            if (typeof(T) == typeof(QuoteLlmEnvelope)) return (T?)(object?)CoerceQuoteFromNode(content);
+            if (parsed is not null)
+            {
+                lastLlmDebug = "parse:deserialize";
+                return parsed;
+            }
+            if (typeof(T) == typeof(LedgerLlmEnvelope))
+            {
+                var payload = CoerceLedgerFromNode(content) ?? FallbackLedgerFromRawText(content);
+                lastLlmDebug = payload is null ? "parse:failed_ledger" : "parse:coerce_or_fallback_ledger";
+                return (T?)(object?)payload;
+            }
+            if (typeof(T) == typeof(QuoteLlmEnvelope))
+            {
+                var payload = CoerceQuoteFromNode(content) ?? FallbackQuoteFromRawText(content);
+                lastLlmDebug = payload is null ? "parse:failed_quote" : "parse:coerce_or_fallback_quote";
+                return (T?)(object?)payload;
+            }
             return null;
         }
         catch (Exception ex)
         {
+            lastLlmDebug = ex is TaskCanceledException ? "http:timeout_or_cancel" : "http:exception";
             log.LogWarning(ex, "Finance AI OpenAI call failed.");
             return null;
         }
@@ -454,6 +479,50 @@ public sealed class FinanceAiAssistant(
         }
 
         points.Add(t);
+    }
+
+    private static List<string> ExtractTextBullets(string raw, int maxItems)
+    {
+        var list = new List<string>();
+        if (string.IsNullOrWhiteSpace(raw)) return list;
+        foreach (var part in raw.Split(["\r\n", "\n", "\r"], StringSplitOptions.None))
+        {
+            var t = part.Trim().TrimStart('•', '-', '*', ' ', '\t').Trim();
+            if (t.Length < 4) continue;
+            if (list.Exists(x => string.Equals(x, t, StringComparison.Ordinal))) continue;
+            list.Add(t);
+            if (list.Count >= maxItems) break;
+        }
+
+        if (list.Count == 0)
+        {
+            var s = raw.Trim();
+            if (s.Length > 0) list.Add(s.Length <= 320 ? s : s[..320] + "...");
+        }
+
+        return list;
+    }
+
+    private static LedgerLlmEnvelope? FallbackLedgerFromRawText(string raw)
+    {
+        var lines = ExtractTextBullets(raw, 6);
+        if (lines.Count == 0) return null;
+        return new LedgerLlmEnvelope
+        {
+            SummaryPoints = lines,
+            AdditionalFlags = null,
+        };
+    }
+
+    private static QuoteLlmEnvelope? FallbackQuoteFromRawText(string raw)
+    {
+        var lines = ExtractTextBullets(raw, 8);
+        if (lines.Count == 0) return null;
+        return new QuoteLlmEnvelope
+        {
+            SuggestedScopeSummary = lines[0],
+            ReviewerChecklist = lines.Skip(1).Take(6).ToList(),
+        };
     }
 
     private static void AppendChecklistStrings(JsonObject src, List<string> checklist)

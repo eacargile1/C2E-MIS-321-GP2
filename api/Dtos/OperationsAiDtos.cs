@@ -45,6 +45,7 @@ public sealed class OperationsExpenseAiReviewResponse
     public string? SubmitterEmail { get; init; }
     public required bool UsedLlm { get; init; }
     public string? LlmNote { get; init; }
+    public string? LlmDebug { get; init; }
     public required IReadOnlyList<OperationsAiInsightDto> Insights { get; init; }
     public required IReadOnlyList<string> QuestionsForSubmitter { get; init; }
 }
@@ -106,6 +107,7 @@ public sealed class OperationsTimesheetWeekAiReviewResponse
     public string? SubjectEmail { get; init; }
     public required bool UsedLlm { get; init; }
     public string? LlmNote { get; init; }
+    public string? LlmDebug { get; init; }
     public decimal WeekTotalHours { get; init; }
     public required IReadOnlyList<OperationsAiInsightDto> Insights { get; init; }
     public required IReadOnlyList<string> QuestionsForEmployee { get; init; }
@@ -128,6 +130,7 @@ public sealed class FinanceLedgerAuditResponse
 {
     public required bool UsedLlm { get; init; }
     public string? LlmNote { get; init; }
+    public string? LlmDebug { get; init; }
     public int RowCount { get; init; }
     public decimal TotalPendingAmount { get; init; }
     public decimal TotalApprovedAmount { get; init; }
@@ -148,6 +151,7 @@ public sealed class FinanceQuoteDraftResponse
 {
     public required bool UsedLlm { get; init; }
     public string? LlmNote { get; init; }
+    public string? LlmDebug { get; init; }
     public string? SuggestedTitle { get; init; }
     public string? SuggestedScopeSummary { get; init; }
     public decimal? SuggestedHours { get; init; }
