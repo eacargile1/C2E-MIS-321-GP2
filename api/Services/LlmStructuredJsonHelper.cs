@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -138,5 +139,142 @@ public static class LlmStructuredJsonHelper
         }
 
         return null;
+    }
+
+    /// <summary>Backward-compatible: assistant text or null, no diagnostic outs.</summary>
+    public static string? TryExtractOpenAiChatCompletionAssistantContent(string? responseBody)
+    {
+        if (!TryGetAssistantTextFromOpenAiChatCompletion(
+                responseBody,
+                out var content,
+                out _,
+                out _)) return null;
+        return string.IsNullOrWhiteSpace(content) ? null : content;
+    }
+
+    /// <summary>
+    /// Reads OpenAI/compatible <c>chat/completions</c> responses: <c>choices[].message.content</c>,
+    /// with case-insensitive property names, array or object content, and top-level <c>error</c> + <c>refusal</c> diagnostics.
+    /// </summary>
+    public static bool TryGetAssistantTextFromOpenAiChatCompletion(
+        string? responseBody,
+        out string? content,
+        out string? topLevelErrorMessage,
+        out string? refusalMessage)
+    {
+        content = null;
+        topLevelErrorMessage = null;
+        refusalMessage = null;
+        if (string.IsNullOrWhiteSpace(responseBody)) return false;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(responseBody);
+            var root = doc.RootElement;
+            if (root.ValueKind == JsonValueKind.Object
+                && TryGetPropertyCI(root, "error", out var errObj)
+                && errObj.ValueKind == JsonValueKind.Object
+                && TryGetPropertyCI(errObj, "message", out var errMsg)
+                && errMsg.ValueKind == JsonValueKind.String)
+            {
+                var em = errMsg.GetString();
+                if (!string.IsNullOrEmpty(em)) topLevelErrorMessage = em;
+            }
+
+            if (!TryGetPropertyCI(root, "choices", out var choices) || choices.ValueKind != JsonValueKind.Array)
+                return false;
+            foreach (var choice in choices.EnumerateArray())
+            {
+                if (!TryGetPropertyCI(choice, "message", out var msg) || msg.ValueKind != JsonValueKind.Object) continue;
+                if (TryGetPropertyCI(msg, "refusal", out var r) && r.ValueKind == JsonValueKind.String)
+                {
+                    var rs = r.GetString();
+                    if (!string.IsNullOrEmpty(rs)) refusalMessage = rs;
+                }
+
+                if (TryGetPropertyCI(msg, "parsed", out var parsed) && parsed.ValueKind == JsonValueKind.Object)
+                {
+                    var raw = parsed.GetRawText();
+                    if (!string.IsNullOrWhiteSpace(raw))
+                    {
+                        content = raw;
+                        return true;
+                    }
+                }
+
+                if (!TryGetPropertyCI(msg, "content", out var contentNode)) continue;
+                var extracted = ExtractMessageContentElement(contentNode);
+                if (!string.IsNullOrWhiteSpace(extracted))
+                {
+                    content = extracted;
+                    return true;
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+
+        return false;
+    }
+
+    private static bool TryGetPropertyCI(JsonElement o, string name, out JsonElement v)
+    {
+        v = default;
+        if (o.ValueKind != JsonValueKind.Object) return false;
+        foreach (var p in o.EnumerateObject())
+        {
+            if (!string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) continue;
+            v = p.Value;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string? ExtractMessageContentElement(JsonElement contentNode)
+    {
+        return contentNode.ValueKind switch
+        {
+            JsonValueKind.String => contentNode.GetString(),
+            JsonValueKind.Number => contentNode.GetRawText(), // e.g. rare numeric-as-text
+            JsonValueKind.Array => JoinContentArray(contentNode),
+            JsonValueKind.Object => ExtractObjectAsAssistantText(contentNode),
+            _ => null,
+        };
+    }
+
+    private static string? JoinContentArray(JsonElement array)
+    {
+        var sb = new StringBuilder();
+        foreach (var part in array.EnumerateArray())
+        {
+            if (part.ValueKind == JsonValueKind.String) sb.Append(part.GetString());
+            else if (TryGetPropertyCI(part, "type", out var t) && t.ValueKind == JsonValueKind.String
+                     && t.GetString() is "text" or "input_text" or "output_text")
+            {
+                if (TryGetPropertyCI(part, "text", out var te) && te.ValueKind == JsonValueKind.String)
+                    sb.Append(te.GetString());
+            }
+            else
+            {
+                if (TryGetPropertyCI(part, "text", out var tx) && tx.ValueKind == JsonValueKind.String) sb.Append(tx.GetString());
+                else if (TryGetPropertyCI(part, "content", out var c) && c.ValueKind == JsonValueKind.String)
+                    sb.Append(c.GetString());
+            }
+        }
+
+        var joined = sb.ToString();
+        return string.IsNullOrWhiteSpace(joined) ? null : joined;
+    }
+
+    private static string? ExtractObjectAsAssistantText(JsonElement o)
+    {
+        if (TryGetPropertyCI(o, "text", out var t) && t.ValueKind == JsonValueKind.String) return t.GetString();
+        if (TryGetPropertyCI(o, "value", out var v) && v.ValueKind == JsonValueKind.String) return v.GetString();
+        if (TryGetPropertyCI(o, "string", out var s) && s.ValueKind == JsonValueKind.String) return s.GetString();
+        // Some providers wrap output JSON as a single object; surface raw for downstream ExtractJsonObject.
+        return o.GetRawText();
     }
 }

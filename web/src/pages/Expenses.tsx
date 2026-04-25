@@ -191,13 +191,21 @@ export default function ExpensesPage({ token, profile }: { token: string; profil
   const onAiReviewExpense = async () => {
     setExpenseAiBusy(true)
     try {
+      const c = client.trim()
+      const p = project.trim()
+      const cat = category.trim()
+      const desc = description.trim()
+      if (!c.length) throw new Error('Client is required for AI review')
+      if (!p.length) throw new Error('Project is required for AI review')
+      if (!cat.length) throw new Error('Category is required for AI review')
+      if (!desc.length) throw new Error('Description is required for AI review')
       const parsed = parsePositiveMoneyInput(amount)
       const r = await reviewExpenseDraftAi(token, {
         expenseDate,
-        client: client.trim(),
-        project: project.trim(),
-        category: category.trim(),
-        description: description.trim(),
+        client: c,
+        project: p,
+        category: cat,
+        description: desc,
         amount: parsed,
         hasInvoiceAttachment: Boolean(invoiceFile),
       })

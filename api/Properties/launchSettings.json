@@ -22,6 +22,18 @@
         "Seed__DemoScenario": "true",
         "Seed__DemoFinanceData": "false"
       }
+    },
+    "http-demo": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:5028",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "Database__InMemoryName": "c2e-demo-local",
+        "Seed__DemoScenario": "true",
+        "Seed__DemoFinanceData": "false"
+      }
     }
   }
 }

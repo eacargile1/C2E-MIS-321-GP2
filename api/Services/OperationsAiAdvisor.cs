@@ -1,10 +1,10 @@
 using System.Globalization;
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using C2E.Api.Dtos;
+using C2E.Api.Configuration;
 using C2E.Api.Options;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace C2E.Api.Services;
@@ -27,6 +27,7 @@ public interface IOperationsAiAdvisor
 public sealed class OperationsAiAdvisor(
     IHttpClientFactory httpClientFactory,
     IOptions<AiRecommendationOptions> opts,
+    IHostEnvironment env,
     ILogger<OperationsAiAdvisor> log) : IOperationsAiAdvisor
 {
     public const string HttpClientName = nameof(OperationsAiAdvisor);
@@ -37,9 +38,10 @@ public sealed class OperationsAiAdvisor(
         bool approverContext = false,
         string? submitterEmail = null)
     {
+        var cfg = DotEnvFilePriority.WithDotEnvOpenAiOverlay(env, opts.Value);
         var heuristics = BuildExpenseHeuristics(req, approverContext);
-        var llmEnabled = LlmEnabled();
-        var llm = llmEnabled ? await TryExpenseLlmLayerAsync(req, heuristics, ct, approverContext, submitterEmail) : null;
+        var llmEnabled = LlmEnabled(cfg);
+        var llm = llmEnabled ? await TryExpenseLlmLayerAsync(req, heuristics, cfg, ct, approverContext, submitterEmail) : null;
         return MergeExpense(heuristics, llm, llmEnabled, approverContext, submitterEmail);
     }
 
@@ -49,20 +51,17 @@ public sealed class OperationsAiAdvisor(
         bool approverContext = false,
         string? subjectEmail = null)
     {
+        var cfg = DotEnvFilePriority.WithDotEnvOpenAiOverlay(env, opts.Value);
         var (total, heuristics) = BuildTimesheetHeuristics(req);
-        var llmEnabled = LlmEnabled();
+        var llmEnabled = LlmEnabled(cfg);
         var llm = llmEnabled
-            ? await TryTimesheetLlmLayerAsync(req, total, heuristics, ct, approverContext, subjectEmail)
+            ? await TryTimesheetLlmLayerAsync(req, total, heuristics, cfg, ct, approverContext, subjectEmail)
             : null;
         return MergeTimesheet(total, heuristics, llm, llmEnabled, approverContext, subjectEmail);
     }
 
-    private bool LlmEnabled()
-    {
-        var cfg = opts.Value;
-        var p = cfg.Provider.Trim().ToLowerInvariant();
-        return p is "openai" or "hybrid" && !string.IsNullOrWhiteSpace(cfg.OpenAiApiKey);
-    }
+    private static bool LlmEnabled(AiRecommendationOptions cfg) =>
+        !string.IsNullOrWhiteSpace((cfg.OpenAiApiKey ?? "").Trim());
 
     private static List<OperationsAiInsightDto> BuildExpenseHeuristics(OperationsExpenseAiReviewRequest req, bool approver)
     {
@@ -149,11 +148,11 @@ public sealed class OperationsAiAdvisor(
     private async Task<ExpenseLlmEnvelope?> TryExpenseLlmLayerAsync(
         OperationsExpenseAiReviewRequest req,
         IReadOnlyList<OperationsAiInsightDto> heuristics,
+        AiRecommendationOptions cfg,
         CancellationToken ct,
         bool approverContext,
         string? submitterEmail)
     {
-        var cfg = opts.Value;
         var heuristicCodes = string.Join(", ", heuristics.Select(h => h.Code).Distinct());
         var userJson = JsonSerializer.Serialize(new
         {
@@ -193,11 +192,11 @@ public sealed class OperationsAiAdvisor(
         OperationsTimesheetWeekAiReviewRequest req,
         decimal weekTotal,
         IReadOnlyList<OperationsAiInsightDto> heuristics,
+        AiRecommendationOptions cfg,
         CancellationToken ct,
         bool approverContext,
         string? subjectEmail)
     {
-        var cfg = opts.Value;
         var heuristicCodes = string.Join(", ", heuristics.Select(h => h.Code).Distinct());
         var lines = req.Lines.Select(l => new
         {
@@ -242,53 +241,87 @@ public sealed class OperationsAiAdvisor(
     private async Task<T?> PostOpenAiJsonAsync<T>(string userPrompt, AiRecommendationOptions cfg, CancellationToken ct)
         where T : class
     {
-        var request = new
+        var messages = new object[]
+        {
+            new
+            {
+                role = "system",
+                content =
+                    "You output a single JSON object for internal ops tooling. " +
+                    "Never wrap JSON in markdown code fences. Property names use camelCase.",
+            },
+            new { role = "user", content = userPrompt },
+        };
+        var withJson = new
         {
             model = cfg.OpenAiModel,
             temperature = cfg.OpenAiTemperature,
             response_format = new { type = "json_object" },
-            messages = new object[]
-            {
-                new
-                {
-                    role = "system",
-                    content =
-                        "You output a single JSON object for internal ops tooling. " +
-                        "Never wrap JSON in markdown code fences. Property names use camelCase.",
-                },
-                new { role = "user", content = userPrompt },
-            },
+            messages,
+        };
+        var plain = new
+        {
+            model = cfg.OpenAiModel,
+            temperature = cfg.OpenAiTemperature,
+            messages,
         };
 
         try
         {
             var http = httpClientFactory.CreateClient(HttpClientName);
-            http.BaseAddress = new Uri(cfg.OpenAiBaseUrl.TrimEnd('/') + "/");
-            var timeoutSec = Math.Max(8, cfg.OpenAiTimeoutSeconds * 3);
-            http.Timeout = TimeSpan.FromSeconds(timeoutSec);
-            http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", cfg.OpenAiApiKey.Trim());
-
-            using var response = await http.PostAsJsonAsync("v1/chat/completions", request, ct);
-            if (!response.IsSuccessStatusCode)
-            {
-                log.LogWarning("Operations AI OpenAI HTTP {Status}", response.StatusCode);
-                return null;
-            }
-
-            var payload = await response.Content.ReadFromJsonAsync<OpenAiChatResponse>(cancellationToken: ct);
-            var content = payload?.Choices?.FirstOrDefault()?.Message?.Content;
+            var timeoutSec = Math.Max(30, cfg.OpenAiTimeoutSeconds * 5);
+            OpenAiChatCompletionHelper.ConfigureClient(
+                http,
+                cfg.OpenAiBaseUrl,
+                cfg.OpenAiApiKey,
+                TimeSpan.FromSeconds(timeoutSec));
+            var content = await OpenAiChatCompletionHelper.PostV1ForAssistantStringWithJsonObjectFallback(
+                http, withJson, plain, log, "Operations AI", ct);
             if (string.IsNullOrWhiteSpace(content)) return null;
 
             var parsed = LlmStructuredJsonHelper.Deserialize<T>(content);
             if (parsed is not null) return parsed;
-            if (typeof(T) == typeof(ExpenseLlmEnvelope)) return (T?)(object?)CoerceExpenseFromNode(content);
-            if (typeof(T) == typeof(TimesheetLlmEnvelope)) return (T?)(object?)CoerceTimesheetFromNode(content);
+            if (typeof(T) == typeof(ExpenseLlmEnvelope))
+            {
+                var ex = CoerceExpenseFromNode(content);
+                if (ex is not null) return (T?)(object?)ex;
+                log.LogWarning(
+                    "Operations AI: expense LLM JSON not usable (len {Len}, head: {Head})",
+                    content.Length,
+                    OpenAiChatCompletionHelper.TruncateForLog(content, 200));
+                return null;
+            }
+
+            if (typeof(T) == typeof(TimesheetLlmEnvelope))
+            {
+                var ts = CoerceTimesheetFromNode(content);
+                if (ts is not null) return (T?)(object?)ts;
+                log.LogWarning(
+                    "Operations AI: timesheet LLM JSON not usable (len {Len}, head: {Head})",
+                    content.Length,
+                    OpenAiChatCompletionHelper.TruncateForLog(content, 200));
+                return null;
+            }
+
             return null;
         }
         catch (Exception ex)
         {
             log.LogWarning(ex, "Operations AI OpenAI call failed.");
             return null;
+        }
+    }
+
+    private static void AppendDistinctLinesFromScalar(JsonObject o, List<string> lines, params string[] keys)
+    {
+        var s = LlmStructuredJsonHelper.FirstString(o, keys);
+        if (string.IsNullOrWhiteSpace(s)) return;
+        foreach (var part in s.Split(["\r\n", "\n", "\r"], StringSplitOptions.None))
+        {
+            var t = part.Trim().TrimStart('•', '-', '*', ' ', '\t').Trim();
+            if (t.Length == 0) continue;
+            if (lines.Exists(x => string.Equals(x, t, StringComparison.Ordinal))) continue;
+            lines.Add(t);
         }
     }
 
@@ -302,21 +335,45 @@ public sealed class OperationsAiAdvisor(
                 "additionalFlags",
                 "additional_flags",
                 "flags",
-                "issues"));
-        var questions = ReadStringList(
-            LlmStructuredJsonHelper.FirstArray(
-                o,
-                "questionsForSubmitter",
-                "questions_for_submitter",
-                "questions",
-                "checklist"));
-        var brief = LlmStructuredJsonHelper.FirstString(o, "briefSummary", "brief_summary", "summary", "overview");
-        if ((flags is null || flags.Count == 0) && (questions is null || questions.Count == 0) && brief is null)
+                "issues",
+                "insights",
+                "recommendations",
+                "concerns",
+                "findings"));
+        var questions = new List<string>();
+        var qArr = LlmStructuredJsonHelper.FirstArray(
+            o,
+            "questionsForSubmitter",
+            "questions_for_submitter",
+            "questions",
+            "checklist",
+            "followUps",
+            "follow_ups");
+        var fromArr = ReadStringList(qArr);
+        if (fromArr is not null) questions.AddRange(fromArr);
+        AppendDistinctLinesFromScalar(
+            o,
+            questions,
+            "questionsForSubmitter",
+            "questions_for_submitter",
+            "questions",
+            "checklist",
+            "followUps",
+            "follow_ups");
+        var brief = LlmStructuredJsonHelper.FirstString(
+            o,
+            "briefSummary",
+            "brief_summary",
+            "summary",
+            "overview",
+            "memo",
+            "narrative");
+        if ((flags is null || flags.Count == 0) && questions.Count == 0 && brief is null)
             return null;
         return new ExpenseLlmEnvelope
         {
             AdditionalFlags = flags,
-            QuestionsForSubmitter = questions,
+            QuestionsForSubmitter = questions.Count > 0 ? questions : null,
             BriefSummary = brief,
         };
     }
@@ -331,27 +388,59 @@ public sealed class OperationsAiAdvisor(
                 "additionalFlags",
                 "additional_flags",
                 "flags",
-                "issues"));
-        var questions = ReadStringList(
-            LlmStructuredJsonHelper.FirstArray(
-                o,
-                "questionsForEmployee",
-                "questions_for_employee",
-                "questions",
-                "reviewerChecklist"));
-        var notes = ReadStringList(
-            LlmStructuredJsonHelper.FirstArray(o, "noteSuggestions", "note_suggestions", "templates"));
-        var brief = LlmStructuredJsonHelper.FirstString(o, "briefSummary", "brief_summary", "summary", "overview");
+                "issues",
+                "insights",
+                "recommendations",
+                "concerns",
+                "findings"));
+        var questions = new List<string>();
+        var qArr = LlmStructuredJsonHelper.FirstArray(
+            o,
+            "questionsForEmployee",
+            "questions_for_employee",
+            "questions",
+            "reviewerChecklist",
+            "followUps",
+            "follow_ups");
+        var qFromArr = ReadStringList(qArr);
+        if (qFromArr is not null) questions.AddRange(qFromArr);
+        AppendDistinctLinesFromScalar(
+            o,
+            questions,
+            "questionsForEmployee",
+            "questions_for_employee",
+            "questions",
+            "reviewerChecklist",
+            "followUps",
+            "follow_ups");
+        var notes = new List<string>();
+        var nArr = LlmStructuredJsonHelper.FirstArray(
+            o,
+            "noteSuggestions",
+            "note_suggestions",
+            "templates",
+            "suggestedNotes");
+        var nFromArr = ReadStringList(nArr);
+        if (nFromArr is not null) notes.AddRange(nFromArr);
+        AppendDistinctLinesFromScalar(o, notes, "noteSuggestions", "note_suggestions", "templates", "suggestedNotes");
+        var brief = LlmStructuredJsonHelper.FirstString(
+            o,
+            "briefSummary",
+            "brief_summary",
+            "summary",
+            "overview",
+            "memo",
+            "narrative");
         if ((flags is null || flags.Count == 0) &&
-            (questions is null || questions.Count == 0) &&
-            (notes is null || notes.Count == 0) &&
+            questions.Count == 0 &&
+            notes.Count == 0 &&
             brief is null)
             return null;
         return new TimesheetLlmEnvelope
         {
             AdditionalFlags = flags,
-            QuestionsForEmployee = questions,
-            NoteSuggestions = notes,
+            QuestionsForEmployee = questions.Count > 0 ? questions : null,
+            NoteSuggestions = notes.Count > 0 ? notes : null,
             BriefSummary = brief,
         };
     }
@@ -364,7 +453,19 @@ public sealed class OperationsAiAdvisor(
         {
             if (item is JsonObject fo)
             {
-                var msg = LlmStructuredJsonHelper.FirstString(fo, "message", "text", "detail", "description");
+                var msg = LlmStructuredJsonHelper.FirstString(
+                    fo,
+                    "message",
+                    "text",
+                    "detail",
+                    "description",
+                    "content",
+                    "body",
+                    "insight",
+                    "finding",
+                    "note",
+                    "headline",
+                    "title");
                 if (string.IsNullOrWhiteSpace(msg)) continue;
                 var code = LlmStructuredJsonHelper.FirstString(fo, "code", "id", "key") ?? "llm_flag";
                 var sev = LlmStructuredJsonHelper.FirstString(fo, "severity", "level") ?? "info";
@@ -456,7 +557,7 @@ public sealed class OperationsAiAdvisor(
                 ? null
                 : llmEnabled
                     ? "LLM was enabled but did not return usable output (timeout, HTTP error, or parse failure)."
-                    : "LLM disabled — set AIRecommendations:Provider to openai or hybrid and OpenAiApiKey.",
+                    : "LLM disabled — no OpenAiApiKey (set OPENAI_API_KEY or AIRecommendations__OpenAiApiKey in api/.env or environment).",
             Insights = insights,
             QuestionsForSubmitter = questions.Distinct().Take(8).ToList(),
         };
@@ -509,7 +610,7 @@ public sealed class OperationsAiAdvisor(
                 ? null
                 : llmEnabled
                     ? "LLM was enabled but did not return usable output (timeout, HTTP error, or parse failure)."
-                    : "LLM disabled — set AIRecommendations:Provider to openai or hybrid and OpenAiApiKey.",
+                    : "LLM disabled — no OpenAiApiKey (set OPENAI_API_KEY or AIRecommendations__OpenAiApiKey in api/.env or environment).",
             WeekTotalHours = weekTotal,
             Insights = insights,
             QuestionsForEmployee = questions.Distinct().Take(8).ToList(),
@@ -651,18 +752,4 @@ public sealed class OperationsAiAdvisor(
         public string? Message { get; init; }
     }
 
-    private sealed class OpenAiChatResponse
-    {
-        public List<OpenAiChoiceRow> Choices { get; init; } = [];
-    }
-
-    private sealed class OpenAiChoiceRow
-    {
-        public OpenAiMsg? Message { get; init; }
-    }
-
-    private sealed class OpenAiMsg
-    {
-        public string? Content { get; init; }
-    }
 }

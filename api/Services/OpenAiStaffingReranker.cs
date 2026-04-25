@@ -1,5 +1,3 @@
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using C2E.Api.Options;
@@ -35,46 +33,37 @@ public sealed class OpenAiStaffingReranker(
 
         var top = candidates.Take(Math.Max(1, cfg.OpenAiMaxCandidates)).ToList();
         var prompt = BuildPrompt(requiredSkills, top);
-        var request = new
+        var messages = new object[]
+        {
+            new
+            {
+                role = "system",
+                content =
+                    "You rerank staffing candidates. Return a single JSON object only — no markdown fences. " +
+                    "Use camelCase property names."
+            },
+            new { role = "user", content = prompt }
+        };
+        var withJson = new
         {
             model = cfg.OpenAiModel,
             temperature = cfg.OpenAiTemperature,
             response_format = new { type = "json_object" },
-            messages = new object[]
-            {
-                new
-                {
-                    role = "system",
-                    content =
-                        "You rerank staffing candidates. Return a single JSON object only — no markdown fences. " +
-                        "Use camelCase property names."
-                },
-                new
-                {
-                    role = "user",
-                    content = prompt
-                }
-            }
+            messages,
         };
+        var plain = new { model = cfg.OpenAiModel, temperature = cfg.OpenAiTemperature, messages, };
 
         try
         {
             var http = httpClientFactory.CreateClient(nameof(OpenAiStaffingReranker));
-            http.BaseAddress = new Uri(cfg.OpenAiBaseUrl.TrimEnd('/') + "/");
-            http.Timeout = TimeSpan.FromSeconds(Math.Max(1, cfg.OpenAiTimeoutSeconds));
-            http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", cfg.OpenAiApiKey.Trim());
-
-            using var response = await http.PostAsJsonAsync("v1/chat/completions", request, ct);
-            if (!response.IsSuccessStatusCode)
-            {
-                log.LogWarning("OpenAI rerank returned non-success {StatusCode}", response.StatusCode);
-                return null;
-            }
-
-            var payload = await response.Content.ReadFromJsonAsync<OpenAiResponse>(cancellationToken: ct);
-            var content = payload?.Choices?.FirstOrDefault()?.Message?.Content;
-            if (string.IsNullOrWhiteSpace(content))
-                return null;
+            OpenAiChatCompletionHelper.ConfigureClient(
+                http,
+                cfg.OpenAiBaseUrl,
+                cfg.OpenAiApiKey,
+                TimeSpan.FromSeconds(Math.Max(30, cfg.OpenAiTimeoutSeconds * 4)));
+            var content = await OpenAiChatCompletionHelper.PostV1ForAssistantStringWithJsonObjectFallback(
+                http, withJson, plain, log, "OpenAI StaffingRerank", ct);
+            if (string.IsNullOrWhiteSpace(content)) return null;
 
             var parsed = LlmStructuredJsonHelper.Deserialize<OpenAiRankingEnvelope>(content);
             var rows = parsed?.Rankings is { Count: > 0 }
@@ -132,21 +121,6 @@ public sealed class OpenAiStaffingReranker(
         }
 
         return list.Count > 0 ? list : null;
-    }
-
-    private sealed class OpenAiResponse
-    {
-        public List<OpenAiChoice> Choices { get; init; } = [];
-    }
-
-    private sealed class OpenAiChoice
-    {
-        public OpenAiMessage? Message { get; init; }
-    }
-
-    private sealed class OpenAiMessage
-    {
-        public string? Content { get; init; }
     }
 
     private sealed class OpenAiRankingEnvelope

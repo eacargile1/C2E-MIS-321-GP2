@@ -1,7 +1,6 @@
 using System.Reflection;
 using System.Security.Claims;
 using System.Text;
-using DotNetEnv;
 using C2E.Api.Configuration;
 using C2E.Api;
 using C2E.Api.Authorization;
@@ -21,10 +20,11 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using System.Text.Json;
 
-static string ResolveApiContentRoot()
+static string? FindDirectoryWithCsproj(string startPath)
 {
-    static string? FindDirectoryWithCsproj(string startPath)
+    try
     {
         for (var dir = new DirectoryInfo(startPath); dir is not null; dir = dir.Parent)
         {
@@ -36,28 +36,40 @@ static string ResolveApiContentRoot()
             if (File.Exists(nestedApi))
                 return Path.GetFullPath(Path.Combine(dir.FullName, "api"));
         }
-
-        return null;
+    }
+    catch
+    {
+        // ignore invalid paths
     }
 
-    return FindDirectoryWithCsproj(AppContext.BaseDirectory)
-        ?? FindDirectoryWithCsproj(Directory.GetCurrentDirectory())
-        ?? Directory.GetCurrentDirectory();
+    return null;
 }
 
-static void TryLoadDevelopmentDotEnv(string apiContentRoot)
+static IEnumerable<string> ContentRootAnchorDirectories()
 {
-    if (!DotEnvFilePriority.ShouldApplyLocalDotEnvFile())
-        return;
-
-    var envPath = Path.Combine(apiContentRoot, ".env");
-    if (!File.Exists(envPath))
-        return;
-
-    // Nested config: use double underscores (e.g. AIRecommendations__OpenAiApiKey).
-    // NoClobber: non-empty machine/CI env vars win; StripEmptyEnvironmentVariable clears "" so JSON/.env can supply values.
-    Env.NoClobber().Load(envPath);
+    yield return AppContext.BaseDirectory;
+    yield return Directory.GetCurrentDirectory();
+    var loc = Assembly.GetExecutingAssembly().Location;
+    if (!string.IsNullOrEmpty(loc))
+    {
+        var dir = Path.GetDirectoryName(loc);
+        if (!string.IsNullOrEmpty(dir))
+            yield return dir;
+    }
 }
+
+static string ResolveApiContentRoot()
+{
+    foreach (var anchor in ContentRootAnchorDirectories())
+    {
+        var found = FindDirectoryWithCsproj(anchor);
+        if (found is not null)
+            return found;
+    }
+
+    return Directory.GetCurrentDirectory();
+}
+
 
 /// <summary>
 /// Empty env vars still override JSON in Microsoft.Extensions.Configuration; strip them so appsettings.Development can supply values.
@@ -72,8 +84,9 @@ static void StripBlankEnvironmentVariable(string name)
 var apiContentRoot = ResolveApiContentRoot();
 StripBlankEnvironmentVariable("Jwt__SigningKey");
 StripBlankEnvironmentVariable("AIRecommendations__OpenAiApiKey");
+StripBlankEnvironmentVariable("OPENAI_API_KEY");
 StripBlankEnvironmentVariable("ConnectionStrings__DefaultConnection");
-TryLoadDevelopmentDotEnv(apiContentRoot);
+DotEnvFilePriority.HydrateProcessEnvironmentFromDevelopmentDotEnvFiles(apiContentRoot);
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
     Args = args,
@@ -145,7 +158,11 @@ builder.Services.Configure<FormOptions>(o =>
 {
     o.MultipartBodyLengthLimit = 6 * 1024 * 1024;
 });
-builder.Services.AddControllers();
+builder.Services.AddControllers().AddJsonOptions(o =>
+{
+    o.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+    o.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+});
 builder.Services.AddOpenApi();
 
 var corsOrigins = builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? [];
@@ -177,6 +194,24 @@ builder.Services.AddCors(o =>
 });
 
 var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    var openAiProbe = DotEnvFilePriority.WithDotEnvOpenAiOverlay(app.Environment, new AiRecommendationOptions());
+    if (string.IsNullOrWhiteSpace(openAiProbe.OpenAiApiKey))
+    {
+        var cr = app.Environment.ContentRootPath;
+        var pEnv = Path.Combine(cr, ".env");
+        var pLocal = Path.Combine(cr, ".env.local");
+        app.Logger.LogWarning(
+            "OpenAiApiKey is empty after merging .env files. ContentRoot={Cr} api/.env exists={HasEnv} ({EnvBytes} bytes) api/.env.local exists={HasLocal} ({LocalBytes} bytes). Save api/.env to disk or add ONLY the key to api/.env.local.",
+            cr,
+            File.Exists(pEnv),
+            File.Exists(pEnv) ? new FileInfo(pEnv).Length : 0,
+            File.Exists(pLocal),
+            File.Exists(pLocal) ? new FileInfo(pLocal).Length : 0);
+    }
+}
 
 if (dbConnectivity.Kind == AppDatabaseKind.MySql)
 {

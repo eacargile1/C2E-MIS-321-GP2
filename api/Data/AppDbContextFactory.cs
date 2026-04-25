@@ -1,4 +1,4 @@
-using DotNetEnv;
+using System.Reflection;
 using C2E.Api.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
@@ -18,9 +18,7 @@ public sealed class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
     public AppDbContext CreateDbContext(string[] args)
     {
         var apiProjectDir = FindApiProjectDirectory();
-        var dotEnvPath = Path.Combine(apiProjectDir, ".env");
-        if (File.Exists(dotEnvPath))
-            Env.NoClobber().Load(dotEnvPath);
+        DotEnvFilePriority.HydrateProcessEnvironmentFromDevelopmentDotEnvFiles(apiProjectDir);
 
         var configuration = new ConfigurationBuilder()
             .SetBasePath(apiProjectDir)
@@ -55,12 +53,40 @@ public sealed class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
 
     private static string FindApiProjectDirectory()
     {
-        var dir = new DirectoryInfo(Directory.GetCurrentDirectory());
-        while (dir is not null)
+        static string? WalkUp(DirectoryInfo start)
         {
-            if (File.Exists(Path.Combine(dir.FullName, "C2E.Api.csproj")))
-                return dir.FullName;
-            dir = dir.Parent;
+            for (var dir = start; dir is not null; dir = dir.Parent)
+            {
+                if (File.Exists(Path.Combine(dir.FullName, "C2E.Api.csproj")))
+                    return dir.FullName;
+
+                var nestedApi = Path.Combine(dir.FullName, "api", "C2E.Api.csproj");
+                if (File.Exists(nestedApi))
+                    return Path.GetFullPath(Path.Combine(dir.FullName, "api"));
+            }
+
+            return null;
+        }
+
+        foreach (var anchor in new[]
+                 {
+                     Directory.GetCurrentDirectory(),
+                     AppContext.BaseDirectory,
+                     Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? "",
+                 })
+        {
+            if (string.IsNullOrWhiteSpace(anchor))
+                continue;
+            try
+            {
+                var found = WalkUp(new DirectoryInfo(anchor));
+                if (found is not null)
+                    return found;
+            }
+            catch
+            {
+                // ignore
+            }
         }
 
         return Directory.GetCurrentDirectory();

@@ -344,6 +344,12 @@ export default function TimesheetWeek({
   const buildTimesheetPayloadOrThrow = (): TimesheetLine[] => {
     const filtered = lines.filter((r) => !isEmptyRow(r))
     return filtered.map((r) => {
+      const client = r.client.trim()
+      const project = r.project.trim()
+      const task = r.task.trim()
+      if (!client.length) throw new Error('Client is required on each line with hours')
+      if (!project.length) throw new Error('Project is required on each line with hours')
+      if (!task.length) throw new Error('Task is required on each line with hours')
       const hoursStr = r.hours.trim()
       if (!hoursStr.length) throw new Error('Hours are required')
       const hours = Number(hoursStr)
@@ -354,9 +360,9 @@ export default function TimesheetWeek({
       if (Math.abs(q - qRounded) > 1e-9) throw new Error('Hours must be in 0.25 increments')
       return {
         workDate: r.workDate,
-        client: r.client.trim(),
-        project: r.project.trim(),
-        task: r.task.trim(),
+        client,
+        project,
+        task,
         hours,
         isBillable: r.isBillable,
         notes: r.notes.trim().length ? r.notes.trim() : null,

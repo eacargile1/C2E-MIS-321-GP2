@@ -6,3 +6,7 @@
 
 # Local secrets (copy api/.env.example → api/.env or repo-root .env)
 .env
+.env.local
+
+# Local / agent compile checkouts under api (e.g. _b2, _buildcheck3)
+api/_*/

@@ -1,11 +1,11 @@
 using System.Globalization;
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using System.Text.Json;
+using C2E.Api.Configuration;
 using C2E.Api.Data;
 using C2E.Api.Models;
 using C2E.Api.Options;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace C2E.Api.Services;
@@ -27,6 +27,7 @@ public sealed class FinanceExpenseAiNarrativeService(
     AppDbContext db,
     IHttpClientFactory httpClientFactory,
     IOptions<AiRecommendationOptions> opts,
+    IHostEnvironment hostEnv,
     ILogger<FinanceExpenseAiNarrativeService> log) : IFinanceExpenseAiNarrativeService
 {
     public async Task<(string Narrative, string Source)> BuildNarrativeAsync(
@@ -64,10 +65,19 @@ public sealed class FinanceExpenseAiNarrativeService(
         var total = rows.Sum(x => x.Amount);
         var submitters = rows.Select(x => x.UserId).Distinct().Count();
 
-        var cfg = opts.Value;
-        var provider = cfg.Provider.Trim().ToLowerInvariant();
-        if (provider is not ("openai" or "hybrid") || string.IsNullOrWhiteSpace(cfg.OpenAiApiKey))
-            return (HeuristicNarrative(p.Client.Name, p.Name, periodStart, periodEnd, total, submitters, byCat), "heuristic");
+        var cfg = DotEnvFilePriority.WithDotEnvOpenAiOverlay(hostEnv, opts.Value);
+        if (string.IsNullOrWhiteSpace((cfg.OpenAiApiKey ?? "").Trim()))
+            return (
+                HeuristicNarrative(
+                    p.Client.Name,
+                    p.Name,
+                    periodStart,
+                    periodEnd,
+                    total,
+                    submitters,
+                    byCat,
+                    HeuristicNarrativeHint.NoApiKey),
+                "heuristic");
 
         try
         {
@@ -103,29 +113,51 @@ public sealed class FinanceExpenseAiNarrativeService(
             };
 
             var http = httpClientFactory.CreateClient(nameof(FinanceExpenseAiNarrativeService));
-            http.BaseAddress = new Uri(cfg.OpenAiBaseUrl.TrimEnd('/') + "/");
-            http.Timeout = TimeSpan.FromSeconds(Math.Max(1, cfg.OpenAiTimeoutSeconds));
-            http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", cfg.OpenAiApiKey.Trim());
+            OpenAiChatCompletionHelper.ConfigureClient(
+                http,
+                cfg.OpenAiBaseUrl,
+                (cfg.OpenAiApiKey ?? "").Trim(),
+                TimeSpan.FromSeconds(Math.Max(45, cfg.OpenAiTimeoutSeconds * 4)));
 
-            using var response = await http.PostAsJsonAsync("v1/chat/completions", request, ct);
-            if (!response.IsSuccessStatusCode)
-            {
-                log.LogWarning("OpenAI narrative returned {Status}", response.StatusCode);
-                return (HeuristicNarrative(p.Client.Name, p.Name, periodStart, periodEnd, total, submitters, byCat), "heuristic");
-            }
-
-            var payload = await response.Content.ReadFromJsonAsync<OpenAiChatEnvelope>(cancellationToken: ct);
-            var text = payload?.Choices?.FirstOrDefault()?.Message?.Content?.Trim();
+            var text = (await OpenAiChatCompletionHelper.PostV1ForAssistantString(
+                http, request, log, "Finance AI narrative", ct))?.Trim();
             if (string.IsNullOrWhiteSpace(text))
-                return (HeuristicNarrative(p.Client.Name, p.Name, periodStart, periodEnd, total, submitters, byCat), "heuristic");
+                return (
+                    HeuristicNarrative(
+                        p.Client.Name,
+                        p.Name,
+                        periodStart,
+                        periodEnd,
+                        total,
+                        submitters,
+                        byCat,
+                        HeuristicNarrativeHint.OpenAiFailed),
+                    "heuristic");
 
             return (text, "openai");
         }
         catch (Exception ex)
         {
             log.LogWarning(ex, "OpenAI narrative failed; using heuristic.");
-            return (HeuristicNarrative(p.Client.Name, p.Name, periodStart, periodEnd, total, submitters, byCat), "heuristic");
+            return (
+                HeuristicNarrative(
+                    p.Client.Name,
+                    p.Name,
+                    periodStart,
+                    periodEnd,
+                    total,
+                    submitters,
+                    byCat,
+                    HeuristicNarrativeHint.OpenAiFailed),
+                "heuristic");
         }
+    }
+
+    private enum HeuristicNarrativeHint
+    {
+        None,
+        NoApiKey,
+        OpenAiFailed,
     }
 
     private static string HeuristicNarrative(
@@ -135,32 +167,26 @@ public sealed class FinanceExpenseAiNarrativeService(
         DateOnly end,
         decimal total,
         int submitters,
-        IReadOnlyList<(string Cat, decimal Sum, int Cnt)> byCat)
+        IReadOnlyList<(string Cat, decimal Sum, int Cnt)> byCat,
+        HeuristicNarrativeHint hint = HeuristicNarrativeHint.None)
     {
         var top = byCat.Count == 0
             ? "n/a"
             : string.Join(
                 "; ",
                 byCat.Take(3).Select(x => $"{x.Cat} {x.Sum:C0} ({x.Cnt} lines)"));
-        return
+        var core =
             $"Approved spend on {clientName} / {projectName} from {start:yyyy-MM-dd} through {end:yyyy-MM-dd} totals {total:C}. " +
             $"{submitters} distinct submitter(s) appear in this slice. " +
-            $"Largest category buckets: {top}. " +
-            "Heuristic summary (set AIRecommendations:Provider to hybrid or openai and add OpenAiApiKey for an LLM narrative).";
-    }
-
-    private sealed class OpenAiChatEnvelope
-    {
-        public List<OpenAiChoice> Choices { get; init; } = [];
-    }
-
-    private sealed class OpenAiChoice
-    {
-        public OpenAiMessage? Message { get; init; }
-    }
-
-    private sealed class OpenAiMessage
-    {
-        public string? Content { get; init; }
+            $"Largest category buckets: {top}.";
+        var tail = hint switch
+        {
+            HeuristicNarrativeHint.NoApiKey =>
+                " Heuristic summary only — add OPENAI_API_KEY or AIRecommendations__OpenAiApiKey to api/.env (saved to disk) for OpenAI prose.",
+            HeuristicNarrativeHint.OpenAiFailed =>
+                " Heuristic summary only — OpenAI did not return usable prose for this request.",
+            _ => "",
+        };
+        return core + tail;
     }
 }

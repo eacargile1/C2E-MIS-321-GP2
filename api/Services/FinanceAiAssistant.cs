@@ -1,13 +1,13 @@
 using System.Globalization;
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using C2E.Api.Configuration;
 using C2E.Api.Data;
 using C2E.Api.Dtos;
 using C2E.Api.Models;
 using C2E.Api.Options;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace C2E.Api.Services;
@@ -21,6 +21,7 @@ public interface IFinanceAiAssistant
 public sealed class FinanceAiAssistant(
     IHttpClientFactory httpClientFactory,
     IOptions<AiRecommendationOptions> opts,
+    IHostEnvironment hostEnv,
     ILogger<FinanceAiAssistant> log) : IFinanceAiAssistant
 {
     public const string HttpClientName = nameof(FinanceAiAssistant);
@@ -161,7 +162,7 @@ public sealed class FinanceAiAssistant(
                 ? null
                 : llmEnabled
                     ? "LLM enabled but response unusable."
-                    : "LLM off — set AIRecommendations:Provider to openai or hybrid and OpenAiApiKey.",
+                    : "LLM off — no OpenAiApiKey (set OPENAI_API_KEY or AIRecommendations__OpenAiApiKey in api/.env or environment).",
             RowCount = rows.Count,
             TotalPendingAmount = pendingAmt,
             TotalApprovedAmount = approvedAmt,
@@ -284,50 +285,50 @@ public sealed class FinanceAiAssistant(
 
     private bool LlmEnabled()
     {
-        var cfg = opts.Value;
-        var p = cfg.Provider.Trim().ToLowerInvariant();
-        return p is "openai" or "hybrid" && !string.IsNullOrWhiteSpace(cfg.OpenAiApiKey);
+        var cfg = DotEnvFilePriority.WithDotEnvOpenAiOverlay(hostEnv, opts.Value);
+        return !string.IsNullOrWhiteSpace((cfg.OpenAiApiKey ?? "").Trim());
     }
 
     private async Task<T?> PostOpenAiJsonAsync<T>(string userPrompt, CancellationToken ct)
         where T : class
     {
-        var cfg = opts.Value;
-        var request = new
+        var cfg = DotEnvFilePriority.WithDotEnvOpenAiOverlay(hostEnv, opts.Value);
+        var messages = new object[]
+        {
+            new
+            {
+                role = "system",
+                content =
+                    "You output a single JSON object for internal ops tooling. " +
+                    "Never wrap JSON in markdown code fences. Property names use camelCase.",
+            },
+            new { role = "user", content = userPrompt },
+        };
+        var withJson = new
         {
             model = cfg.OpenAiModel,
             temperature = cfg.OpenAiTemperature,
             response_format = new { type = "json_object" },
-            messages = new object[]
-            {
-                new
-                {
-                    role = "system",
-                    content =
-                        "You output a single JSON object for internal ops tooling. " +
-                        "Never wrap JSON in markdown code fences. Property names use camelCase.",
-                },
-                new { role = "user", content = userPrompt },
-            },
+            messages,
+        };
+        var plain = new
+        {
+            model = cfg.OpenAiModel,
+            temperature = cfg.OpenAiTemperature,
+            messages,
         };
 
         try
         {
             var http = httpClientFactory.CreateClient(HttpClientName);
-            http.BaseAddress = new Uri(cfg.OpenAiBaseUrl.TrimEnd('/') + "/");
-            var timeoutSec = Math.Max(10, cfg.OpenAiTimeoutSeconds * 4);
-            http.Timeout = TimeSpan.FromSeconds(timeoutSec);
-            http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", cfg.OpenAiApiKey.Trim());
-
-            using var response = await http.PostAsJsonAsync("v1/chat/completions", request, ct);
-            if (!response.IsSuccessStatusCode)
-            {
-                log.LogWarning("Finance AI OpenAI HTTP {Status}", response.StatusCode);
-                return null;
-            }
-
-            var payload = await response.Content.ReadFromJsonAsync<OpenAiChatResponse>(cancellationToken: ct);
-            var content = payload?.Choices?.FirstOrDefault()?.Message?.Content;
+            var timeoutSec = Math.Max(30, cfg.OpenAiTimeoutSeconds * 5);
+            OpenAiChatCompletionHelper.ConfigureClient(
+                http,
+                cfg.OpenAiBaseUrl,
+                (cfg.OpenAiApiKey ?? "").Trim(),
+                TimeSpan.FromSeconds(timeoutSec));
+            var content = await OpenAiChatCompletionHelper.PostV1ForAssistantStringWithJsonObjectFallback(
+                http, withJson, plain, log, "Finance AI", ct);
             if (string.IsNullOrWhiteSpace(content)) return null;
             var parsed = LlmStructuredJsonHelper.Deserialize<T>(content);
             if (parsed is not null) return parsed;
@@ -360,7 +361,19 @@ public sealed class FinanceAiAssistant(
             {
                 if (item is JsonObject fo)
                 {
-                    var msg = LlmStructuredJsonHelper.FirstString(fo, "message", "text", "detail", "description");
+                    var msg = LlmStructuredJsonHelper.FirstString(
+                        fo,
+                        "message",
+                        "text",
+                        "detail",
+                        "description",
+                        "content",
+                        "body",
+                        "insight",
+                        "finding",
+                        "note",
+                        "headline",
+                        "title");
                     if (string.IsNullOrWhiteSpace(msg)) continue;
                     var code = LlmStructuredJsonHelper.FirstString(fo, "code", "id", "key") ?? "llm_flag";
                     var sev = LlmStructuredJsonHelper.FirstString(fo, "severity", "level") ?? "info";
@@ -387,7 +400,6 @@ public sealed class FinanceAiAssistant(
             o,
             "summaryPoints",
             "summary_points",
-            "summary",
             "bullets",
             "highlights");
         if (spArr is not null)
@@ -409,6 +421,21 @@ public sealed class FinanceAiAssistant(
             }
         }
 
+        // Models often return summaryPoints / summary / narrative as a single string instead of arrays.
+        AppendDistinctPoint(
+            points,
+            LlmStructuredJsonHelper.FirstString(
+                o,
+                "summaryPoints",
+                "summary_points",
+                "summary",
+                "narrative",
+                "executiveSummary",
+                "executive_summary",
+                "overview",
+                "keyTakeaways",
+                "key_takeaways"));
+
         if (flags.Count == 0 && points.Count == 0) return null;
         return new LedgerLlmEnvelope
         {
@@ -417,36 +444,90 @@ public sealed class FinanceAiAssistant(
         };
     }
 
+    private static void AppendDistinctPoint(List<string> points, string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return;
+        var t = s.Trim();
+        foreach (var p in points)
+        {
+            if (string.Equals(p, t, StringComparison.Ordinal)) return;
+        }
+
+        points.Add(t);
+    }
+
+    private static void AppendChecklistStrings(JsonObject src, List<string> checklist)
+    {
+        var ch = LlmStructuredJsonHelper.FirstArray(src, "reviewerChecklist", "reviewer_checklist", "checklist");
+        if (ch is null) return;
+        foreach (var item in ch)
+        {
+            if (item is not JsonValue v) continue;
+            try
+            {
+                var s = v.GetValue<string>();
+                if (!string.IsNullOrWhiteSpace(s)) checklist.Add(s.Trim());
+            }
+            catch (InvalidOperationException)
+            {
+                // skip
+            }
+        }
+    }
+
     private static QuoteLlmEnvelope? CoerceQuoteFromNode(string raw)
     {
         var o = LlmStructuredJsonHelper.TryParseObject(raw);
         if (o is null) return null;
         var checklist = new List<string>();
-        var ch = LlmStructuredJsonHelper.FirstArray(o, "reviewerChecklist", "reviewer_checklist", "checklist");
-        if (ch is not null)
-        {
-            foreach (var item in ch)
-            {
-                if (item is JsonValue v)
-                {
-                    try
-                    {
-                        var s = v.GetValue<string>();
-                        if (!string.IsNullOrWhiteSpace(s)) checklist.Add(s.Trim());
-                    }
-                    catch (InvalidOperationException)
-                    {
-                        // skip
-                    }
-                }
-            }
-        }
+        AppendChecklistStrings(o, checklist);
 
-        var title = LlmStructuredJsonHelper.FirstString(o, "suggestedTitle", "suggested_title", "title");
-        var scope = LlmStructuredJsonHelper.FirstString(o, "suggestedScopeSummary", "suggested_scope_summary", "scope");
-        var valid = LlmStructuredJsonHelper.FirstString(o, "suggestedValidThroughYmd", "suggested_valid_through_ymd", "validThrough");
-        var hours = LlmStructuredJsonHelper.FirstDecimal(o, "suggestedHours", "suggested_hours", "hours");
-        var rate = LlmStructuredJsonHelper.FirstDecimal(o, "suggestedHourlyRate", "suggested_hourly_rate", "hourlyRate");
+        JsonObject root = o;
+        if (o["suggestedQuote"] is JsonObject sq) root = sq;
+        else if (o["quote"] is JsonObject qo) root = qo;
+        if (!ReferenceEquals(root, o)) AppendChecklistStrings(root, checklist);
+
+        var title = LlmStructuredJsonHelper.FirstString(
+            root,
+            "suggestedTitle",
+            "suggested_title",
+            "quoteTitle",
+            "quote_title",
+            "title",
+            "name");
+        var scope = LlmStructuredJsonHelper.FirstString(
+            root,
+            "suggestedScopeSummary",
+            "suggested_scope_summary",
+            "scope",
+            "scopeSummary",
+            "scope_summary",
+            "scopeDescription",
+            "description");
+        var valid = LlmStructuredJsonHelper.FirstString(
+            root,
+            "suggestedValidThroughYmd",
+            "suggested_valid_through_ymd",
+            "validThrough",
+            "valid_through",
+            "validUntil",
+            "valid_until");
+        var hours = LlmStructuredJsonHelper.FirstDecimal(
+            root,
+            "suggestedHours",
+            "suggested_hours",
+            "hours",
+            "estimatedHours",
+            "estimated_hours");
+        var rate = LlmStructuredJsonHelper.FirstDecimal(
+            root,
+            "suggestedHourlyRate",
+            "suggested_hourly_rate",
+            "hourlyRate",
+            "hourly_rate",
+            "billingRate",
+            "billing_rate",
+            "rate");
 
         if (title is null && scope is null && hours is null && rate is null && checklist.Count == 0)
             return null;
@@ -499,20 +580,5 @@ public sealed class FinanceAiAssistant(
         public decimal? SuggestedHourlyRate { get; init; }
         public string? SuggestedValidThroughYmd { get; init; }
         public List<string>? ReviewerChecklist { get; init; }
-    }
-
-    private sealed class OpenAiChatResponse
-    {
-        public List<OpenAiChoiceRow> Choices { get; init; } = [];
-    }
-
-    private sealed class OpenAiChoiceRow
-    {
-        public OpenAiMsg? Message { get; init; }
-    }
-
-    private sealed class OpenAiMsg
-    {
-        public string? Content { get; init; }
     }
 }

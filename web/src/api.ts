@@ -19,16 +19,19 @@ function messageFromApiJson(data: unknown, status: number, fallback: string): st
   if (!data || typeof data !== 'object') return `${fallback} (HTTP ${status})`
   const r = data as Record<string, unknown>
   if (typeof r.message === 'string' && r.message.trim()) return r.message
-  if (typeof r.title === 'string' && r.title.trim()) return r.title
+  if (typeof r.detail === 'string' && r.detail.trim()) return r.detail
   const errs = r.errors
   if (errs && typeof errs === 'object' && errs !== null) {
-    for (const v of Object.values(errs)) {
-      if (Array.isArray(v)) {
-        const first = v.find((x) => typeof x === 'string')
-        if (typeof first === 'string' && first.trim()) return first
+    const parts: string[] = []
+    for (const [, v] of Object.entries(errs)) {
+      if (!Array.isArray(v)) continue
+      for (const x of v) {
+        if (typeof x === 'string' && x.trim()) parts.push(x.trim())
       }
     }
+    if (parts.length > 0) return parts.slice(0, 4).join(' ')
   }
+  if (typeof r.title === 'string' && r.title.trim()) return r.title
   return `${fallback} (HTTP ${status})`
 }
 
